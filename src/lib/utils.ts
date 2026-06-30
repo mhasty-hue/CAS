@@ -52,7 +52,7 @@ export function statusTone(status: OrderStatus) {
     "On Hold": "bg-zinc-100 text-zinc-700 border-zinc-200",
     Cancelled: "bg-neutral-100 text-neutral-500 border-neutral-200"
   };
-  return tones[status];
+  return tones[status] ?? "bg-rose-50 text-rose-700 border-rose-200";
 }
 
 export function priorityTone(priority: Priority) {
