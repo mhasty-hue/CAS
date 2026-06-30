@@ -31,6 +31,15 @@ The initial schema is in `supabase/migrations/202606290001_initial_schema.sql` a
 
 The schema is intentionally automation-ready and AI-ready: workflow steps, required fields/documents, automation rules, review state, audit logs, and notification records are first-class tables instead of hard-coded UI-only state.
 
-## Validation note
+## Validation
 
-This implementation was created through the GitHub connector because the local workspace filesystem rejected file writes during this session. Local install/build/lint could not be run from this environment. The project is structured for standard `pnpm install`, `pnpm build`, and `pnpm lint` validation once checked out normally.
+Validated locally with:
+
+```bash
+pnpm install
+pnpm typecheck
+pnpm lint
+pnpm build
+```
+
+The build compiles the app as static content and generates the typed route references used by Next.js.
