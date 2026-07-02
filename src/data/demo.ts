@@ -5,6 +5,7 @@ import type {
   NotificationItem,
   Order,
   PermissionKey,
+  ReviewerProfile,
   VendorProfile
 } from "@/types/domain";
 
@@ -42,25 +43,86 @@ export const permissionCatalog: Array<{ key: PermissionKey; label: string; group
   { key: "export_reports", label: "Export reports", group: "Reporting" }
 ];
 
-const orderTimeline = (fileNumber: string) => [
+const documents = (fileNumber: string, reportStatus: "Ready" | "Missing" | "Needs review" = "Ready") => [
+  {
+    id: `${fileNumber}-engagement`,
+    name: "Engagement letter.pdf",
+    type: "Engagement",
+    status: "Ready" as const,
+    uploadedBy: "Nora Fields",
+    uploadedAt: "Jun 28, 9:14 AM"
+  },
+  {
+    id: `${fileNumber}-order`,
+    name: "Client order package.pdf",
+    type: "Order package",
+    status: "Ready" as const,
+    uploadedBy: "CAS Intake",
+    uploadedAt: "Jun 28, 9:16 AM"
+  },
+  {
+    id: `${fileNumber}-report`,
+    name: "Appraisal report.pdf",
+    type: "Report",
+    status: reportStatus,
+    uploadedBy: reportStatus === "Missing" ? "Pending" : "Assigned appraiser",
+    uploadedAt: reportStatus === "Missing" ? "Not uploaded" : "Jun 30, 10:42 AM"
+  }
+];
+
+const timeline = (fileNumber: string, appraiser: string) => [
   {
     label: "Order received",
     detail: `${fileNumber} imported from client portal`,
-    at: "Jun 24, 9:18 AM",
+    at: "Jun 27, 9:18 AM",
     actor: "CAS Intake"
   },
   {
     label: "Assignment reviewed",
-    detail: "Coverage, complexity, fee, and due date checked",
-    at: "Jun 24, 9:41 AM",
+    detail: "Coverage, fee, product, and due date checked",
+    at: "Jun 27, 9:41 AM",
     actor: "Nora Fields"
   },
   {
-    label: "Appraiser notified",
-    detail: "Assignment package and access notes sent",
-    at: "Jun 24, 10:02 AM",
+    label: appraiser === "Unassigned" ? "Awaiting assignment" : "Appraiser notified",
+    detail: appraiser === "Unassigned" ? "Order is queued for coverage selection" : `${appraiser} received the assignment package`,
+    at: "Jun 27, 10:02 AM",
     actor: "CAS Workflow"
   }
+];
+
+const assignmentHistory = (fileNumber: string, appraiser: string) =>
+  appraiser === "Unassigned"
+    ? []
+    : [
+        {
+          id: `${fileNumber}-assignment`,
+          appraiser,
+          action: "Assigned" as const,
+          actor: "Nora Fields",
+          note: "Matched by county coverage, current workload, and client preference.",
+          at: "Jun 27, 10:02 AM"
+        },
+        {
+          id: `${fileNumber}-accepted`,
+          appraiser,
+          action: "Accepted" as const,
+          actor: appraiser,
+          note: "Accepted with standard access instructions.",
+          at: "Jun 27, 10:21 AM"
+        }
+      ];
+
+const auditTrail = (fileNumber: string) => [
+  { id: `${fileNumber}-audit-1`, action: "Order created", actor: "CAS Intake", at: "Jun 27, 9:18 AM" },
+  { id: `${fileNumber}-audit-2`, action: "Documents attached", actor: "Nora Fields", at: "Jun 27, 9:22 AM" },
+  { id: `${fileNumber}-audit-3`, action: "Due date confirmed", actor: "Nora Fields", at: "Jun 27, 9:41 AM" }
+];
+
+export const reviewers: ReviewerProfile[] = [
+  { id: "rev-1", name: "Maya Chen", queue: 7, specialties: ["Conventional", "Complex", "Luxury"] },
+  { id: "rev-2", name: "Evan Brooks", queue: 5, specialties: ["FHA", "VA", "Rural"] },
+  { id: "rev-3", name: "Rachel Kim", queue: 4, specialties: ["Review", "Desktop", "Quality control"] }
 ];
 
 export const orders: Order[] = [
@@ -86,22 +148,41 @@ export const orders: Order[] = [
     fee: 575,
     techFee: 25,
     appraiserPayout: 345,
-    documents: 8,
+    documents: 9,
     lastUpdate: "Report submitted 2h ago",
     nextAction: "Complete review checklist",
     loanType: "Conventional",
     occupancy: "Primary residence",
     propertyType: "Single family",
-    timeline: orderTimeline("CAA-26-1048"),
+    contactName: "Avery Mitchell",
+    contactPhone: "(404) 555-0128",
+    accessInfo: "Borrower available after 10 AM. Lockbox at side gate.",
+    assignmentPreference: "Preferred staff appraiser",
+    lenderContact: "Claire Moon",
+    parcelNumber: "17-0216-0-081-0",
+    timeline: timeline("CAA-26-1048", "Jordan Lee"),
     notes: [
       {
         id: "n1",
         author: "Maya Chen",
         body: "Reviewer requested contract addendum before final approval.",
         visibility: "internal",
-        createdAt: "Jun 29, 11:16 AM"
+        createdAt: "Jun 30, 11:16 AM"
       }
     ],
+    clientComments: [
+      {
+        id: "c1",
+        author: "Claire Moon",
+        body: "Please deliver the final PDF and XML together.",
+        visibility: "client",
+        createdAt: "Jun 29, 3:10 PM"
+      }
+    ],
+    documentsList: documents("CAA-26-1048", "Needs review"),
+    assignmentHistory: assignmentHistory("CAA-26-1048", "Jordan Lee"),
+    revisionLog: [],
+    auditTrail: auditTrail("CAA-26-1048"),
     reviewItems: [
       { label: "Subject photos present", category: "Required exhibits", complete: true },
       { label: "Contract addendum attached", category: "Contract", complete: false, severity: "warning" },
@@ -123,7 +204,7 @@ export const orders: Order[] = [
     appraiser: "Priya Shah",
     reviewer: "Evan Brooks",
     orderedDate: "2026-06-23",
-    dueDate: "2026-06-29",
+    dueDate: "2026-06-30",
     inspectionDate: "2026-06-26",
     status: "Revisions Needed",
     priority: "Rush",
@@ -136,16 +217,43 @@ export const orders: Order[] = [
     loanType: "FHA",
     occupancy: "Primary residence",
     propertyType: "Single family",
-    timeline: orderTimeline("CAA-26-1049"),
+    contactName: "Sofia Grant",
+    contactPhone: "(678) 555-0183",
+    accessInfo: "Owner will meet appraiser. FHA utilities are on.",
+    assignmentPreference: "FHA-certified panel appraiser",
+    lenderContact: "Sam Ortiz",
+    parcelNumber: "12-3114-0-229-0",
+    timeline: timeline("CAA-26-1049", "Priya Shah"),
     notes: [
       {
         id: "n2",
         author: "Evan Brooks",
         body: "FHA repair commentary needs stronger support and photo reference.",
         visibility: "appraiser",
-        createdAt: "Jun 29, 9:04 AM"
+        createdAt: "Jun 30, 9:04 AM"
       }
     ],
+    clientComments: [
+      {
+        id: "c2",
+        author: "Pioneer AMC",
+        body: "Client will accept an addendum if the revision is returned today.",
+        visibility: "client",
+        createdAt: "Jun 30, 10:02 AM"
+      }
+    ],
+    documentsList: documents("CAA-26-1049", "Needs review"),
+    assignmentHistory: assignmentHistory("CAA-26-1049", "Priya Shah"),
+    revisionLog: [
+      {
+        id: "r1",
+        requestedBy: "Evan Brooks",
+        summary: "Clarify FHA repair condition and add photo reference.",
+        status: "Sent to appraiser",
+        requestedAt: "Jun 30, 9:04 AM"
+      }
+    ],
+    auditTrail: auditTrail("CAA-26-1049"),
     reviewItems: [
       { label: "FHA utilities checked", category: "FHA", complete: true },
       { label: "Repair condition commentary", category: "FHA", complete: false, severity: "blocker" },
@@ -180,7 +288,13 @@ export const orders: Order[] = [
     loanType: "Conventional",
     occupancy: "Investment",
     propertyType: "Townhome",
-    timeline: orderTimeline("CAA-26-1050"),
+    contactName: "Noah Turner",
+    contactPhone: "(770) 555-0144",
+    accessInfo: "Exterior only. Community gate code 1749.",
+    assignmentPreference: "Best coverage fit",
+    lenderContact: "Janelle Price",
+    parcelNumber: "15N09-108-A",
+    timeline: timeline("CAA-26-1050", "Marcus King"),
     notes: [
       {
         id: "n3",
@@ -190,6 +304,11 @@ export const orders: Order[] = [
         createdAt: "Jun 28, 4:42 PM"
       }
     ],
+    clientComments: [],
+    documentsList: documents("CAA-26-1050", "Missing"),
+    assignmentHistory: assignmentHistory("CAA-26-1050", "Marcus King"),
+    revisionLog: [],
+    auditTrail: auditTrail("CAA-26-1050"),
     reviewItems: [
       { label: "Exterior photos", category: "Subject photos", complete: false },
       { label: "Comparable selection", category: "General appraisal", complete: false }
@@ -212,7 +331,7 @@ export const orders: Order[] = [
     orderedDate: "2026-06-20",
     dueDate: "2026-06-28",
     inspectionDate: "2026-06-24",
-    status: "Past Due" as never,
+    status: "Report In Progress",
     priority: "Rush",
     fee: 700,
     techFee: 35,
@@ -223,16 +342,35 @@ export const orders: Order[] = [
     loanType: "VA",
     occupancy: "Primary residence",
     propertyType: "Single family",
-    timeline: orderTimeline("CAA-26-1051"),
+    contactName: "Elena Ruiz",
+    contactPhone: "(404) 555-0199",
+    accessInfo: "Seller agent will provide access. Confirm MPR utilities.",
+    assignmentPreference: "VA panel",
+    lenderContact: "Miles Carter",
+    parcelNumber: "20-0135-0-047-0",
+    timeline: timeline("CAA-26-1051", "Jordan Lee"),
     notes: [
       {
         id: "n4",
         author: "CAS Workflow",
         body: "Due date alert sent to appraiser and manager.",
         visibility: "internal",
-        createdAt: "Jun 29, 8:00 AM"
+        createdAt: "Jun 30, 8:00 AM"
       }
     ],
+    clientComments: [
+      {
+        id: "c4",
+        author: "Cobalt AMC",
+        body: "Escalation requested because the file is past due.",
+        visibility: "client",
+        createdAt: "Jun 30, 8:14 AM"
+      }
+    ],
+    documentsList: documents("CAA-26-1051", "Missing"),
+    assignmentHistory: assignmentHistory("CAA-26-1051", "Jordan Lee"),
+    revisionLog: [],
+    auditTrail: auditTrail("CAA-26-1051"),
     reviewItems: [
       { label: "VA required exhibits", category: "VA", complete: false, severity: "warning" }
     ]
@@ -250,7 +388,7 @@ export const orders: Order[] = [
     zip: "30004",
     county: "Fulton",
     appraiser: "Talia Morris",
-    reviewer: "Maya Chen",
+    reviewer: "Rachel Kim",
     orderedDate: "2026-06-26",
     dueDate: "2026-07-01",
     status: "Report In Progress",
@@ -264,16 +402,27 @@ export const orders: Order[] = [
     loanType: "HELOC",
     occupancy: "Owner occupied",
     propertyType: "Condo",
-    timeline: orderTimeline("CAA-26-1052"),
+    contactName: "Liam Carter",
+    contactPhone: "(470) 555-0137",
+    accessInfo: "Desktop review. No inspection contact needed.",
+    assignmentPreference: "Desktop specialist",
+    lenderContact: "Megan Hall",
+    parcelNumber: "22-4871-0-089-0",
+    timeline: timeline("CAA-26-1052", "Talia Morris"),
     notes: [
       {
         id: "n5",
         author: "Talia Morris",
         body: "Need client confirmation on renovation date.",
         visibility: "client",
-        createdAt: "Jun 28, 12:27 PM"
+        createdAt: "Jun 29, 12:27 PM"
       }
     ],
+    clientComments: [],
+    documentsList: documents("CAA-26-1052", "Missing"),
+    assignmentHistory: assignmentHistory("CAA-26-1052", "Talia Morris"),
+    revisionLog: [],
+    auditTrail: auditTrail("CAA-26-1052"),
     reviewItems: [
       { label: "Comment consistency", category: "Comments consistency", complete: false }
     ]
@@ -292,7 +441,7 @@ export const orders: Order[] = [
     county: "Cobb",
     appraiser: "Unassigned",
     reviewer: "Unassigned",
-    orderedDate: "2026-06-29",
+    orderedDate: "2026-06-30",
     dueDate: "2026-07-05",
     status: "Unassigned",
     priority: "Standard",
@@ -305,15 +454,293 @@ export const orders: Order[] = [
     loanType: "Conventional",
     occupancy: "Primary residence",
     propertyType: "Single family",
-    timeline: [
+    contactName: "Mina Patel",
+    contactPhone: "(678) 555-0110",
+    accessInfo: "Borrower prefers Friday afternoon.",
+    assignmentPreference: "Lowest workload in Cobb",
+    lenderContact: "Claire Moon",
+    parcelNumber: "17-0188-0-043-0",
+    timeline: timeline("CAA-26-1053", "Unassigned"),
+    notes: [],
+    clientComments: [],
+    documentsList: documents("CAA-26-1053", "Missing"),
+    assignmentHistory: [],
+    revisionLog: [],
+    auditTrail: auditTrail("CAA-26-1053"),
+    reviewItems: []
+  },
+  {
+    id: "ord-1007",
+    fileNumber: "CAA-26-1054",
+    productType: "Final Inspection",
+    client: "RidgeLine Bank",
+    amc: "Direct Lender",
+    borrower: "Daniel Brooks",
+    address: "602 Garden Mill Road",
+    city: "Canton",
+    state: "GA",
+    zip: "30114",
+    county: "Cherokee",
+    appraiser: "Marcus King",
+    reviewer: "Rachel Kim",
+    orderedDate: "2026-06-29",
+    dueDate: "2026-06-30",
+    inspectionDate: "2026-06-30",
+    status: "Assigned",
+    priority: "High",
+    fee: 175,
+    techFee: 10,
+    appraiserPayout: 105,
+    documents: 3,
+    lastUpdate: "Awaiting inspection photos",
+    nextAction: "Upload completion photos",
+    loanType: "Construction",
+    occupancy: "Primary residence",
+    propertyType: "Single family",
+    contactName: "Site supervisor",
+    contactPhone: "(770) 555-0122",
+    accessInfo: "Builder lockbox. Verify repairs are complete.",
+    assignmentPreference: "Original appraiser",
+    lenderContact: "Iris Grant",
+    parcelNumber: "14N23-124-B",
+    timeline: timeline("CAA-26-1054", "Marcus King"),
+    notes: [],
+    clientComments: [],
+    documentsList: documents("CAA-26-1054", "Missing"),
+    assignmentHistory: assignmentHistory("CAA-26-1054", "Marcus King"),
+    revisionLog: [],
+    auditTrail: auditTrail("CAA-26-1054"),
+    reviewItems: []
+  },
+  {
+    id: "ord-1008",
+    fileNumber: "CAA-26-1055",
+    productType: "1004 URAR",
+    client: "Northstar Mortgage",
+    amc: "Pioneer AMC",
+    borrower: "Grace Lin",
+    address: "1452 Hidden Creek Drive",
+    city: "Duluth",
+    state: "GA",
+    zip: "30097",
+    county: "Gwinnett",
+    appraiser: "Priya Shah",
+    reviewer: "Maya Chen",
+    orderedDate: "2026-06-28",
+    dueDate: "2026-07-04",
+    inspectionDate: "2026-07-01",
+    status: "Accepted",
+    priority: "Standard",
+    fee: 560,
+    techFee: 25,
+    appraiserPayout: 336,
+    documents: 7,
+    lastUpdate: "Accepted by appraiser",
+    nextAction: "Schedule inspection",
+    loanType: "Conventional",
+    occupancy: "Primary residence",
+    propertyType: "Single family",
+    contactName: "Grace Lin",
+    contactPhone: "(678) 555-0188",
+    accessInfo: "Borrower needs 24 hour notice.",
+    assignmentPreference: "Preferred by client",
+    lenderContact: "Sam Ortiz",
+    parcelNumber: "R7258-144",
+    timeline: timeline("CAA-26-1055", "Priya Shah"),
+    notes: [],
+    clientComments: [],
+    documentsList: documents("CAA-26-1055", "Missing"),
+    assignmentHistory: assignmentHistory("CAA-26-1055", "Priya Shah"),
+    revisionLog: [],
+    auditTrail: auditTrail("CAA-26-1055"),
+    reviewItems: []
+  },
+  {
+    id: "ord-1009",
+    fileNumber: "CAA-26-1056",
+    productType: "Luxury 1004",
+    client: "HarborPoint Lending",
+    amc: "Direct Lender",
+    borrower: "Caroline West",
+    address: "32 Kingsboro Circle",
+    city: "Atlanta",
+    state: "GA",
+    zip: "30305",
+    county: "Fulton",
+    appraiser: "Talia Morris",
+    reviewer: "Maya Chen",
+    orderedDate: "2026-06-21",
+    dueDate: "2026-07-03",
+    inspectionDate: "2026-06-27",
+    status: "Submitted",
+    priority: "High",
+    fee: 925,
+    techFee: 45,
+    appraiserPayout: 555,
+    documents: 13,
+    lastUpdate: "Submitted for review",
+    nextAction: "Assign reviewer",
+    loanType: "Jumbo",
+    occupancy: "Primary residence",
+    propertyType: "Luxury single family",
+    contactName: "Caroline West",
+    contactPhone: "(404) 555-0155",
+    accessInfo: "Listing agent requires appointment confirmation.",
+    assignmentPreference: "Luxury specialist",
+    lenderContact: "Claire Moon",
+    parcelNumber: "17-0100-0-391-0",
+    timeline: timeline("CAA-26-1056", "Talia Morris"),
+    notes: [],
+    clientComments: [],
+    documentsList: documents("CAA-26-1056", "Ready"),
+    assignmentHistory: assignmentHistory("CAA-26-1056", "Talia Morris"),
+    revisionLog: [],
+    auditTrail: auditTrail("CAA-26-1056"),
+    reviewItems: [
+      { label: "Luxury comparable support", category: "General appraisal", complete: false, severity: "warning" }
+    ]
+  },
+  {
+    id: "ord-1010",
+    fileNumber: "CAA-26-1057",
+    productType: "1004 URAR",
+    client: "Summit Credit Union",
+    amc: "Direct Lender",
+    borrower: "Owen Blake",
+    address: "7125 Fox Meadow Lane",
+    city: "Douglasville",
+    state: "GA",
+    zip: "30135",
+    county: "Douglas",
+    appraiser: "Unassigned",
+    reviewer: "Unassigned",
+    orderedDate: "2026-06-30",
+    dueDate: "2026-07-06",
+    status: "New",
+    priority: "Watch",
+    fee: 540,
+    techFee: 25,
+    appraiserPayout: 324,
+    documents: 4,
+    lastUpdate: "New order needs triage",
+    nextAction: "Verify coverage",
+    loanType: "Conventional",
+    occupancy: "Investment",
+    propertyType: "Single family",
+    contactName: "Owen Blake",
+    contactPhone: "(470) 555-0191",
+    accessInfo: "Tenant occupied. Call property manager first.",
+    assignmentPreference: "Best workload fit",
+    lenderContact: "Megan Hall",
+    parcelNumber: "0192-00-022-0",
+    timeline: timeline("CAA-26-1057", "Unassigned"),
+    notes: [],
+    clientComments: [],
+    documentsList: documents("CAA-26-1057", "Missing"),
+    assignmentHistory: [],
+    revisionLog: [],
+    auditTrail: auditTrail("CAA-26-1057"),
+    reviewItems: []
+  },
+  {
+    id: "ord-1011",
+    fileNumber: "CAA-26-1058",
+    productType: "Desktop Review",
+    client: "Seaside Bank",
+    amc: "Cobalt AMC",
+    borrower: "Hannah Moore",
+    address: "210 Village Green",
+    city: "Decatur",
+    state: "GA",
+    zip: "30030",
+    county: "DeKalb",
+    appraiser: "Priya Shah",
+    reviewer: "Rachel Kim",
+    orderedDate: "2026-06-19",
+    dueDate: "2026-06-25",
+    status: "Delivered",
+    priority: "Standard",
+    fee: 300,
+    techFee: 15,
+    appraiserPayout: 180,
+    documents: 8,
+    lastUpdate: "Delivered to client",
+    nextAction: "Mark completed after invoice sync",
+    loanType: "Portfolio",
+    occupancy: "Owner occupied",
+    propertyType: "Condo",
+    contactName: "Hannah Moore",
+    contactPhone: "(404) 555-0181",
+    accessInfo: "Desktop review only.",
+    assignmentPreference: "Desktop specialist",
+    lenderContact: "Janelle Price",
+    parcelNumber: "15-246-04-022",
+    timeline: timeline("CAA-26-1058", "Priya Shah"),
+    notes: [],
+    clientComments: [
       {
-        label: "Order created",
-        detail: "Loan package and engagement letter uploaded",
-        at: "Jun 29, 10:31 AM",
-        actor: "Nora Fields"
+        id: "c11",
+        author: "Cobalt AMC",
+        body: "Delivery received. Waiting on invoice confirmation.",
+        visibility: "client",
+        createdAt: "Jun 30, 1:41 PM"
       }
     ],
+    documentsList: documents("CAA-26-1058", "Ready"),
+    assignmentHistory: assignmentHistory("CAA-26-1058", "Priya Shah"),
+    revisionLog: [],
+    auditTrail: auditTrail("CAA-26-1058"),
+    reviewItems: []
+  },
+  {
+    id: "ord-1012",
+    fileNumber: "CAA-26-1059",
+    productType: "1004 URAR",
+    client: "RidgeLine Bank",
+    amc: "Direct Lender",
+    borrower: "Ethan Cole",
+    address: "55 Oakview Terrace",
+    city: "Acworth",
+    state: "GA",
+    zip: "30101",
+    county: "Cobb",
+    appraiser: "Jordan Lee",
+    reviewer: "Evan Brooks",
+    orderedDate: "2026-06-10",
+    dueDate: "2026-06-20",
+    inspectionDate: "2026-06-15",
+    status: "Completed",
+    priority: "Standard",
+    fee: 565,
+    techFee: 25,
+    appraiserPayout: 339,
+    documents: 10,
+    lastUpdate: "Completed and paid",
+    nextAction: "No action",
+    loanType: "Conventional",
+    occupancy: "Primary residence",
+    propertyType: "Single family",
+    contactName: "Ethan Cole",
+    contactPhone: "(770) 555-0141",
+    accessInfo: "Completed.",
+    assignmentPreference: "Preferred staff appraiser",
+    lenderContact: "Iris Grant",
+    parcelNumber: "20-0110-0-118-0",
+    timeline: timeline("CAA-26-1059", "Jordan Lee"),
     notes: [],
+    clientComments: [],
+    documentsList: documents("CAA-26-1059", "Ready"),
+    assignmentHistory: assignmentHistory("CAA-26-1059", "Jordan Lee"),
+    revisionLog: [
+      {
+        id: "r12",
+        requestedBy: "Evan Brooks",
+        summary: "Minor reconciliation language update.",
+        status: "Resolved",
+        requestedAt: "Jun 19, 2:12 PM"
+      }
+    ],
+    auditTrail: auditTrail("CAA-26-1059"),
     reviewItems: []
   }
 ];
@@ -391,13 +818,26 @@ export const appraisers: AppraiserProfile[] = [
     id: "app-4",
     name: "Talia Morris",
     role: "Solo",
-    counties: ["Fulton", "Cobb"],
+    counties: ["Fulton", "Cobb", "DeKalb"],
     capacity: 7,
     activeOrders: 5,
     dueThisWeek: 3,
     avgTurnDays: 6.1,
     revisionRate: 7.4,
     payoutDue: 2880,
+    licenseStatus: "Current"
+  },
+  {
+    id: "app-5",
+    name: "Ari Bennett",
+    role: "Panel",
+    counties: ["Douglas", "Paulding", "Cobb"],
+    capacity: 8,
+    activeOrders: 3,
+    dueThisWeek: 1,
+    avgTurnDays: 5.4,
+    revisionRate: 4.1,
+    payoutDue: 1410,
     licenseStatus: "Current"
   }
 ];
@@ -472,8 +912,34 @@ export const notifications: NotificationItem[] = [
   }
 ];
 
-export const savedViews = ["All active", "Due today", "Unassigned", "In review", "Past due", "Revisions"];
+export const savedViews = [
+  "All",
+  "New",
+  "Unassigned",
+  "Assigned",
+  "Due Today",
+  "Due This Week",
+  "Past Due",
+  "In Review",
+  "Revisions",
+  "Completed"
+] as const;
 
-export const productTypes = ["1004 URAR", "FHA 1004", "VA 1004", "2055 Exterior", "Desktop Review", "Final Inspection"];
+export const productTypes = [
+  "1004 URAR",
+  "FHA 1004",
+  "VA 1004",
+  "2055 Exterior",
+  "Desktop Review",
+  "Final Inspection",
+  "Luxury 1004"
+];
 
-export const clients = ["HarborPoint Lending", "Northstar Mortgage", "Seaside Bank", "Patriot Home Loans", "Summit Credit Union"];
+export const clients = [
+  "HarborPoint Lending",
+  "Northstar Mortgage",
+  "Seaside Bank",
+  "Patriot Home Loans",
+  "Summit Credit Union",
+  "RidgeLine Bank"
+];

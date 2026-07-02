@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  AlertTriangle,
   Archive,
   BarChart3,
   Bell,
@@ -16,23 +17,29 @@ import {
   Clock3,
   Command,
   Download,
+  Eye,
   FileCheck2,
+  FilePlus2,
   FileText,
   Filter,
   Gauge,
+  History,
   Home,
   LayoutDashboard,
   ListChecks,
   MapPin,
-  MoreHorizontal,
+  MessageSquare,
   PanelLeft,
   Plus,
+  ReceiptText,
   Search,
+  Send,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   UploadCloud,
+  UserCheck,
   Users2,
   WalletCards,
   Workflow,
@@ -47,12 +54,13 @@ import {
   permissionCatalog,
   productTypes,
   revenueChart,
+  reviewers,
   savedViews,
   vendors,
   volumeChart,
   workflowSteps
 } from "@/data/demo";
-import type { ChartPoint, Kpi, Order, OrderStatus, VendorProfile } from "@/types/domain";
+import type { AppraiserProfile, ChartPoint, Kpi, Note, Order, OrderStatus, VendorProfile } from "@/types/domain";
 import { cn, daysUntil, dueTone, formatCurrency, formatDate, priorityTone, statusTone } from "@/lib/utils";
 
 type NavId =
@@ -88,21 +96,50 @@ const navItems: Array<{ id: NavId; label: string; icon: LucideIcon }> = [
 
 const statusFilters: Array<"All" | OrderStatus> = [
   "All",
+  "New",
   "Unassigned",
+  "Assigned",
+  "Accepted",
   "Inspection Scheduled",
+  "Inspected",
   "Report In Progress",
   "Submitted",
   "In Review",
   "Revisions Needed",
+  "Revision Sent to Appraiser",
   "Ready for Delivery",
+  "Delivered",
   "Completed"
+];
+
+type SavedView = (typeof savedViews)[number];
+
+const orderStatusOptions: OrderStatus[] = [
+  "New",
+  "Unassigned",
+  "Assigned",
+  "Accepted",
+  "Inspection Scheduled",
+  "Inspected",
+  "Report In Progress",
+  "Submitted",
+  "In Review",
+  "Revisions Needed",
+  "Revision Sent to Appraiser",
+  "Ready for Delivery",
+  "Delivered",
+  "Completed",
+  "On Hold",
+  "Cancelled"
 ];
 
 export function CasApp() {
   const [activeView, setActiveView] = useState<NavId>("dashboard");
-  const [selectedOrder, setSelectedOrder] = useState<Order>(orders[0]);
+  const [orderList, setOrderList] = useState<Order[]>(orders);
+  const [selectedOrderId, setSelectedOrderId] = useState(orders[0].id);
   const [commandOpen, setCommandOpen] = useState(false);
   const [globalQuery, setGlobalQuery] = useState("");
+  const selectedOrder = orderList.find((order) => order.id === selectedOrderId) ?? orderList[0];
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -127,18 +164,137 @@ export function CasApp() {
 
   const currentTitle = navItems.find((item) => item.id === activeView)?.label ?? "Dashboard";
 
+  function updateOrder(orderId: string, updater: (order: Order) => Order) {
+    setOrderList((currentOrders) => currentOrders.map((order) => (order.id === orderId ? updater(order) : order)));
+  }
+
+  function handleAssignOrder(orderId: string, appraiserName: string, note: string) {
+    updateOrder(orderId, (order) => {
+      const noteBody = note.trim();
+      const assignmentNote: Note | null = noteBody
+        ? {
+            id: `${order.id}-assignment-note-${Date.now()}`,
+            author: "Nora Fields",
+            body: noteBody,
+            visibility: "internal",
+            createdAt: "Just now"
+          }
+        : null;
+
+      return {
+        ...order,
+        appraiser: appraiserName,
+        status: order.status === "New" || order.status === "Unassigned" ? "Assigned" : order.status,
+        nextAction: "Await appraiser acceptance",
+        lastUpdate: `Assigned to ${appraiserName}`,
+        notes: assignmentNote ? [assignmentNote, ...order.notes] : order.notes,
+        assignmentHistory: [
+          {
+            id: `${order.id}-assigned-${Date.now()}`,
+            appraiser: appraiserName,
+            action: order.appraiser === "Unassigned" ? "Assigned" : "Reassigned",
+            actor: "Nora Fields",
+            note: noteBody || "Assigned from CAS workload panel.",
+            at: "Just now"
+          },
+          ...order.assignmentHistory
+        ],
+        timeline: [
+          {
+            label: order.appraiser === "Unassigned" ? "Appraiser assigned" : "Appraiser reassigned",
+            detail: `${appraiserName} selected from workload panel`,
+            at: "Just now",
+            actor: "Nora Fields"
+          },
+          ...order.timeline
+        ],
+        auditTrail: [
+          {
+            id: `${order.id}-audit-${Date.now()}`,
+            action: `Assigned to ${appraiserName}`,
+            actor: "Nora Fields",
+            at: "Just now"
+          },
+          ...order.auditTrail
+        ]
+      };
+    });
+  }
+
+  function handleStatusChange(orderId: string, status: OrderStatus) {
+    updateOrder(orderId, (order) => ({
+      ...order,
+      status,
+      lastUpdate: `Status changed to ${status}`,
+      nextAction: status === "Completed" ? "No action" : order.nextAction,
+      timeline: [
+        {
+          label: "Status updated",
+          detail: `${order.status} moved to ${status}`,
+          at: "Just now",
+          actor: "Nora Fields"
+        },
+        ...order.timeline
+      ],
+      auditTrail: [
+        {
+          id: `${order.id}-status-${Date.now()}`,
+          action: `Status changed from ${order.status} to ${status}`,
+          actor: "Nora Fields",
+          at: "Just now"
+        },
+        ...order.auditTrail
+      ]
+    }));
+  }
+
+  function handleAddNote(orderId: string) {
+    updateOrder(orderId, (order) => ({
+      ...order,
+      lastUpdate: "Internal note added",
+      notes: [
+        {
+          id: `${order.id}-note-${Date.now()}`,
+          author: "Nora Fields",
+          body: "Followed up on current next action from the orders worklist.",
+          visibility: "internal",
+          createdAt: "Just now"
+        },
+        ...order.notes
+      ],
+      auditTrail: [
+        {
+          id: `${order.id}-note-audit-${Date.now()}`,
+          action: "Internal note added",
+          actor: "Nora Fields",
+          at: "Just now"
+        },
+        ...order.auditTrail
+      ]
+    }));
+  }
+
   return (
     <div className="min-h-screen bg-canvas text-slate-950 lg:grid lg:grid-cols-[264px_1fr]">
       <Sidebar activeView={activeView} onNavigate={setActiveView} />
       <div className="min-w-0">
         <Topbar title={currentTitle} onCommand={() => setCommandOpen(true)} query={globalQuery} setQuery={setGlobalQuery} />
         <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-          {activeView === "dashboard" && <DashboardView onOpenOrders={() => setActiveView("orders")} />}
-          {activeView === "orders" && <OrdersView selectedOrder={selectedOrder} onSelectOrder={setSelectedOrder} />}
+          {activeView === "dashboard" && <DashboardView orderList={orderList} onOpenOrders={() => setActiveView("orders")} />}
+          {activeView === "orders" && (
+            <OrdersView
+              orderList={orderList}
+              selectedOrder={selectedOrder}
+              onSelectOrder={(order) => setSelectedOrderId(order.id)}
+              onAssignOrder={handleAssignOrder}
+              onStatusChange={handleStatusChange}
+              onAddNote={handleAddNote}
+            />
+          )}
           {activeView === "new-order" && <NewOrderView />}
           {activeView === "calendar" && <CalendarView />}
-          {activeView === "review" && <ReviewView onSelectOrder={(order) => { setSelectedOrder(order); setActiveView("orders"); }} />}
-          {activeView === "appraisers" && <AppraiserPortalView />}
+          {activeView === "review" && <ReviewView orderList={orderList} onSelectOrder={(order) => { setSelectedOrderId(order.id); setActiveView("orders"); }} />}
+          {activeView === "appraisers" && <AppraiserPortalView orderList={orderList} />}
           {activeView === "clients" && <ClientsView />}
           {activeView === "vendors" && <VendorView />}
           {activeView === "accounting" && <AccountingView />}
@@ -158,10 +314,11 @@ export function CasApp() {
             setCommandOpen(false);
           }}
           onSelectOrder={(order) => {
-            setSelectedOrder(order);
+            setSelectedOrderId(order.id);
             setActiveView("orders");
             setCommandOpen(false);
           }}
+          orderList={orderList}
         />
       )}
     </div>
@@ -250,8 +407,8 @@ function Topbar({ title, onCommand, query, setQuery }: { title: string; onComman
   );
 }
 
-function DashboardView({ onOpenOrders }: { onOpenOrders: () => void }) {
-  const pastDue = orders.filter((order) => daysUntil(order.dueDate) < 0 && order.status !== "Completed");
+function DashboardView({ orderList, onOpenOrders }: { orderList: Order[]; onOpenOrders: () => void }) {
+  const pastDue = orderList.filter((order) => daysUntil(order.dueDate) < 0 && order.status !== "Completed");
   return (
     <>
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -286,7 +443,7 @@ function DashboardView({ onOpenOrders }: { onOpenOrders: () => void }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {orders.slice(0, 5).map((order) => (
+                {orderList.slice(0, 5).map((order) => (
                   <tr key={order.id} className="hover:bg-slate-50">
                     <td className="px-5 py-4 font-medium text-slate-950">{order.fileNumber}</td>
                     <td className="px-5 py-4"><StatusChip status={order.status} /></td>
@@ -323,50 +480,124 @@ function DashboardView({ onOpenOrders }: { onOpenOrders: () => void }) {
   );
 }
 
-function OrdersView({ selectedOrder, onSelectOrder }: { selectedOrder: Order; onSelectOrder: (order: Order) => void }) {
+function orderMatchesView(order: Order, view: SavedView) {
+  const days = daysUntil(order.dueDate);
+  const active = !["Completed", "Cancelled"].includes(order.status);
+
+  if (view === "All") return true;
+  if (view === "New") return order.status === "New";
+  if (view === "Unassigned") return order.status === "Unassigned";
+  if (view === "Assigned") return ["Assigned", "Accepted", "Inspection Scheduled", "Inspected", "Report In Progress"].includes(order.status);
+  if (view === "Due Today") return active && days === 0;
+  if (view === "Due This Week") return active && days >= 0 && days <= 7;
+  if (view === "Past Due") return active && days < 0;
+  if (view === "In Review") return ["Submitted", "In Review", "Ready for Delivery"].includes(order.status);
+  if (view === "Revisions") return ["Revisions Needed", "Revision Sent to Appraiser"].includes(order.status);
+  return order.status === "Completed";
+}
+
+function priorityRank(priority: Order["priority"]) {
+  const ranks: Record<Order["priority"], number> = {
+    Rush: 0,
+    High: 1,
+    Watch: 2,
+    Standard: 3
+  };
+  return ranks[priority];
+}
+
+function workloadPercent(appraiser: AppraiserProfile) {
+  return Math.round((appraiser.activeOrders / appraiser.capacity) * 100);
+}
+
+function recommendedAppraiser(order: Order) {
+  const covered = appraisers.filter((appraiser) => appraiser.counties.includes(order.county));
+  const candidates = covered.length ? covered : appraisers;
+  return [...candidates].sort((a, b) => workloadPercent(a) - workloadPercent(b))[0];
+}
+
+function OrdersView({
+  orderList,
+  selectedOrder,
+  onSelectOrder,
+  onAssignOrder,
+  onStatusChange,
+  onAddNote
+}: {
+  orderList: Order[];
+  selectedOrder: Order;
+  onSelectOrder: (order: Order) => void;
+  onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
+  onStatusChange: (orderId: string, status: OrderStatus) => void;
+  onAddNote: (orderId: string) => void;
+}) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | OrderStatus>("All");
   const [sortBy, setSortBy] = useState("Due date");
-  const [view, setView] = useState(savedViews[0]);
+  const [view, setView] = useState<SavedView>("All");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const filteredOrders = useMemo(() => {
     const needle = search.toLowerCase();
-    return orders
+    return orderList
+      .filter((order) => orderMatchesView(order, view))
       .filter((order) => statusFilter === "All" || order.status === statusFilter)
       .filter((order) =>
-        [order.fileNumber, order.client, order.borrower, order.address, order.appraiser, order.county]
+        [order.fileNumber, order.client, order.borrower, order.address, order.appraiser, order.reviewer, order.county, order.productType]
           .join(" ")
           .toLowerCase()
           .includes(needle)
       )
       .sort((a, b) => {
         if (sortBy === "Fee") return b.fee - a.fee;
-        if (sortBy === "Priority") return a.priority.localeCompare(b.priority);
+        if (sortBy === "Priority") return priorityRank(a.priority) - priorityRank(b.priority);
+        if (sortBy === "Last update") return a.lastUpdate.localeCompare(b.lastUpdate);
         return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
       });
-  }, [search, sortBy, statusFilter]);
+  }, [orderList, search, sortBy, statusFilter, view]);
 
-  function applySavedView(nextView: string) {
+  function applySavedView(nextView: SavedView) {
     setView(nextView);
-    if (nextView === "Unassigned") setStatusFilter("Unassigned");
-    else if (nextView === "In review") setStatusFilter("In Review");
-    else if (nextView === "Revisions") setStatusFilter("Revisions Needed");
-    else setStatusFilter("All");
+    setStatusFilter("All");
   }
 
   return (
-    <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_420px]">
+    <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_520px]">
       <section className="panel overflow-hidden">
         <div className="border-b border-line p-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                  <ListChecks className="h-4 w-4 text-brand-600" />
+                  Order Worklist
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {filteredOrders.length} visible orders across {orderList.length} active demo records.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="secondary-button"><SlidersHorizontal className="h-4 w-4" /> Bulk update</button>
+                <button className="secondary-button"><Download className="h-4 w-4" /> Export</button>
+                <button className="primary-button"><Plus className="h-4 w-4" /> New order</button>
+              </div>
+            </div>
+
+            <div className="grid gap-2 md:grid-cols-5">
+              <MetricTile label="Past due" value={String(orderList.filter((order) => orderMatchesView(order, "Past Due")).length)} />
+              <MetricTile label="Due today" value={String(orderList.filter((order) => orderMatchesView(order, "Due Today")).length)} />
+              <MetricTile label="Unassigned" value={String(orderList.filter((order) => order.status === "Unassigned" || order.status === "New").length)} />
+              <MetricTile label="In review" value={String(orderList.filter((order) => orderMatchesView(order, "In Review")).length)} />
+              <MetricTile label="Revisions" value={String(orderList.filter((order) => orderMatchesView(order, "Revisions")).length)} />
+            </div>
+
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               {savedViews.map((savedView) => (
                 <button
                   key={savedView}
                   onClick={() => applySavedView(savedView)}
                   className={cn(
-                    "rounded-md px-3 py-1.5 text-sm font-medium transition",
+                    "rounded-md border px-3 py-1.5 text-sm font-medium transition",
                     view === savedView ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   )}
                 >
@@ -374,41 +605,42 @@ function OrdersView({ selectedOrder, onSelectOrder }: { selectedOrder: Order; on
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button className="secondary-button"><SlidersHorizontal className="h-4 w-4" /> Bulk update</button>
-              <button className="secondary-button"><Download className="h-4 w-4" /> Export</button>
+
+            <div className="grid gap-2 md:grid-cols-[1fr_190px_160px]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input className="control w-full pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search file, borrower, client, address, appraiser" />
+              </div>
+              <select className="control" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "All" | OrderStatus)}>
+                {statusFilters.map((status) => <option key={status}>{status}</option>)}
+              </select>
+              <select className="control" value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+                <option>Due date</option>
+                <option>Fee</option>
+                <option>Priority</option>
+                <option>Last update</option>
+              </select>
             </div>
-          </div>
-          <div className="mt-4 grid gap-2 md:grid-cols-[1fr_180px_150px]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input className="control w-full pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search file, borrower, client, address" />
-            </div>
-            <select className="control" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "All" | OrderStatus)}>
-              {statusFilters.map((status) => <option key={status}>{status}</option>)}
-            </select>
-            <select className="control" value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
-              <option>Due date</option>
-              <option>Fee</option>
-              <option>Priority</option>
-            </select>
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] text-left text-sm">
+          <table className="w-full min-w-[1540px] text-left text-sm">
             <thead className="border-b border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500">
               <tr>
                 <th className="w-10 px-4 py-3"><span className="sr-only">Select</span></th>
                 <th className="px-4 py-3 font-semibold">File</th>
-                <th className="px-4 py-3 font-semibold">Product</th>
                 <th className="px-4 py-3 font-semibold">Client</th>
-                <th className="px-4 py-3 font-semibold">Borrower / Subject</th>
+                <th className="px-4 py-3 font-semibold">Borrower / Address</th>
+                <th className="px-4 py-3 font-semibold">Product</th>
                 <th className="px-4 py-3 font-semibold">Appraiser</th>
                 <th className="px-4 py-3 font-semibold">Reviewer</th>
                 <th className="px-4 py-3 font-semibold">Due</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
+                <th className="px-4 py-3 font-semibold">Priority</th>
                 <th className="px-4 py-3 font-semibold">Fee</th>
+                <th className="px-4 py-3 font-semibold">Last update</th>
                 <th className="px-4 py-3 font-semibold">Next action</th>
+                <th className="px-4 py-3 font-semibold">Quick actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -424,16 +656,21 @@ function OrdersView({ selectedOrder, onSelectOrder }: { selectedOrder: Order; on
                   </td>
                   <td className="px-4 py-4">
                     <div className="font-semibold text-slate-950">{order.fileNumber}</div>
-                    <div className="mt-1 flex items-center gap-1.5"><span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", priorityTone(order.priority))}>{order.priority}</span><span className="text-xs text-slate-500">{order.documents} docs</span></div>
+                    <div className="mt-1 text-xs text-slate-500">{order.county} County - {order.documents} docs</div>
                   </td>
-                  <td className="px-4 py-4 text-slate-700">{order.productType}</td>
                   <td className="px-4 py-4 text-slate-700">{order.client}</td>
                   <td className="px-4 py-4">
                     <div className="font-medium text-slate-800">{order.borrower}</div>
-                    <div className="mt-1 text-xs text-slate-500">{order.address}, {order.city}</div>
+                    <div className="mt-1 max-w-[250px] truncate text-xs text-slate-500">{order.address}, {order.city}, {order.state}</div>
                   </td>
+                  <td className="px-4 py-4 text-slate-700">{order.productType}</td>
                   <td className="px-4 py-4">
-                    <select className="h-8 rounded-md border border-line bg-white px-2 text-xs text-slate-700" defaultValue={order.appraiser} onClick={(event) => event.stopPropagation()}>
+                    <select
+                      className="h-8 rounded-md border border-line bg-white px-2 text-xs text-slate-700"
+                      value={order.appraiser}
+                      onChange={(event) => onAssignOrder(order.id, event.target.value, "Assigned from inline order table.")}
+                      onClick={(event) => event.stopPropagation()}
+                    >
                       <option>{order.appraiser}</option>
                       {appraisers.map((appraiser) => <option key={appraiser.id}>{appraiser.name}</option>)}
                     </select>
@@ -441,11 +678,20 @@ function OrdersView({ selectedOrder, onSelectOrder }: { selectedOrder: Order; on
                   <td className="px-4 py-4 text-slate-700">{order.reviewer}</td>
                   <td className="px-4 py-4"><DueChip date={order.dueDate} /></td>
                   <td className="px-4 py-4"><StatusChip status={order.status} /></td>
+                  <td className="px-4 py-4"><PriorityChip priority={order.priority} /></td>
                   <td className="px-4 py-4 font-medium text-slate-800">{formatCurrency(order.fee)}</td>
+                  <td className="px-4 py-4 text-slate-600">{order.lastUpdate}</td>
                   <td className="px-4 py-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="max-w-[220px] truncate text-slate-700">{order.nextAction}</span>
-                      <button className="icon-button opacity-0 transition group-hover:opacity-100" aria-label="More order actions" onClick={(event) => event.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></button>
+                    <div className="max-w-[220px] truncate text-slate-700">{order.nextAction}</div>
+                  </td>
+                  <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
+                    <div className="flex items-center gap-1.5">
+                      <button className="icon-button" aria-label={`Open ${order.fileNumber}`} onClick={() => onSelectOrder(order)}><Eye className="h-4 w-4" /></button>
+                      <button className="icon-button" aria-label={`Assign ${order.fileNumber}`} onClick={() => onAssignOrder(order.id, recommendedAppraiser(order).name, "Assigned from quick action recommendation.")}><UserCheck className="h-4 w-4" /></button>
+                      <select className="h-9 rounded-md border border-line bg-white px-2 text-xs text-slate-700" value={order.status} onChange={(event) => onStatusChange(order.id, event.target.value as OrderStatus)}>
+                        {orderStatusOptions.map((status) => <option key={status}>{status}</option>)}
+                      </select>
+                      <button className="icon-button" aria-label={`Add note to ${order.fileNumber}`} onClick={() => onAddNote(order.id)}><MessageSquare className="h-4 w-4" /></button>
                     </div>
                   </td>
                 </tr>
@@ -458,21 +704,35 @@ function OrdersView({ selectedOrder, onSelectOrder }: { selectedOrder: Order; on
           <span>{selectedIds.length} selected</span>
         </div>
       </section>
-      <OrderDetailPanel order={selectedOrder} />
+      <OrderDetailPanel order={selectedOrder} onAssignOrder={onAssignOrder} onStatusChange={onStatusChange} onAddNote={onAddNote} />
     </div>
   );
 }
 
-function OrderDetailPanel({ order }: { order: Order }) {
+function OrderDetailPanel({
+  order,
+  onAssignOrder,
+  onStatusChange,
+  onAddNote
+}: {
+  order: Order;
+  onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
+  onStatusChange: (orderId: string, status: OrderStatus) => void;
+  onAddNote: (orderId: string) => void;
+}) {
   const reviewComplete = order.reviewItems.filter((item) => item.complete).length;
   return (
-    <aside className="panel overflow-hidden">
-      <div className="border-b border-line p-5">
+    <aside className="panel overflow-hidden 2xl:sticky 2xl:top-20 2xl:max-h-[calc(100vh-6rem)] 2xl:overflow-y-auto">
+      <div className="border-b border-line bg-white p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-slate-950">{order.fileNumber}</span><StatusChip status={order.status} /></div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-slate-950">{order.fileNumber}</span>
+              <StatusChip status={order.status} />
+              <PriorityChip priority={order.priority} />
+            </div>
             <h2 className="mt-2 text-xl font-semibold text-slate-950">{order.address}</h2>
-            <p className="mt-1 text-sm text-slate-500">{order.borrower} - {order.client}</p>
+            <p className="mt-1 text-sm text-slate-500">{order.borrower} - {order.client} - {order.productType}</p>
           </div>
           <button className="icon-button" aria-label="Close order detail"><X className="h-4 w-4" /></button>
         </div>
@@ -484,40 +744,49 @@ function OrderDetailPanel({ order }: { order: Order }) {
         </div>
       </div>
       <div className="grid gap-5 p-5">
-        <div>
+        <section>
           <h3 className="text-sm font-semibold text-slate-950">Quick Actions</h3>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            {[
-              "Assign",
-              "Status",
-              "Schedule",
-              "Add note",
-              "Upload",
-              "Deliver"
-            ].map((action) => (
-              <button key={action} className="secondary-button justify-center px-2">{action}</button>
-            ))}
+            <button className="secondary-button justify-center px-2" onClick={() => onAssignOrder(order.id, recommendedAppraiser(order).name, "Assigned from order detail recommendation.")}><UserCheck className="h-4 w-4" /> Assign</button>
+            <button className="secondary-button justify-center px-2" onClick={() => onAddNote(order.id)}><MessageSquare className="h-4 w-4" /> Add note</button>
+            <select className="control" value={order.status} onChange={(event) => onStatusChange(order.id, event.target.value as OrderStatus)}>
+              {orderStatusOptions.map((status) => <option key={status}>{status}</option>)}
+            </select>
+            <button className="secondary-button justify-center px-2"><UploadCloud className="h-4 w-4" /> Upload</button>
           </div>
-        </div>
-        <div className="border-t border-line pt-5">
-          <h3 className="text-sm font-semibold text-slate-950">Order Sections</h3>
-          <div className="mt-3 grid gap-2 text-sm text-slate-700">
-            {[
-              ["Property", `${order.propertyType} in ${order.county} County`],
-              ["Loan", `${order.loanType} - ${order.occupancy}`],
-              ["Accounting", `${formatCurrency(order.appraiserPayout)} payout after ${formatCurrency(order.techFee)} tech fee`],
-              ["Documents", `${order.documents} uploaded files`],
-              ["Review", `${reviewComplete}/${Math.max(order.reviewItems.length, 1)} checklist items complete`]
-            ].map(([label, value]) => (
-              <div key={label} className="flex items-center justify-between gap-4 rounded-md border border-line px-3 py-2">
-                <span className="font-medium text-slate-600">{label}</span>
-                <span className="text-right text-slate-800">{value}</span>
-              </div>
-            ))}
+        </section>
+
+        <AssignmentPanel order={order} onAssignOrder={onAssignOrder} />
+
+        <DetailSection icon={Home} title="Property, Borrower, Client">
+          <div className="grid gap-2 text-sm">
+            <InfoRow label="Subject" value={`${order.address}, ${order.city}, ${order.state} ${order.zip}`} />
+            <InfoRow label="County / parcel" value={`${order.county} / ${order.parcelNumber}`} />
+            <InfoRow label="Borrower" value={`${order.borrower} - ${order.contactPhone}`} />
+            <InfoRow label="Access" value={order.accessInfo} />
+            <InfoRow label="Client contact" value={`${order.client} - ${order.lenderContact}`} />
           </div>
-        </div>
-        <div className="border-t border-line pt-5">
-          <h3 className="text-sm font-semibold text-slate-950">Timeline</h3>
+        </DetailSection>
+
+        <DetailSection icon={ClipboardCheck} title="Product and Assignment">
+          <div className="grid gap-2 text-sm">
+            <InfoRow label="Product" value={order.productType} />
+            <InfoRow label="Loan / occupancy" value={`${order.loanType} - ${order.occupancy}`} />
+            <InfoRow label="Property type" value={order.propertyType} />
+            <InfoRow label="Preference" value={order.assignmentPreference} />
+            <InfoRow label="Reviewer" value={order.reviewer} />
+          </div>
+        </DetailSection>
+
+        <DetailSection icon={ReceiptText} title="Fee and Accounting Snapshot">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <MetricTile label="Order fee" value={formatCurrency(order.fee)} />
+            <MetricTile label="Tech fee" value={formatCurrency(order.techFee)} />
+            <MetricTile label="Payout" value={formatCurrency(order.appraiserPayout)} />
+          </div>
+        </DetailSection>
+
+        <DetailSection icon={Clock3} title="Status Timeline">
           <div className="mt-3 space-y-3">
             {order.timeline.map((item) => (
               <div key={`${item.label}-${item.at}`} className="grid grid-cols-[16px_1fr] gap-3">
@@ -530,9 +799,9 @@ function OrderDetailPanel({ order }: { order: Order }) {
               </div>
             ))}
           </div>
-        </div>
-        <div className="border-t border-line pt-5">
-          <h3 className="text-sm font-semibold text-slate-950">Notes</h3>
+        </DetailSection>
+
+        <DetailSection icon={MessageSquare} title="Internal Notes">
           <div className="mt-3 space-y-2">
             {(order.notes.length ? order.notes : [{ id: "empty", author: "CAS", body: "No notes yet.", visibility: "internal", createdAt: "Now" }]).map((note) => (
               <div key={note.id} className="rounded-md border border-line px-3 py-2 text-sm">
@@ -541,106 +810,352 @@ function OrderDetailPanel({ order }: { order: Order }) {
               </div>
             ))}
           </div>
-        </div>
+        </DetailSection>
+
+        <DetailSection icon={Send} title="Client-Facing Comments">
+          <ListOrEmpty
+            empty="No client-facing comments yet."
+            items={order.clientComments.map((comment) => `${comment.createdAt} - ${comment.author}: ${comment.body}`)}
+          />
+        </DetailSection>
+
+        <DetailSection icon={FilePlus2} title="Documents and Uploads">
+          <div className="space-y-2">
+            {order.documentsList.map((document) => (
+              <div key={document.id} className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-slate-900">{document.name}</div>
+                  <div className="text-xs text-slate-500">{document.type} - {document.uploadedBy} - {document.uploadedAt}</div>
+                </div>
+                <DocumentStatusChip status={document.status} />
+              </div>
+            ))}
+          </div>
+        </DetailSection>
+
+        <DetailSection icon={History} title="Assignment History">
+          <ListOrEmpty
+            empty="No assignment history yet."
+            items={order.assignmentHistory.map((item) => `${item.at} - ${item.action} to ${item.appraiser} by ${item.actor}. ${item.note}`)}
+          />
+        </DetailSection>
+
+        <DetailSection icon={FileCheck2} title="Review">
+          <div className="rounded-md border border-line bg-slate-50 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium text-slate-900">Checklist progress</span>
+              <span className="text-slate-600">{reviewComplete}/{Math.max(order.reviewItems.length, 1)} complete</span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {(order.reviewItems.length ? order.reviewItems : [{ label: "Review checklist will populate when submitted", category: "Review", complete: false }]).map((item) => (
+                <div key={`${item.category}-${item.label}`} className="flex items-center justify-between gap-2 text-xs text-slate-600">
+                  <span>{item.category}: {item.label}</span>
+                  <span className={cn("rounded-full px-2 py-0.5", item.complete ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800")}>{item.complete ? "Done" : "Open"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DetailSection>
+
+        <DetailSection icon={AlertTriangle} title="Revision Log">
+          <ListOrEmpty
+            empty="No revisions requested."
+            items={order.revisionLog.map((item) => `${item.requestedAt} - ${item.status}: ${item.summary}`)}
+          />
+        </DetailSection>
+
+        <DetailSection icon={Archive} title="Audit Trail">
+          <ListOrEmpty
+            empty="No audit entries yet."
+            items={order.auditTrail.map((item) => `${item.at} - ${item.actor}: ${item.action}`)}
+          />
+        </DetailSection>
       </div>
     </aside>
   );
 }
 
+function AssignmentPanel({ order, onAssignOrder }: { order: Order; onAssignOrder: (orderId: string, appraiserName: string, note: string) => void }) {
+  const recommended = recommendedAppraiser(order);
+  const [appraiserName, setAppraiserName] = useState(order.appraiser === "Unassigned" ? recommended.name : order.appraiser);
+  const [assignmentNote, setAssignmentNote] = useState(`Coverage: ${order.county}. Preference: ${order.assignmentPreference}.`);
+  const selectedAppraiser = appraisers.find((appraiser) => appraiser.name === appraiserName) ?? recommended;
+
+  return (
+    <section className="border-t border-line pt-5">
+      <div className="flex items-center gap-2">
+        <UserCheck className="h-4 w-4 text-brand-600" />
+        <h3 className="text-sm font-semibold text-slate-950">Assign / Reassign</h3>
+      </div>
+      <div className="mt-3 grid gap-3">
+        <select className="control w-full" value={appraiserName} onChange={(event) => setAppraiserName(event.target.value)}>
+          {appraisers.map((appraiser) => (
+            <option key={appraiser.id}>{appraiser.name}</option>
+          ))}
+        </select>
+        <div className="rounded-md border border-line bg-slate-50 p-3">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium text-slate-800">{selectedAppraiser.name}</span>
+            <span className="text-slate-500">{selectedAppraiser.activeOrders}/{selectedAppraiser.capacity} active</span>
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-white">
+            <div className={cn("h-2 rounded-full", workloadPercent(selectedAppraiser) > 85 ? "bg-rose-500" : "bg-brand-600")} style={{ width: `${Math.min(100, workloadPercent(selectedAppraiser))}%` }} />
+          </div>
+          <div className="mt-2 text-xs text-slate-500">
+            {selectedAppraiser.counties.join(", ")} - {selectedAppraiser.avgTurnDays}d avg turn - {selectedAppraiser.revisionRate}% revision rate
+          </div>
+        </div>
+        <textarea className="control min-h-20 w-full py-3" value={assignmentNote} onChange={(event) => setAssignmentNote(event.target.value)} />
+        <button className="primary-button justify-center" onClick={() => onAssignOrder(order.id, appraiserName, assignmentNote)}>
+          <UserCheck className="h-4 w-4" />
+          Assign and update status
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function DetailSection({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children: React.ReactNode }) {
+  return (
+    <section className="border-t border-line pt-5">
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4 text-brand-600" />
+        <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+      </div>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-md border border-line px-3 py-2">
+      <span className="shrink-0 font-medium text-slate-600">{label}</span>
+      <span className="text-right text-slate-800">{value}</span>
+    </div>
+  );
+}
+
+function ListOrEmpty({ items, empty }: { items: string[]; empty: string }) {
+  if (!items.length) {
+    return <div className="rounded-md border border-dashed border-line px-3 py-3 text-sm text-slate-500">{empty}</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {items.map((item) => (
+        <div key={item} className="rounded-md border border-line px-3 py-2 text-sm text-slate-700">{item}</div>
+      ))}
+    </div>
+  );
+}
+
+function DocumentStatusChip({ status }: { status: Order["documentsList"][number]["status"] }) {
+  const tone = {
+    Ready: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    Missing: "border-rose-200 bg-rose-50 text-rose-700",
+    "Needs review": "border-amber-200 bg-amber-50 text-amber-800",
+    Expired: "border-red-200 bg-red-50 text-red-700"
+  }[status];
+
+  return <span className={cn("chip shrink-0", tone)}>{status}</span>;
+}
+
 function NewOrderView() {
   return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
+    <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
       <form className="panel p-5">
         <SectionHeader icon={Plus} title="New Order Intake" />
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <Field label="Client"><select className="control w-full">{clients.map((client) => <option key={client}>{client}</option>)}</select></Field>
-          <Field label="AMC / lender"><input className="control w-full" defaultValue="Direct Lender" /></Field>
-          <Field label="Borrower"><input className="control w-full" placeholder="Borrower name" /></Field>
-          <Field label="Product"><select className="control w-full">{productTypes.map((product) => <option key={product}>{product}</option>)}</select></Field>
-          <Field label="Property address"><input className="control w-full" placeholder="Street address" /></Field>
-          <Field label="City / state / ZIP"><input className="control w-full" placeholder="City, ST ZIP" /></Field>
-          <Field label="County"><input className="control w-full" placeholder="County" /></Field>
-          <Field label="Due date"><input className="control w-full" type="date" /></Field>
-          <Field label="Fee"><input className="control w-full" defaultValue="575" /></Field>
-          <Field label="Tech fee"><input className="control w-full" defaultValue="25" /></Field>
-          <Field label="Priority"><select className="control w-full"><option>Standard</option><option>High</option><option>Rush</option></select></Field>
-          <Field label="Assignment preference"><select className="control w-full"><option>Best workload fit</option><option>Preferred appraiser</option><option>Manual assignment</option></select></Field>
-          <Field label="Access / inspection info" span><textarea className="control min-h-24 w-full py-3" placeholder="Contact, access notes, preferred inspection window" /></Field>
-          <Field label="Internal notes" span><textarea className="control min-h-24 w-full py-3" placeholder="Order notes" /></Field>
+        <div className="mt-5 grid gap-5">
+          <section className="rounded-md border border-line p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Building2 className="h-4 w-4 text-brand-600" /> Client and Product</div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <Field label="Client"><select className="control w-full">{clients.map((client) => <option key={client}>{client}</option>)}</select></Field>
+              <Field label="Lender contact"><input className="control w-full" defaultValue="Direct Lender - Mallory Chen" /></Field>
+              <Field label="Product type"><select className="control w-full">{productTypes.map((product) => <option key={product}>{product}</option>)}</select></Field>
+              <Field label="Loan type">
+                <select className="control w-full">
+                  {["Conventional", "FHA", "VA", "USDA", "Jumbo", "HELOC", "Portfolio"].map((loanType) => <option key={loanType}>{loanType}</option>)}
+                </select>
+              </Field>
+              <Field label="Due date"><input className="control w-full" type="date" defaultValue="2026-07-07" /></Field>
+              <Field label="Priority">
+                <select className="control w-full">
+                  <option>Standard</option>
+                  <option>Watch</option>
+                  <option>High</option>
+                  <option>Rush</option>
+                </select>
+              </Field>
+            </div>
+          </section>
+
+          <section className="rounded-md border border-line p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Home className="h-4 w-4 text-brand-600" /> Borrower and Property</div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <Field label="Borrower"><input className="control w-full" placeholder="Borrower name" /></Field>
+              <Field label="Contact name"><input className="control w-full" placeholder="Listing agent, borrower, or tenant" /></Field>
+              <Field label="Property address" span><input className="control w-full" placeholder="Street address" /></Field>
+              <Field label="City"><input className="control w-full" placeholder="City" /></Field>
+              <Field label="State / ZIP"><input className="control w-full" placeholder="GA 30064" /></Field>
+              <Field label="County"><input className="control w-full" placeholder="County" /></Field>
+              <Field label="Phone"><input className="control w-full" placeholder="(555) 010-0123" /></Field>
+              <Field label="Contact / access info" span><textarea className="control min-h-24 w-full py-3" placeholder="Gate codes, lockbox, inspection windows, occupant instructions" /></Field>
+            </div>
+          </section>
+
+          <section className="rounded-md border border-line p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><ReceiptText className="h-4 w-4 text-brand-600" /> Fees and Assignment</div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <Field label="Fee"><input className="control w-full" defaultValue="650" inputMode="numeric" /></Field>
+              <Field label="Tech fee"><input className="control w-full" defaultValue="35" inputMode="numeric" /></Field>
+              <Field label="Assignment preference">
+                <select className="control w-full">
+                  <option>Best workload fit</option>
+                  <option>Preferred appraiser</option>
+                  <option>County specialist</option>
+                  <option>Manual assignment</option>
+                </select>
+              </Field>
+              <Field label="Preferred appraiser">
+                <select className="control w-full">
+                  <option>CAS recommendation</option>
+                  {appraisers.map((appraiser) => <option key={appraiser.id}>{appraiser.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Internal notes" span><textarea className="control min-h-24 w-full py-3" placeholder="Client rules, fee exception, underwriting sensitivity, risk flags" /></Field>
+            </div>
+          </section>
+
+          <section className="rounded-md border border-dashed border-brand-200 bg-brand-50/40 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><UploadCloud className="h-4 w-4 text-brand-600" /> Document Upload Placeholder</div>
+                <p className="mt-1 text-sm text-slate-500">Engagement letter, purchase contract, exhibits, lender instructions, prior appraisal, and supporting files.</p>
+              </div>
+              <button type="button" className="secondary-button"><UploadCloud className="h-4 w-4" /> Add documents</button>
+            </div>
+          </section>
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-5">
           <button type="button" className="primary-button"><CheckCircle2 className="h-4 w-4" /> Create order</button>
           <button type="button" className="secondary-button"><Sparkles className="h-4 w-4" /> Parse order PDF</button>
-          <button type="button" className="secondary-button"><UploadCloud className="h-4 w-4" /> Upload documents</button>
+          <button type="button" className="secondary-button"><UserCheck className="h-4 w-4" /> Save and assign</button>
         </div>
       </form>
-      <aside className="panel p-5">
-        <SectionHeader icon={Sparkles} title="Intake Intelligence" />
-        <div className="mt-4 space-y-3 text-sm">
-          {[
-            ["Auto-fill", "Borrower, address, client, product, and fee fields"],
-            ["Complexity", "Flag rural, luxury, acreage, FHA, VA, and repair risk"],
-            ["Assignment", "Recommend appraiser by coverage, workload, and revision rate"],
-            ["Documents", "Detect missing engagement letter, contract, W-9, or E&O"]
-          ].map(([label, body]) => (
-            <div key={label} className="rounded-md border border-line p-3">
-              <div className="font-semibold text-slate-900">{label}</div>
-              <div className="mt-1 text-slate-500">{body}</div>
+      <aside className="grid content-start gap-5">
+        <div className="panel p-5">
+          <SectionHeader icon={Sparkles} title="Intake Intelligence" />
+          <div className="mt-4 space-y-3 text-sm">
+            {[
+              ["Auto-fill", "Borrower, address, client, product, and fee fields"],
+              ["Complexity", "Flag rural, luxury, acreage, FHA, VA, and repair risk"],
+              ["Assignment", "Recommend appraiser by coverage, workload, and revision rate"],
+              ["Documents", "Detect missing engagement letter, contract, W-9, or E&O"]
+            ].map(([label, body]) => (
+              <div key={label} className="rounded-md border border-line p-3">
+                <div className="font-semibold text-slate-900">{label}</div>
+                <div className="mt-1 text-slate-500">{body}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="panel p-5">
+          <SectionHeader icon={UserCheck} title="Assignment Preview" />
+          <div className="mt-4 rounded-md border border-line bg-slate-50 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold text-slate-900">Recommended</span>
+              <span className="text-slate-500">{appraisers[0].activeOrders}/{appraisers[0].capacity} active</span>
             </div>
-          ))}
+            <div className="mt-1 text-slate-600">{appraisers[0].name}</div>
+            <div className="mt-2 h-2 rounded-full bg-white"><div className="h-2 rounded-full bg-brand-600" style={{ width: `${workloadPercent(appraisers[0])}%` }} /></div>
+          </div>
+          <div className="mt-3 grid gap-2 text-sm">
+            <InfoRow label="Starting status" value="New" />
+            <InfoRow label="After assignment" value="Assigned" />
+            <InfoRow label="Default reviewer" value={reviewers[0].name} />
+          </div>
         </div>
       </aside>
     </section>
   );
 }
 
-function ReviewView({ onSelectOrder }: { onSelectOrder: (order: Order) => void }) {
-  const reviewOrders = orders.filter((order) => ["Submitted", "In Review", "Revisions Needed"].includes(order.status));
+function ReviewView({ orderList, onSelectOrder }: { orderList: Order[]; onSelectOrder: (order: Order) => void }) {
+  const reviewOrders = orderList.filter((order) => ["Submitted", "In Review", "Revisions Needed", "Ready for Delivery"].includes(order.status));
+  const openFindings = reviewOrders.flatMap((order) => order.reviewItems.filter((item) => !item.complete).map((item) => ({ order, item }))).slice(0, 6);
+
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
       <div className="panel overflow-hidden">
         <TableHeader title="Review Queue" icon={ClipboardCheck} />
+        <div className="grid gap-3 border-b border-line p-4 sm:grid-cols-4">
+          <MetricTile label="Ready for review" value={String(reviewOrders.length)} />
+          <MetricTile label="Needs revisions" value={String(orderList.filter((order) => order.status === "Revisions Needed").length)} />
+          <MetricTile label="Open checklist items" value={String(openFindings.length)} />
+          <MetricTile label="Reviewers" value={String(reviewers.length)} />
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] text-left text-sm">
-            <thead className="border-y border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500"><tr><th className="px-5 py-3">File</th><th className="px-5 py-3">Appraiser</th><th className="px-5 py-3">Client</th><th className="px-5 py-3">Due</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Priority</th></tr></thead>
+          <table className="w-full min-w-[980px] text-left text-sm">
+            <thead className="border-y border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500"><tr><th className="px-5 py-3">File</th><th className="px-5 py-3">Borrower</th><th className="px-5 py-3">Appraiser</th><th className="px-5 py-3">Reviewer</th><th className="px-5 py-3">Due</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Checklist</th><th className="px-5 py-3">Priority</th></tr></thead>
             <tbody className="divide-y divide-line">
-              {reviewOrders.map((order) => (
-                <tr key={order.id} className="hover:bg-slate-50" onClick={() => onSelectOrder(order)}>
+              {reviewOrders.map((order) => {
+                const complete = order.reviewItems.filter((item) => item.complete).length;
+                return (
+                <tr key={order.id} className="cursor-pointer hover:bg-slate-50" onClick={() => onSelectOrder(order)}>
                   <td className="px-5 py-4 font-semibold text-slate-950">{order.fileNumber}</td>
+                  <td className="px-5 py-4 text-slate-700">{order.borrower}</td>
                   <td className="px-5 py-4 text-slate-700">{order.appraiser}</td>
-                  <td className="px-5 py-4 text-slate-700">{order.client}</td>
+                  <td className="px-5 py-4 text-slate-700">{order.reviewer}</td>
                   <td className="px-5 py-4"><DueChip date={order.dueDate} /></td>
                   <td className="px-5 py-4"><StatusChip status={order.status} /></td>
-                  <td className="px-5 py-4"><span className={cn("rounded-full px-2 py-1 text-xs font-semibold", priorityTone(order.priority))}>{order.priority}</span></td>
+                  <td className="px-5 py-4 text-slate-700">{complete}/{Math.max(order.reviewItems.length, 1)}</td>
+                  <td className="px-5 py-4"><PriorityChip priority={order.priority} /></td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
       </div>
       <aside className="panel p-5">
-        <SectionHeader icon={FileCheck2} title="Checklist Templates" />
+        <SectionHeader icon={FileCheck2} title="Review Focus" />
+        <div className="mt-4 space-y-2">
+          {openFindings.length ? openFindings.map(({ order, item }) => (
+            <button key={`${order.id}-${item.category}-${item.label}`} className="w-full rounded-md border border-line px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => onSelectOrder(order)}>
+              <div className="font-medium text-slate-900">{order.fileNumber}</div>
+              <div className="mt-1 text-xs text-slate-500">{item.category}: {item.label}</div>
+            </button>
+          )) : <div className="rounded-md border border-dashed border-line px-3 py-3 text-sm text-slate-500">No open review findings.</div>}
+        </div>
+        <div className="mt-5 border-t border-line pt-5">
+          <SectionHeader icon={FileCheck2} title="Checklist Templates" />
         <div className="mt-4 grid gap-2 text-sm">
           {["General appraisal", "UAD", "FHA", "VA", "Conventional", "Required exhibits", "Client-specific rules"].map((item) => (
             <div key={item} className="flex items-center justify-between rounded-md border border-line px-3 py-2"><span>{item}</span><ChevronDown className="h-4 w-4 text-slate-400" /></div>
           ))}
+        </div>
         </div>
       </aside>
     </section>
   );
 }
 
-function AppraiserPortalView() {
+function AppraiserPortalView({ orderList }: { orderList: Order[] }) {
+  const assignedOrders = orderList.filter((order) => !["New", "Unassigned", "Completed", "Cancelled"].includes(order.status));
+  const dueToday = assignedOrders.filter((order) => daysUntil(order.dueDate) === 0);
+  const revisions = assignedOrders.filter((order) => order.status === "Revisions Needed" || order.status === "Revision Sent to Appraiser");
+  const payoutPending = assignedOrders.reduce((total, order) => total + order.appraiserPayout, 0);
+
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
       <div className="panel overflow-hidden">
         <TableHeader title="Appraiser Workbench" icon={Users2} />
         <div className="grid gap-3 border-b border-line p-4 sm:grid-cols-4">
           {[
-            ["Assigned", "23"],
-            ["Due today", "4"],
-            ["Revisions", "2"],
-            ["Payout pending", "$17.9k"]
+            ["Assigned", String(assignedOrders.length)],
+            ["Due today", String(dueToday.length)],
+            ["Revisions", String(revisions.length)],
+            ["Payout pending", formatCurrency(payoutPending)]
           ].map(([label, value]) => <MetricTile key={label} label={label} value={value} />)}
         </div>
         <div className="overflow-x-auto">
@@ -664,7 +1179,7 @@ function AppraiserPortalView() {
       <aside className="panel p-5">
         <SectionHeader icon={CalendarDays} title="Inspection Calendar" />
         <div className="mt-4 space-y-3">
-          {orders.filter((order) => order.inspectionDate).map((order) => (
+          {orderList.filter((order) => order.inspectionDate).map((order) => (
             <div key={order.id} className="rounded-md border border-line p-3 text-sm">
               <div className="font-semibold text-slate-900">{formatDate(order.inspectionDate ?? order.dueDate)} - {order.fileNumber}</div>
               <div className="mt-1 text-slate-500">{order.address}, {order.city}</div>
@@ -782,9 +1297,9 @@ function SettingsView() {
   );
 }
 
-function CommandPalette({ query, setQuery, onClose, onNavigate, onSelectOrder }: { query: string; setQuery: (value: string) => void; onClose: () => void; onNavigate: (view: NavId) => void; onSelectOrder: (order: Order) => void }) {
+function CommandPalette({ query, setQuery, onClose, onNavigate, onSelectOrder, orderList }: { query: string; setQuery: (value: string) => void; onClose: () => void; onNavigate: (view: NavId) => void; onSelectOrder: (order: Order) => void; orderList: Order[] }) {
   const needle = query.toLowerCase();
-  const matchedOrders = orders.filter((order) => [order.fileNumber, order.borrower, order.client, order.address].join(" ").toLowerCase().includes(needle)).slice(0, 5);
+  const matchedOrders = orderList.filter((order) => [order.fileNumber, order.borrower, order.client, order.address, order.appraiser].join(" ").toLowerCase().includes(needle)).slice(0, 5);
   const matchedNav = navItems.filter((item) => item.label.toLowerCase().includes(needle)).slice(0, 5);
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/30 p-4 backdrop-blur-sm" onMouseDown={onClose}>
@@ -912,6 +1427,10 @@ function MetricTile({ label, value }: { label: string; value: string }) {
 
 function StatusChip({ status }: { status: OrderStatus }) {
   return <span className={cn("chip", statusTone(status))}>{status}</span>;
+}
+
+function PriorityChip({ priority }: { priority: Order["priority"] }) {
+  return <span className={cn("chip border-transparent", priorityTone(priority))}>{priority}</span>;
 }
 
 function DueChip({ date }: { date: string }) {
