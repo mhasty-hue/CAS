@@ -20,7 +20,7 @@ export function formatDate(value: string) {
 }
 
 export function daysUntil(value: string) {
-  const today = new Date("2026-06-29T12:00:00-04:00");
+  const today = new Date("2026-07-01T12:00:00-04:00");
   const target = new Date(`${value}T12:00:00-04:00`);
   return Math.ceil((target.getTime() - today.getTime()) / 86_400_000);
 }
