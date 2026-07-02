@@ -63,6 +63,39 @@ export type Note = {
   createdAt: string;
 };
 
+export type OrderDocument = {
+  id: string;
+  name: string;
+  type: string;
+  status: "Ready" | "Missing" | "Needs review" | "Expired";
+  uploadedBy: string;
+  uploadedAt: string;
+};
+
+export type AssignmentHistoryItem = {
+  id: string;
+  appraiser: string;
+  action: "Assigned" | "Reassigned" | "Accepted" | "Declined";
+  actor: string;
+  note: string;
+  at: string;
+};
+
+export type RevisionLogItem = {
+  id: string;
+  requestedBy: string;
+  summary: string;
+  status: "Open" | "Sent to appraiser" | "Resolved";
+  requestedAt: string;
+};
+
+export type AuditTrailItem = {
+  id: string;
+  action: string;
+  actor: string;
+  at: string;
+};
+
 export type ReviewItem = {
   label: string;
   category: string;
@@ -98,8 +131,19 @@ export type Order = {
   loanType: string;
   occupancy: string;
   propertyType: string;
+  contactName: string;
+  contactPhone: string;
+  accessInfo: string;
+  assignmentPreference: string;
+  lenderContact: string;
+  parcelNumber: string;
   timeline: TimelineItem[];
   notes: Note[];
+  clientComments: Note[];
+  documentsList: OrderDocument[];
+  assignmentHistory: AssignmentHistoryItem[];
+  revisionLog: RevisionLogItem[];
+  auditTrail: AuditTrailItem[];
   reviewItems: ReviewItem[];
 };
 
@@ -115,6 +159,13 @@ export type AppraiserProfile = {
   revisionRate: number;
   payoutDue: number;
   licenseStatus: "Current" | "Expiring" | "Missing";
+};
+
+export type ReviewerProfile = {
+  id: string;
+  name: string;
+  queue: number;
+  specialties: string[];
 };
 
 export type VendorProfile = {
