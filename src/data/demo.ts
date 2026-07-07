@@ -40,7 +40,8 @@ export const permissionCatalog: Array<{ key: PermissionKey; label: string; group
   { key: "invite_vendors", label: "Invite vendors", group: "AMC" },
   { key: "approve_vendors", label: "Approve vendors", group: "AMC" },
   { key: "manage_workflows", label: "Manage workflows", group: "Admin" },
-  { key: "export_reports", label: "Export reports", group: "Reporting" }
+  { key: "export_reports", label: "Export reports", group: "Reporting" },
+  { key: "view_own_orders_only", label: "View own orders only", group: "Orders" }
 ];
 
 const documents = (fileNumber: string, reportStatus: "Ready" | "Missing" | "Needs review" = "Ready") => [
@@ -849,10 +850,21 @@ export const vendors: VendorProfile[] = [
     contact: "Renee Walker",
     distance: 8.4,
     coverage: ["Cobb", "Fulton", "Cherokee"],
+    coverageZips: ["30064", "30339", "30144"],
+    radiusMiles: 35,
+    officeAddress: "44 Church Street, Marietta, GA",
+    roster: ["Renee Walker", "Owen Walker", "Lena Cruz"],
     specialties: ["FHA", "Conventional", "Luxury"],
     status: "Approved",
     turnTime: 5,
     capacity: 14,
+    workload: 9,
+    rating: 4.8,
+    feeSheet: [
+      { product: "1004 URAR", fee: 575, turnDays: 5 },
+      { product: "FHA 1004", fee: 650, turnDays: 6 },
+      { product: "Luxury 1004", fee: 925, turnDays: 8 }
+    ],
     documents: { w9: "Current", eo: "Current", license: "Current" }
   },
   {
@@ -861,10 +873,20 @@ export const vendors: VendorProfile[] = [
     contact: "Andre Holt",
     distance: 17.2,
     coverage: ["Fulton", "DeKalb", "Gwinnett"],
+    coverageZips: ["30305", "30319", "30030", "30097"],
+    radiusMiles: 45,
+    officeAddress: "725 Peachtree Street, Atlanta, GA",
+    roster: ["Andre Holt", "Monica Perez"],
     specialties: ["VA", "FHA", "Rural"],
     status: "Pending documents",
     turnTime: 6,
     capacity: 9,
+    workload: 6,
+    rating: 4.3,
+    feeSheet: [
+      { product: "VA 1004", fee: 700, turnDays: 6 },
+      { product: "FHA 1004", fee: 650, turnDays: 6 }
+    ],
     documents: { w9: "Missing", eo: "Current", license: "Current" }
   },
   {
@@ -873,10 +895,20 @@ export const vendors: VendorProfile[] = [
     contact: "Hannah Cole",
     distance: 24.9,
     coverage: ["Cherokee", "Bartow", "Pickens"],
+    coverageZips: ["30114", "30115", "30143"],
+    radiusMiles: 60,
+    officeAddress: "300 Main Street, Canton, GA",
+    roster: ["Hannah Cole", "Bryce Eaton"],
     specialties: ["Review", "Complex", "Acreage"],
     status: "Under review",
     turnTime: 7,
     capacity: 6,
+    workload: 4,
+    rating: 4.6,
+    feeSheet: [
+      { product: "Desktop Review", fee: 225, turnDays: 2 },
+      { product: "Complex 1004", fee: 850, turnDays: 8 }
+    ],
     documents: { w9: "Current", eo: "Expired", license: "Current" }
   }
 ];

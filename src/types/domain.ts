@@ -8,7 +8,9 @@ export type UserRole =
   | "appraiser_manager"
   | "reviewer"
   | "amc_admin"
-  | "amc_staff";
+  | "amc_staff"
+  | "client_user"
+  | "solo_appraiser";
 
 export type PermissionKey =
   | "view_all_orders"
@@ -26,7 +28,30 @@ export type PermissionKey =
   | "invite_vendors"
   | "approve_vendors"
   | "manage_workflows"
-  | "export_reports";
+  | "export_reports"
+  | "view_own_orders_only";
+
+export type Organization = {
+  id: string;
+  name: string;
+  type: OrganizationType;
+  status: "Active" | "Invited" | "Pending docs" | "Under review" | "Approved" | "Suspended";
+  primaryContact: string;
+  email: string;
+  phone: string;
+  address: string;
+};
+
+export type PortalUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  organizationId: string;
+  title: string;
+  appraiserName?: string;
+  clientName?: string;
+};
 
 export type OrderStatus =
   | "New"
@@ -174,15 +199,62 @@ export type VendorProfile = {
   contact: string;
   distance: number;
   coverage: string[];
+  coverageZips?: string[];
+  radiusMiles?: number;
+  officeAddress?: string;
+  roster?: string[];
   specialties: string[];
   status: "Invited" | "Pending documents" | "Under review" | "Approved" | "Suspended" | "Inactive";
   turnTime: number;
   capacity: number;
+  workload?: number;
+  rating?: number;
+  feeSheet?: Array<{ product: string; fee: number; turnDays: number }>;
   documents: {
     w9: "Current" | "Missing" | "Expired";
     eo: "Current" | "Missing" | "Expired";
     license: "Current" | "Missing" | "Expired";
   };
+};
+
+export type VendorDocument = {
+  id: string;
+  vendorId: string;
+  type: "License" | "E&O" | "W-9" | "Fee sheet";
+  status: "Approved" | "Missing" | "Expired" | "Needs review";
+  uploadedAt: string;
+  expiresAt?: string;
+};
+
+export type AccountingEntry = {
+  id: string;
+  orderId: string;
+  client: string;
+  appraiser: string;
+  fee: number;
+  techFee: number;
+  appraiserSplit: number;
+  companyRevenue: number;
+  status: "Paid" | "Unpaid" | "Ready to invoice" | "Payout pending";
+  month: string;
+};
+
+export type Invoice = {
+  id: string;
+  client: string;
+  amount: number;
+  status: "Draft" | "Sent" | "Paid" | "Overdue";
+  dueDate: string;
+  orderCount: number;
+};
+
+export type ReviewQueueItem = {
+  id: string;
+  orderId: string;
+  reviewer: string;
+  submittedAt: string;
+  status: "Ready for review" | "In review" | "Returned" | "Approved";
+  checklistOpen: number;
 };
 
 export type ChartPoint = {
