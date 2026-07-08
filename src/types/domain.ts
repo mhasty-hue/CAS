@@ -29,7 +29,11 @@ export type PermissionKey =
   | "approve_vendors"
   | "manage_workflows"
   | "export_reports"
-  | "view_own_orders_only";
+  | "view_own_orders_only"
+  | "invite_users"
+  | "manage_company_users"
+  | "manage_accounting"
+  | "customize_order_forms";
 
 export type Organization = {
   id: string;
@@ -170,6 +174,8 @@ export type Order = {
   revisionLog: RevisionLogItem[];
   auditTrail: AuditTrailItem[];
   reviewItems: ReviewItem[];
+  commissionSplitOverride?: number;
+  paidAt?: string;
 };
 
 export type AppraiserProfile = {
@@ -184,6 +190,7 @@ export type AppraiserProfile = {
   revisionRate: number;
   payoutDue: number;
   licenseStatus: "Current" | "Expiring" | "Missing";
+  defaultCommissionSplit?: number;
 };
 
 export type ReviewerProfile = {
@@ -231,12 +238,17 @@ export type AccountingEntry = {
   orderId: string;
   client: string;
   appraiser: string;
+  productType: string;
+  county: string;
+  completedAt: string;
   fee: number;
   techFee: number;
+  commissionSplit: number;
   appraiserSplit: number;
   companyRevenue: number;
   status: "Paid" | "Unpaid" | "Ready to invoice" | "Payout pending";
   month: string;
+  paidAt?: string;
 };
 
 export type Invoice = {
@@ -255,6 +267,67 @@ export type ReviewQueueItem = {
   submittedAt: string;
   status: "Ready for review" | "In review" | "Returned" | "Approved";
   checklistOpen: number;
+};
+
+export type ClientContact = {
+  id: string;
+  name: string;
+  title: string;
+  email: string;
+  phone: string;
+};
+
+export type ClientProfile = {
+  id: string;
+  name: string;
+  organizationId: string;
+  status: "Active" | "Inactive";
+  defaultTurnDays: number;
+  contacts: ClientContact[];
+  notes: string;
+  defaultFees: Array<{ productType: string; fee: number }>;
+};
+
+export type CompanyUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: "Active" | "Pending invite" | "Inactive";
+  permissions: PermissionKey[];
+  lastActive: string;
+};
+
+export type OrderFormField = {
+  id: string;
+  label: string;
+  type: "text" | "textarea" | "select" | "date" | "currency" | "upload";
+  required: boolean;
+  options?: string[];
+};
+
+export type OrderFormSection = {
+  id: string;
+  title: string;
+  hidden: boolean;
+  fields: OrderFormField[];
+};
+
+export type OrderFormTemplate = {
+  id: string;
+  name: string;
+  ownerType: "default" | "company" | "solo_appraiser";
+  organizationId?: string;
+  updatedAt: string;
+  sections: OrderFormSection[];
+};
+
+export type CalendarPreference = {
+  id: string;
+  appraiser: string;
+  googleConnected: boolean;
+  syncInspections: boolean;
+  syncDueDates: boolean;
 };
 
 export type ChartPoint = {

@@ -12,6 +12,10 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "see_appraiser_payouts",
     "manage_users",
     "manage_clients",
+    "invite_users",
+    "manage_company_users",
+    "manage_accounting",
+    "customize_order_forms",
     "review_reports",
     "deliver_reports",
     "invite_vendors",
@@ -33,7 +37,11 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "review_reports",
     "deliver_reports",
     "manage_workflows",
-    "export_reports"
+    "export_reports",
+    "invite_users",
+    "manage_company_users",
+    "manage_accounting",
+    "customize_order_forms"
   ],
   office_staff: [
     "view_all_orders",
@@ -59,7 +67,9 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "upload_documents",
     "see_accounting",
     "see_appraiser_payouts",
+    "manage_accounting",
     "manage_users",
+    "customize_order_forms",
     "view_own_orders_only"
   ],
   reviewer: ["view_all_orders", "upload_documents", "review_reports", "deliver_reports"],
@@ -102,6 +112,26 @@ export function canReviewReports(user: PortalUser) {
 
 export function canManageUsers(user: PortalUser) {
   return hasPermission(user, "manage_users");
+}
+
+export function canInviteUsers(user: PortalUser) {
+  return hasPermission(user, "invite_users");
+}
+
+export function canManageCompanyUsers(user: PortalUser) {
+  return hasPermission(user, "manage_company_users");
+}
+
+export function canManageAccounting(user: PortalUser) {
+  return hasPermission(user, "manage_accounting") || hasPermission(user, "see_accounting");
+}
+
+export function canManageClients(user: PortalUser) {
+  return hasPermission(user, "manage_clients");
+}
+
+export function canCustomizeOrderForms(user: PortalUser) {
+  return hasPermission(user, "customize_order_forms");
 }
 
 export function canInviteVendors(user: PortalUser) {

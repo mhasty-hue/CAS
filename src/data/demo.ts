@@ -1,9 +1,13 @@
 import type {
   AppraiserProfile,
+  CalendarPreference,
   ChartPoint,
+  ClientProfile,
+  CompanyUser,
   Kpi,
   NotificationItem,
   Order,
+  OrderFormTemplate,
   PermissionKey,
   ReviewerProfile,
   VendorProfile
@@ -41,7 +45,11 @@ export const permissionCatalog: Array<{ key: PermissionKey; label: string; group
   { key: "approve_vendors", label: "Approve vendors", group: "AMC" },
   { key: "manage_workflows", label: "Manage workflows", group: "Admin" },
   { key: "export_reports", label: "Export reports", group: "Reporting" },
-  { key: "view_own_orders_only", label: "View own orders only", group: "Orders" }
+  { key: "view_own_orders_only", label: "View own orders only", group: "Orders" },
+  { key: "invite_users", label: "canInviteUsers", group: "Company users" },
+  { key: "manage_company_users", label: "canManageCompanyUsers", group: "Company users" },
+  { key: "manage_accounting", label: "canManageAccounting", group: "Accounting" },
+  { key: "customize_order_forms", label: "canCustomizeOrderForms", group: "Order intake" }
 ];
 
 const documents = (fileNumber: string, reportStatus: "Ready" | "Missing" | "Needs review" = "Ready") => [
@@ -787,7 +795,8 @@ export const appraisers: AppraiserProfile[] = [
     avgTurnDays: 5.2,
     revisionRate: 4.8,
     payoutDue: 6320,
-    licenseStatus: "Current"
+    licenseStatus: "Current",
+    defaultCommissionSplit: 60
   },
   {
     id: "app-2",
@@ -800,7 +809,8 @@ export const appraisers: AppraiserProfile[] = [
     avgTurnDays: 5.6,
     revisionRate: 5.9,
     payoutDue: 4875,
-    licenseStatus: "Expiring"
+    licenseStatus: "Expiring",
+    defaultCommissionSplit: 58
   },
   {
     id: "app-3",
@@ -813,7 +823,8 @@ export const appraisers: AppraiserProfile[] = [
     avgTurnDays: 4.9,
     revisionRate: 3.2,
     payoutDue: 3920,
-    licenseStatus: "Current"
+    licenseStatus: "Current",
+    defaultCommissionSplit: 62
   },
   {
     id: "app-4",
@@ -826,7 +837,8 @@ export const appraisers: AppraiserProfile[] = [
     avgTurnDays: 6.1,
     revisionRate: 7.4,
     payoutDue: 2880,
-    licenseStatus: "Current"
+    licenseStatus: "Current",
+    defaultCommissionSplit: 70
   },
   {
     id: "app-5",
@@ -839,7 +851,8 @@ export const appraisers: AppraiserProfile[] = [
     avgTurnDays: 5.4,
     revisionRate: 4.1,
     payoutDue: 1410,
-    licenseStatus: "Current"
+    licenseStatus: "Current",
+    defaultCommissionSplit: 55
   }
 ];
 
@@ -974,4 +987,168 @@ export const clients = [
   "Patriot Home Loans",
   "Summit Credit Union",
   "RidgeLine Bank"
+];
+
+export const clientProfiles: ClientProfile[] = [
+  {
+    id: "client-harbor",
+    name: "HarborPoint Lending",
+    organizationId: "org-client-1",
+    status: "Active",
+    defaultTurnDays: 5,
+    contacts: [
+      { id: "contact-harbor-1", name: "Claire Moon", title: "VP Mortgage Ops", email: "claire@harborpoint.example", phone: "(404) 555-0144" },
+      { id: "contact-harbor-2", name: "Jon Reyes", title: "Processor", email: "jon@harborpoint.example", phone: "(404) 555-0199" }
+    ],
+    notes: "Prefers XML and final PDF delivered together. Rush orders require processor approval.",
+    defaultFees: [
+      { productType: "1004 URAR", fee: 575 },
+      { productType: "FHA 1004", fee: 650 },
+      { productType: "Final Inspection", fee: 175 }
+    ]
+  },
+  {
+    id: "client-northstar",
+    name: "Northstar Mortgage",
+    organizationId: "org-firm-1",
+    status: "Active",
+    defaultTurnDays: 6,
+    contacts: [
+      { id: "contact-northstar-1", name: "Mallory Chen", title: "Order Desk", email: "orders@northstar.example", phone: "(678) 555-0108" }
+    ],
+    notes: "FHA files need repair commentary highlighted in client comments before delivery.",
+    defaultFees: [
+      { productType: "1004 URAR", fee: 595 },
+      { productType: "FHA 1004", fee: 675 },
+      { productType: "Desktop Review", fee: 250 }
+    ]
+  },
+  {
+    id: "client-seaside",
+    name: "Seaside Bank",
+    organizationId: "org-firm-1",
+    status: "Active",
+    defaultTurnDays: 7,
+    contacts: [
+      { id: "contact-seaside-1", name: "Gina Porter", title: "Collateral Manager", email: "gina@seaside.example", phone: "(912) 555-0177" }
+    ],
+    notes: "Coastal and flood-zone files often need secondary review before client delivery.",
+    defaultFees: [
+      { productType: "1004 URAR", fee: 625 },
+      { productType: "Luxury 1004", fee: 925 },
+      { productType: "VA 1004", fee: 700 }
+    ]
+  },
+  {
+    id: "client-ridgeline",
+    name: "RidgeLine Bank",
+    organizationId: "org-firm-1",
+    status: "Inactive",
+    defaultTurnDays: 8,
+    contacts: [
+      { id: "contact-ridgeline-1", name: "Elliot Shaw", title: "Credit Admin", email: "elliot@ridgeline.example", phone: "(706) 555-0182" }
+    ],
+    notes: "Inactive while fee schedule is under renegotiation.",
+    defaultFees: [
+      { productType: "1004 URAR", fee: 550 },
+      { productType: "2055 Exterior", fee: 425 }
+    ]
+  }
+];
+
+export const companyUsers: CompanyUser[] = [
+  {
+    id: "company-user-admin",
+    name: "Nora Fields",
+    email: "nora@caavaluation.example",
+    role: "company_admin",
+    status: "Active",
+    permissions: ["invite_users", "manage_company_users", "manage_accounting", "manage_clients", "customize_order_forms", "view_all_orders", "assign_orders"],
+    lastActive: "Today, 9:44 AM"
+  },
+  {
+    id: "company-user-staff",
+    name: "Mina Patel",
+    email: "mina@caavaluation.example",
+    role: "office_staff",
+    status: "Active",
+    permissions: ["view_all_orders", "create_orders", "assign_orders", "manage_clients"],
+    lastActive: "Today, 8:21 AM"
+  },
+  {
+    id: "company-user-reviewer",
+    name: "Maya Chen",
+    email: "maya@caavaluation.example",
+    role: "reviewer",
+    status: "Active",
+    permissions: ["view_all_orders", "review_reports", "deliver_reports"],
+    lastActive: "Yesterday, 5:12 PM"
+  },
+  {
+    id: "company-user-pending",
+    name: "Sam Ortega",
+    email: "sam@caavaluation.example",
+    role: "appraiser",
+    status: "Pending invite",
+    permissions: ["upload_documents", "see_appraiser_payouts", "view_own_orders_only"],
+    lastActive: "Invite sent"
+  }
+];
+
+export const defaultOrderFormTemplate: OrderFormTemplate = {
+  id: "template-default",
+  name: "Default appraisal intake",
+  ownerType: "default",
+  updatedAt: "2026-07-07",
+  sections: [
+    {
+      id: "section-client",
+      title: "Client and Loan",
+      hidden: false,
+      fields: [
+        { id: "field-client", label: "Client", type: "select", required: true, options: clients },
+        { id: "field-loan-type", label: "Loan type", type: "select", required: true, options: ["Conventional", "FHA", "VA", "USDA", "Jumbo", "Portfolio"] },
+        { id: "field-product", label: "Product type", type: "select", required: true, options: productTypes },
+        { id: "field-due-date", label: "Due date", type: "date", required: true }
+      ]
+    },
+    {
+      id: "section-property",
+      title: "Borrower and Property",
+      hidden: false,
+      fields: [
+        { id: "field-borrower", label: "Borrower", type: "text", required: true },
+        { id: "field-address", label: "Property address", type: "text", required: true },
+        { id: "field-county", label: "County", type: "text", required: true },
+        { id: "field-access", label: "Contact/access info", type: "textarea", required: false }
+      ]
+    },
+    {
+      id: "section-fees",
+      title: "Fees and Assignment",
+      hidden: false,
+      fields: [
+        { id: "field-fee", label: "Fee", type: "currency", required: true },
+        { id: "field-tech-fee", label: "Tech fee", type: "currency", required: true },
+        { id: "field-priority", label: "Priority", type: "select", required: true, options: ["Standard", "Watch", "High", "Rush"] },
+        { id: "field-assignment", label: "Assignment preference", type: "select", required: false, options: ["Best workload fit", "Preferred appraiser", "County specialist", "Manual assignment"] }
+      ]
+    },
+    {
+      id: "section-documents",
+      title: "Documents",
+      hidden: false,
+      fields: [
+        { id: "field-documents", label: "Document upload placeholder", type: "upload", required: false },
+        { id: "field-notes", label: "Notes", type: "textarea", required: false }
+      ]
+    }
+  ]
+};
+
+export const calendarPreferences: CalendarPreference[] = [
+  { id: "cal-jordan", appraiser: "Jordan Lee", googleConnected: true, syncInspections: true, syncDueDates: true },
+  { id: "cal-priya", appraiser: "Priya Shah", googleConnected: false, syncInspections: true, syncDueDates: false },
+  { id: "cal-marcus", appraiser: "Marcus King", googleConnected: false, syncInspections: false, syncDueDates: true },
+  { id: "cal-talia", appraiser: "Talia Morris", googleConnected: true, syncInspections: true, syncDueDates: true }
 ];

@@ -50,8 +50,12 @@ import {
 } from "lucide-react";
 import {
   appraisers,
+  calendarPreferences,
+  clientProfiles,
   clients,
+  companyUsers,
   dashboardKpis,
+  defaultOrderFormTemplate,
   notifications,
   orders,
   permissionCatalog,
@@ -75,13 +79,18 @@ import {
 import type {
   AccountingEntry,
   AppraiserProfile,
+  CalendarPreference,
   ChartPoint,
+  ClientProfile,
+  CompanyUser,
   Invoice,
   Kpi,
   Note,
   Order,
+  OrderFormTemplate,
   OrderStatus,
   Organization,
+  PermissionKey,
   PortalUser,
   UserRole,
   VendorDocument,
@@ -90,7 +99,12 @@ import type {
 import {
   canAssignOrders,
   canCreateOrders,
+  canCustomizeOrderForms,
   canDeliverReports,
+  canInviteUsers,
+  canManageAccounting,
+  canManageClients,
+  canManageCompanyUsers,
   canInviteVendors,
   canReviewReports,
   canViewAccounting,
@@ -204,6 +218,18 @@ const orderStatusOptions: OrderStatus[] = [
   "Cancelled"
 ];
 
+const demoMode = true;
+
+function applyAccountingSplit(entry: AccountingEntry, split: number): AccountingEntry {
+  const payout = Math.round(Math.max(0, entry.fee - entry.techFee) * (split / 100));
+  return {
+    ...entry,
+    commissionSplit: split,
+    appraiserSplit: payout,
+    companyRevenue: Math.max(0, entry.fee - entry.techFee - payout)
+  };
+}
+
 function filterOrdersForUser(orderList: Order[], user: PortalUser, organization: Organization) {
   if (canViewAllOrders(user)) return orderList;
   if (user.appraiserName) return orderList.filter((order) => order.appraiser === user.appraiserName || order.appraiser === "Unassigned");
@@ -231,10 +257,15 @@ function roleLabel(role: UserRole) {
 export function CasApp() {
   const [activeView, setActiveView] = useState<NavId>("dashboard");
   const [orderList, setOrderList] = useState<Order[]>(orders);
+  const [appraiserList, setAppraiserList] = useState<AppraiserProfile[]>(appraisers);
+  const [clientList, setClientList] = useState<ClientProfile[]>(clientProfiles);
+  const [companyUserList, setCompanyUserList] = useState<CompanyUser[]>(companyUsers);
   const [vendorList, setVendorList] = useState<VendorProfile[]>(vendors);
   const [vendorDocumentList, setVendorDocumentList] = useState<VendorDocument[]>(vendorDocuments);
   const [invoiceList, setInvoiceList] = useState<Invoice[]>(invoices);
-  const [accountingList] = useState<AccountingEntry[]>(accountingEntries);
+  const [accountingList, setAccountingList] = useState<AccountingEntry[]>(accountingEntries);
+  const [orderFormTemplate, setOrderFormTemplate] = useState<OrderFormTemplate>(defaultOrderFormTemplate);
+  const [calendarPreferenceList, setCalendarPreferenceList] = useState<CalendarPreference[]>(calendarPreferences);
   const [activeUserId, setActiveUserId] = useState(portalUsers[0].id);
   const [selectedOrderId, setSelectedOrderId] = useState(orders[0].id);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -384,7 +415,7 @@ export function CasApp() {
     }));
   }
 
-  function handleCreateOrder(kind: "internal" | "client" | "amc") {
+  function handleCreateOrder(kind: "internal" | "client" | "amc", templateName = orderFormTemplate.name) {
     const nextNumber = `CAA-26-${1060 + orderList.length}`;
     const newOrder: Order = {
       id: `ord-${Date.now()}`,
@@ -431,7 +462,7 @@ export function CasApp() {
         {
           id: `${Date.now()}-note`,
           author: activeUser.name,
-          body: "Created from Phase 3 portal workflow.",
+          body: `Created from ${templateName} intake template.`,
           visibility: kind === "client" ? "client" : "internal",
           createdAt: "Just now"
         }
@@ -536,6 +567,145 @@ export function CasApp() {
     }));
   }
 
+  function handleUpdateDefaultSplit(appraiserName: string, split: number) {
+    setAppraiserList((current) =>
+      current.map((appraiser) =>
+        appraiser.name === appraiserName ? { ...appraiser, defaultCommissionSplit: split } : appraiser
+      )
+    );
+    setAccountingList((current) =>
+      current.map((entry) => (entry.appraiser === appraiserName ? applyAccountingSplit(entry, split) : entry))
+    );
+  }
+
+  function handleOverrideCommission(orderId: string, split: number) {
+    setAccountingList((current) =>
+      current.map((entry) => (entry.orderId === orderId ? applyAccountingSplit(entry, split) : entry))
+    );
+    updateOrder(orderId, (order) => {
+      const payout = Math.round(Math.max(0, order.fee - order.techFee) * (split / 100));
+      return {
+        ...order,
+        commissionSplitOverride: split,
+        appraiserPayout: payout,
+        lastUpdate: `Commission override set to ${split}%`
+      };
+    });
+  }
+
+  function handleMarkPayrollPaid(entryIds: string[]) {
+    const ids = new Set(entryIds);
+    setAccountingList((current) =>
+      current.map((entry) =>
+        ids.has(entry.id)
+          ? { ...entry, status: "Paid", paidAt: "2026-07-08" }
+          : entry
+      )
+    );
+  }
+
+  function handleExportPayrollCsv(entriesToExport: AccountingEntry[]) {
+    const rows = [
+      ["Order", "Completed", "Client", "Appraiser", "Product", "County", "Gross fee", "Tech fee", "Split", "Payout", "Status"],
+      ...entriesToExport.map((entry) => [
+        entry.orderId,
+        entry.completedAt,
+        entry.client,
+        entry.appraiser,
+        entry.productType,
+        entry.county,
+        String(entry.fee),
+        String(entry.techFee),
+        `${entry.commissionSplit}%`,
+        String(entry.appraiserSplit),
+        entry.status
+      ])
+    ];
+    const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "cas-payroll-export.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleAddClient() {
+    const newClient: ClientProfile = {
+      id: `client-${Date.now()}`,
+      name: `New Client ${clientList.length + 1}`,
+      organizationId: activeOrganization.id,
+      status: "Active",
+      defaultTurnDays: 6,
+      contacts: [
+        { id: `contact-${Date.now()}`, name: "New contact", title: "Order desk", email: "orders@example.com", phone: "(404) 555-0101" }
+      ],
+      notes: "New client added during this demo session.",
+      defaultFees: [
+        { productType: "1004 URAR", fee: 575 },
+        { productType: "FHA 1004", fee: 650 }
+      ]
+    };
+    setClientList((current) => [newClient, ...current]);
+  }
+
+  function handleUpdateClient(clientId: string, patch: Partial<ClientProfile>) {
+    setClientList((current) => current.map((client) => (client.id === clientId ? { ...client, ...patch } : client)));
+  }
+
+  function handleInviteCompanyUser() {
+    setCompanyUserList((current) => [
+      {
+        id: `company-user-${Date.now()}`,
+        name: "Pending teammate",
+        email: `invite${current.length + 1}@caavaluation.example`,
+        role: "office_staff",
+        status: "Pending invite",
+        permissions: ["view_all_orders", "create_orders"],
+        lastActive: "Invite sent just now"
+      },
+      ...current
+    ]);
+  }
+
+  function handleChangeCompanyUserRole(userId: string, role: UserRole) {
+    setCompanyUserList((current) => current.map((companyUser) => (companyUser.id === userId ? { ...companyUser, role } : companyUser)));
+  }
+
+  function handleToggleCompanyUserPermission(userId: string, permission: PermissionKey) {
+    setCompanyUserList((current) =>
+      current.map((companyUser) => {
+        if (companyUser.id !== userId) return companyUser;
+        const hasPermission = companyUser.permissions.includes(permission);
+        return {
+          ...companyUser,
+          permissions: hasPermission
+            ? companyUser.permissions.filter((item) => item !== permission)
+            : [...companyUser.permissions, permission]
+        };
+      })
+    );
+  }
+
+  function handleDeactivateCompanyUser(userId: string) {
+    setCompanyUserList((current) =>
+      current.map((companyUser) =>
+        companyUser.id === userId
+          ? { ...companyUser, status: companyUser.status === "Inactive" ? "Active" : "Inactive" }
+          : companyUser
+      )
+    );
+  }
+
+  function handleToggleCalendarPreference(preferenceId: string, key: keyof Pick<CalendarPreference, "googleConnected" | "syncInspections" | "syncDueDates">) {
+    setCalendarPreferenceList((current) =>
+      current.map((preference) =>
+        preference.id === preferenceId ? { ...preference, [key]: !preference[key] } : preference
+      )
+    );
+  }
+
   return (
     <div className="min-h-screen bg-canvas text-slate-950 lg:grid lg:grid-cols-[264px_1fr]">
       <Sidebar
@@ -564,7 +734,7 @@ export function CasApp() {
               vendors={vendorList}
               accountingEntries={accountingList}
               onOpenOrders={() => setActiveView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders")}
-              onPlaceOrder={() => setActiveView(canCreateOrders(activeUser) ? "place-order" : "orders")}
+              onPlaceOrder={() => setActiveView(["amc_admin", "amc_staff", "client_user", "solo_appraiser"].includes(activeUser.role) ? "place-order" : canCreateOrders(activeUser) ? "new-order" : "orders")}
               onInviteVendor={handleInviteVendor}
             />
           )}
@@ -579,24 +749,69 @@ export function CasApp() {
               onAddNote={handleAddNote}
             />
           )}
-          {(activeView === "new-order" || activeView === "place-order") && <NewOrderView user={activeUser} organization={activeOrganization} onCreateOrder={handleCreateOrder} />}
-          {activeView === "calendar" && <CalendarView />}
+          {(activeView === "new-order" || activeView === "place-order") && (
+            <NewOrderView
+              user={activeUser}
+              organization={activeOrganization}
+              template={orderFormTemplate}
+              onTemplateChange={setOrderFormTemplate}
+              onRestoreTemplate={() => setOrderFormTemplate(defaultOrderFormTemplate)}
+              onCreateOrder={handleCreateOrder}
+            />
+          )}
+          {activeView === "calendar" && (
+            <CalendarView
+              orderList={visibleOrders.length ? visibleOrders : orderList}
+              appraisers={appraiserList}
+              preferences={calendarPreferenceList}
+              onTogglePreference={handleToggleCalendarPreference}
+            />
+          )}
           {(activeView === "review" || activeView === "review-queue") && <ReviewView orderList={visibleOrders.length ? visibleOrders : orderList} user={activeUser} onReviewAction={handleReviewAction} onSelectOrder={(order) => { setSelectedOrderId(order.id); setActiveView("orders"); }} />}
           {activeView === "completed-reviews" && <CompletedReviewsView orderList={orderList} />}
           {activeView === "templates" && <ReviewTemplatesView />}
           {activeView === "appraisers" && <AppraiserPortalView orderList={visibleOrders.length ? visibleOrders : orderList} />}
-          {activeView === "clients" && <ClientsView />}
+          {activeView === "clients" && (
+            <ClientsView
+              user={activeUser}
+              clientList={clientList}
+              orderList={orderList}
+              onAddClient={handleAddClient}
+              onUpdateClient={handleUpdateClient}
+            />
+          )}
           {activeView === "vendors" && <VendorView vendors={vendorList} vendorDocuments={vendorDocumentList} user={activeUser} onInviteVendor={handleInviteVendor} />}
           {activeView === "vendor-invites" && <VendorInvitesView vendors={vendorList} onInviteVendor={handleInviteVendor} />}
           {activeView === "compliance" && <ComplianceView vendors={vendorList} vendorDocuments={vendorDocumentList} onDocumentStatusChange={handleVendorDocumentStatus} />}
-          {(activeView === "accounting" || activeView === "pay") && <AccountingView user={activeUser} entries={accountingList} invoices={invoiceList} onMarkInvoiceSent={(invoiceId) => setInvoiceList((current) => current.map((invoice) => invoice.id === invoiceId ? { ...invoice, status: "Sent" } : invoice))} />}
-          {activeView === "analytics" && <AnalyticsView />}
+          {(activeView === "accounting" || activeView === "pay") && (
+            <AccountingView
+              user={activeUser}
+              entries={accountingList}
+              invoices={invoiceList}
+              appraisers={appraiserList}
+              onMarkInvoiceSent={(invoiceId) => setInvoiceList((current) => current.map((invoice) => invoice.id === invoiceId ? { ...invoice, status: "Sent" } : invoice))}
+              onUpdateDefaultSplit={handleUpdateDefaultSplit}
+              onOverrideCommission={handleOverrideCommission}
+              onMarkPaid={handleMarkPayrollPaid}
+              onExportCsv={handleExportPayrollCsv}
+            />
+          )}
+          {activeView === "analytics" && <AnalyticsView entries={accountingList} orderList={orderList} />}
           {activeView === "documents" && <DocumentsView orderList={visibleOrders} />}
           {activeView === "messages" && <MessagesView orderList={visibleOrders} user={activeUser} onAddNote={handleAddNote} />}
           {activeView === "reports" && <ReportsView orderList={visibleOrders} />}
           {activeView === "revisions" && <RevisionsView orderList={visibleOrders} onSelectOrder={(order) => { setSelectedOrderId(order.id); setActiveView("my-orders"); }} />}
           {activeView === "notifications" && <NotificationsView />}
-          {activeView === "settings" && <SettingsView />}
+          {activeView === "settings" && (
+            <SettingsView
+              user={activeUser}
+              companyUsers={companyUserList}
+              onInviteUser={handleInviteCompanyUser}
+              onChangeRole={handleChangeCompanyUserRole}
+              onTogglePermission={handleToggleCompanyUserPermission}
+              onDeactivateUser={handleDeactivateCompanyUser}
+            />
+          )}
         </main>
       </div>
       {commandOpen && (
@@ -723,11 +938,16 @@ function Topbar({
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input className="control w-full pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" />
         </div>
-        <select className="control hidden w-60 lg:block" value={user.id} onChange={(event) => onUserChange(event.target.value)} aria-label="Switch demo role">
-          {portalUsers.map((portalUser) => (
-            <option key={portalUser.id} value={portalUser.id}>{portalUser.title} - {portalUser.name}</option>
-          ))}
-        </select>
+        {demoMode && (
+          <label className="hidden items-center gap-2 lg:flex">
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">Demo role</span>
+            <select className="control w-56" value={user.id} onChange={(event) => onUserChange(event.target.value)} aria-label="Switch demo role">
+              {portalUsers.map((portalUser) => (
+                <option key={portalUser.id} value={portalUser.id}>{portalUser.title} - {portalUser.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <button className="icon-button" aria-label="Notifications">
           <Bell className="h-4 w-4" />
         </button>
@@ -1462,14 +1682,106 @@ function DocumentStatusChip({ status }: { status: Order["documentsList"][number]
   return <span className={cn("chip shrink-0", tone)}>{status}</span>;
 }
 
-function NewOrderView({ user, organization, onCreateOrder }: { user: PortalUser; organization: Organization; onCreateOrder: (kind: "internal" | "client" | "amc") => void }) {
+function NewOrderView({
+  user,
+  organization,
+  template,
+  onTemplateChange,
+  onRestoreTemplate,
+  onCreateOrder
+}: {
+  user: PortalUser;
+  organization: Organization;
+  template: OrderFormTemplate;
+  onTemplateChange: (template: OrderFormTemplate) => void;
+  onRestoreTemplate: () => void;
+  onCreateOrder: (kind: "internal" | "client" | "amc", templateName?: string) => void;
+}) {
   const orderKind = organization.type === "amc" ? "amc" : user.role === "client_user" ? "client" : "internal";
+  const visibleSections = template.sections.filter((section) => !section.hidden);
+  const canCustomize = canCustomizeOrderForms(user);
+
+  function updateTemplate(sections: OrderFormTemplate["sections"]) {
+    onTemplateChange({
+      ...template,
+      ownerType: organization.type === "solo_appraiser" ? "solo_appraiser" : "company",
+      organizationId: organization.id,
+      updatedAt: "Just now",
+      sections
+    });
+  }
+
+  function renameSection(sectionId: string, title: string) {
+    updateTemplate(template.sections.map((section) => (section.id === sectionId ? { ...section, title } : section)));
+  }
+
+  function toggleSection(sectionId: string) {
+    updateTemplate(template.sections.map((section) => (section.id === sectionId ? { ...section, hidden: !section.hidden } : section)));
+  }
+
+  function removeSection(sectionId: string) {
+    updateTemplate(template.sections.filter((section) => section.id !== sectionId));
+  }
+
+  function moveSection(sectionId: string, direction: -1 | 1) {
+    const index = template.sections.findIndex((section) => section.id === sectionId);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= template.sections.length) return;
+    const sections = [...template.sections];
+    const [section] = sections.splice(index, 1);
+    sections.splice(nextIndex, 0, section);
+    updateTemplate(sections);
+  }
+
+  function addSection() {
+    updateTemplate([
+      ...template.sections,
+      {
+        id: `section-${Date.now()}`,
+        title: `Custom section ${template.sections.length + 1}`,
+        hidden: false,
+        fields: [
+          { id: `field-${Date.now()}`, label: "Custom field", type: "text", required: false }
+        ]
+      }
+    ]);
+  }
+
+  function addCustomField(sectionId: string) {
+    updateTemplate(
+      template.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              fields: [
+                ...section.fields,
+                { id: `field-${Date.now()}`, label: `Custom field ${section.fields.length + 1}`, type: "text", required: false }
+              ]
+            }
+          : section
+      )
+    );
+  }
+
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
       <form className="panel p-5">
         <SectionHeader icon={Plus} title="New Order Intake" />
         <div className="mt-3 rounded-md border border-brand-100 bg-brand-50 px-3 py-2 text-sm text-brand-800">
-          Creating as {organization.name} ({roleLabel(user.role)}). This will add a real local order to the current portal.
+          Creating as {organization.name} ({roleLabel(user.role)}) with {template.name}.
+        </div>
+        <div className="mt-4 rounded-md border border-line bg-white p-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-950">Active intake template</div>
+              <div className="mt-1 text-xs text-slate-500">{visibleSections.length} visible sections - {template.ownerType.replace("_", " ")} setup - updated {template.updatedAt}</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {visibleSections.map((section) => (
+                <span key={section.id} className="chip border-slate-200 bg-slate-50 text-slate-700">{section.title}</span>
+              ))}
+            </div>
+          </div>
         </div>
         <div className="mt-5 grid gap-5">
           <section className="rounded-md border border-line p-4">
@@ -1541,14 +1853,63 @@ function NewOrderView({ user, organization, onCreateOrder }: { user: PortalUser;
               <button type="button" className="secondary-button"><UploadCloud className="h-4 w-4" /> Add documents</button>
             </div>
           </section>
+
+          <section className="rounded-md border border-line p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><SlidersHorizontal className="h-4 w-4 text-brand-600" /> Template Fields Used for Future Orders</div>
+            <div className="mt-4 grid gap-4">
+              {visibleSections.map((section) => (
+                <div key={section.id} className="rounded-md border border-line bg-slate-50 p-3">
+                  <div className="text-sm font-semibold text-slate-900">{section.title}</div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {section.fields.map((field) => (
+                      <Field key={field.id} label={`${field.label}${field.required ? " *" : ""}`} span={field.type === "textarea" || field.type === "upload"}>
+                        <TemplateFieldPreview field={field} />
+                      </Field>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-5">
-          <button type="button" className="primary-button" onClick={() => onCreateOrder(orderKind)}><CheckCircle2 className="h-4 w-4" /> Create order</button>
+          <button type="button" className="primary-button" onClick={() => onCreateOrder(orderKind, template.name)}><CheckCircle2 className="h-4 w-4" /> Create order</button>
           <button type="button" className="secondary-button"><Sparkles className="h-4 w-4" /> Parse order PDF</button>
-          <button type="button" className="secondary-button" onClick={() => onCreateOrder("internal")}><UserCheck className="h-4 w-4" /> Save and assign</button>
+          <button type="button" className="secondary-button" onClick={() => onCreateOrder("internal", template.name)}><UserCheck className="h-4 w-4" /> Save and assign</button>
         </div>
       </form>
       <aside className="grid content-start gap-5">
+        <div className="panel p-5">
+          <SectionHeader icon={SlidersHorizontal} title="Customize Intake" />
+          <div className="mt-4 rounded-md border border-line bg-slate-50 p-3 text-sm">
+            <div className="font-semibold text-slate-900">{canCustomize ? "Template editing enabled" : "View-only template"}</div>
+            <div className="mt-1 text-slate-500">{canCustomize ? "Changes are saved in this session and used for the next new order." : "Company admins and solo appraisers can customize intake sections."}</div>
+          </div>
+          <div className="mt-4 space-y-3">
+            {template.sections.map((section, index) => (
+              <div key={section.id} className="rounded-md border border-line p-3">
+                <input
+                  className="control h-9 w-full"
+                  value={section.title}
+                  disabled={!canCustomize}
+                  onChange={(event) => renameSection(section.id, event.target.value)}
+                />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button type="button" disabled={!canCustomize || index === 0} className="secondary-button h-8 px-2 text-xs disabled:opacity-50" onClick={() => moveSection(section.id, -1)}>Up</button>
+                  <button type="button" disabled={!canCustomize || index === template.sections.length - 1} className="secondary-button h-8 px-2 text-xs disabled:opacity-50" onClick={() => moveSection(section.id, 1)}>Down</button>
+                  <button type="button" disabled={!canCustomize} className="secondary-button h-8 px-2 text-xs disabled:opacity-50" onClick={() => toggleSection(section.id)}>{section.hidden ? "Show" : "Hide"}</button>
+                  <button type="button" disabled={!canCustomize} className="secondary-button h-8 px-2 text-xs disabled:opacity-50" onClick={() => addCustomField(section.id)}>Add field</button>
+                  <button type="button" disabled={!canCustomize || template.sections.length <= 1} className="secondary-button h-8 px-2 text-xs disabled:opacity-50" onClick={() => removeSection(section.id)}>Delete</button>
+                </div>
+                <div className="mt-2 text-xs text-slate-500">{section.fields.length} fields - {section.hidden ? "hidden" : "visible"}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" disabled={!canCustomize} className="secondary-button disabled:opacity-50" onClick={addSection}><Plus className="h-4 w-4" /> Add section</button>
+            <button type="button" disabled={!canCustomize} className="secondary-button disabled:opacity-50" onClick={onRestoreTemplate}><Sparkles className="h-4 w-4" /> Restore default</button>
+          </div>
+        </div>
         <div className="panel p-5">
           <SectionHeader icon={Sparkles} title="Intake Intelligence" />
           <div className="mt-4 space-y-3 text-sm">
@@ -1874,84 +2235,517 @@ function VendorView({ vendors, vendorDocuments, user, onInviteVendor }: { vendor
   );
 }
 
-function AccountingView({ user, entries, invoices, onMarkInvoiceSent }: { user: PortalUser; entries: AccountingEntry[]; invoices: Invoice[]; onMarkInvoiceSent: (invoiceId: string) => void }) {
+function AccountingView({
+  user,
+  entries,
+  invoices,
+  appraisers,
+  onMarkInvoiceSent,
+  onUpdateDefaultSplit,
+  onOverrideCommission,
+  onMarkPaid,
+  onExportCsv
+}: {
+  user: PortalUser;
+  entries: AccountingEntry[];
+  invoices: Invoice[];
+  appraisers: AppraiserProfile[];
+  onMarkInvoiceSent: (invoiceId: string) => void;
+  onUpdateDefaultSplit: (appraiserName: string, split: number) => void;
+  onOverrideCommission: (orderId: string, split: number) => void;
+  onMarkPaid: (entryIds: string[]) => void;
+  onExportCsv: (entries: AccountingEntry[]) => void;
+}) {
+  const [fromDate, setFromDate] = useState("2026-06-01");
+  const [toDate, setToDate] = useState("2026-07-31");
+  const [paidFilter, setPaidFilter] = useState<"All" | "Paid" | "Unpaid">("All");
+  const [appraiserFilter, setAppraiserFilter] = useState("All appraisers");
+  const [clientFilter, setClientFilter] = useState("All clients");
+  const [productFilter, setProductFilter] = useState("All products");
+  const [countyFilter, setCountyFilter] = useState("All counties");
+  const [statusFilter, setStatusFilter] = useState<"All" | AccountingEntry["status"]>("All");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
   const scopedEntries = user.appraiserName ? entries.filter((entry) => entry.appraiser === user.appraiserName) : entries;
-  const companyRevenue = scopedEntries.reduce((total, entry) => total + entry.companyRevenue, 0);
-  const payoutDue = scopedEntries.reduce((total, entry) => total + entry.appraiserSplit, 0);
-  const techFees = scopedEntries.reduce((total, entry) => total + entry.techFee, 0);
+  const appraiserOptions = Array.from(new Set(scopedEntries.map((entry) => entry.appraiser)));
+  const clientOptions = Array.from(new Set(scopedEntries.map((entry) => entry.client)));
+  const productOptions = Array.from(new Set(scopedEntries.map((entry) => entry.productType)));
+  const countyOptions = Array.from(new Set(scopedEntries.map((entry) => entry.county)));
+
+  const filteredEntries = scopedEntries.filter((entry) => {
+    const completed = new Date(`${entry.completedAt}T12:00:00`);
+    const from = new Date(`${fromDate}T00:00:00`);
+    const to = new Date(`${toDate}T23:59:59`);
+    const paidState = entry.status === "Paid" ? "Paid" : "Unpaid";
+    return (
+      completed >= from &&
+      completed <= to &&
+      (paidFilter === "All" || paidFilter === paidState) &&
+      (appraiserFilter === "All appraisers" || entry.appraiser === appraiserFilter) &&
+      (clientFilter === "All clients" || entry.client === clientFilter) &&
+      (productFilter === "All products" || entry.productType === productFilter) &&
+      (countyFilter === "All counties" || entry.county === countyFilter) &&
+      (statusFilter === "All" || entry.status === statusFilter)
+    );
+  });
+
+  const selectedEntries = filteredEntries.filter((entry) => selectedIds.includes(entry.id));
+  const grossFees = filteredEntries.reduce((total, entry) => total + entry.fee, 0);
+  const techFees = filteredEntries.reduce((total, entry) => total + entry.techFee, 0);
+  const payoutDue = filteredEntries.filter((entry) => entry.status !== "Paid").reduce((total, entry) => total + entry.appraiserSplit, 0);
+  const paidTotal = filteredEntries.filter((entry) => entry.status === "Paid").reduce((total, entry) => total + entry.appraiserSplit, 0);
+  const companyRevenue = filteredEntries.reduce((total, entry) => total + entry.companyRevenue, 0);
+  const canManage = canManageAccounting(user);
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
-      <div className="panel p-5">
-        <SectionHeader icon={CircleDollarSign} title={user.appraiserName ? "My Pay" : "Company Accounting"} />
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          {!user.appraiserName && <MetricTile label="Company revenue" value={formatCurrency(companyRevenue)} />}
-          <MetricTile label={user.appraiserName ? "Pay due" : "Payouts due"} value={formatCurrency(payoutDue)} />
-          <MetricTile label="Tech fees" value={formatCurrency(techFees)} />
-          {!user.appraiserName && <MetricTile label="Outstanding invoices" value={formatCurrency(invoices.filter((invoice) => invoice.status !== "Paid").reduce((total, invoice) => total + invoice.amount, 0))} />}
+    <section className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid gap-5">
+        <div className="panel p-5">
+          <SectionHeader icon={CircleDollarSign} title={user.appraiserName ? "My Pay" : "Accounting and Payroll"} />
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <MetricTile label="Gross fees" value={formatCurrency(grossFees)} />
+            <MetricTile label="Tech fees" value={formatCurrency(techFees)} />
+            {!user.appraiserName && <MetricTile label="Company revenue" value={formatCurrency(companyRevenue)} />}
+            <MetricTile label="Unpaid payout" value={formatCurrency(payoutDue)} />
+            <MetricTile label="Paid history" value={formatCurrency(paidTotal)} />
+          </div>
+          <div className="mt-5 grid gap-3 lg:grid-cols-4 xl:grid-cols-7">
+            <Field label="Completed from"><input className="control w-full" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></Field>
+            <Field label="Completed to"><input className="control w-full" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></Field>
+            <Field label="Paid status">
+              <select className="control w-full" value={paidFilter} onChange={(event) => setPaidFilter(event.target.value as "All" | "Paid" | "Unpaid")}>
+                <option>All</option>
+                <option>Paid</option>
+                <option>Unpaid</option>
+              </select>
+            </Field>
+            <Field label="Appraiser">
+              <select className="control w-full" value={appraiserFilter} onChange={(event) => setAppraiserFilter(event.target.value)}>
+                <option>All appraisers</option>
+                {appraiserOptions.map((appraiser) => <option key={appraiser}>{appraiser}</option>)}
+              </select>
+            </Field>
+            <Field label="Client">
+              <select className="control w-full" value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}>
+                <option>All clients</option>
+                {clientOptions.map((client) => <option key={client}>{client}</option>)}
+              </select>
+            </Field>
+            <Field label="Product">
+              <select className="control w-full" value={productFilter} onChange={(event) => setProductFilter(event.target.value)}>
+                <option>All products</option>
+                {productOptions.map((product) => <option key={product}>{product}</option>)}
+              </select>
+            </Field>
+            <Field label="County">
+              <select className="control w-full" value={countyFilter} onChange={(event) => setCountyFilter(event.target.value)}>
+                <option>All counties</option>
+                {countyOptions.map((county) => <option key={county}>{county}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <select className="control h-9 w-48" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "All" | AccountingEntry["status"])}>
+              <option>All</option>
+              <option>Paid</option>
+              <option>Unpaid</option>
+              <option>Ready to invoice</option>
+              <option>Payout pending</option>
+            </select>
+            <button className="secondary-button" onClick={() => onExportCsv(filteredEntries)}><Download className="h-4 w-4" /> Export CSV</button>
+            <button
+              className="primary-button disabled:opacity-50"
+              disabled={!canManage || selectedEntries.length === 0}
+              onClick={() => {
+                onMarkPaid(selectedEntries.map((entry) => entry.id));
+                setSelectedIds([]);
+              }}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Mark paid
+            </button>
+          </div>
         </div>
-        <div className="mt-5"><LineChart data={revenueChart} prefix="$" suffix="k" /></div>
-        <div className="mt-5 overflow-x-auto rounded-md border border-line">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-normal text-slate-500"><tr><th className="px-4 py-3">Order</th><th className="px-4 py-3">Client</th><th className="px-4 py-3">Appraiser</th><th className="px-4 py-3">Fee</th><th className="px-4 py-3">Tech</th><th className="px-4 py-3">Split</th><th className="px-4 py-3">Status</th></tr></thead>
-            <tbody className="divide-y divide-line">
-              {scopedEntries.map((entry) => (
-                <tr key={entry.id}>
-                  <td className="px-4 py-3 font-medium text-slate-900">{entry.orderId}</td>
-                  <td className="px-4 py-3 text-slate-600">{entry.client}</td>
-                  <td className="px-4 py-3 text-slate-600">{entry.appraiser}</td>
-                  <td className="px-4 py-3 text-slate-600">{formatCurrency(entry.fee)}</td>
-                  <td className="px-4 py-3 text-slate-600">{formatCurrency(entry.techFee)}</td>
-                  <td className="px-4 py-3 text-slate-600">{formatCurrency(entry.appraiserSplit)}</td>
-                  <td className="px-4 py-3"><span className="chip border-slate-200 bg-slate-50 text-slate-700">{entry.status}</span></td>
+
+        <div className="panel overflow-hidden">
+          <TableHeader title="Completed Order Payroll" icon={WalletCards} />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1180px] text-left text-sm">
+              <thead className="border-b border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500">
+                <tr>
+                  <th className="w-10 px-4 py-3"><span className="sr-only">Select</span></th>
+                  <th className="px-4 py-3">Order</th>
+                  <th className="px-4 py-3">Completed</th>
+                  <th className="px-4 py-3">Client</th>
+                  <th className="px-4 py-3">Appraiser</th>
+                  <th className="px-4 py-3">Product</th>
+                  <th className="px-4 py-3">County</th>
+                  <th className="px-4 py-3">Gross / tech</th>
+                  <th className="px-4 py-3">Split</th>
+                  <th className="px-4 py-3">Payout</th>
+                  <th className="px-4 py-3">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {filteredEntries.map((entry) => (
+                  <tr key={entry.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-line text-brand-600"
+                        checked={selectedIds.includes(entry.id)}
+                        onChange={(event) => setSelectedIds((ids) => event.target.checked ? [...ids, entry.id] : ids.filter((id) => id !== entry.id))}
+                      />
+                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{entry.orderId}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDate(entry.completedAt)}</td>
+                    <td className="px-4 py-3 text-slate-600">{entry.client}</td>
+                    <td className="px-4 py-3 text-slate-600">{entry.appraiser}</td>
+                    <td className="px-4 py-3 text-slate-600">{entry.productType}</td>
+                    <td className="px-4 py-3 text-slate-600">{entry.county}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatCurrency(entry.fee)} / {formatCurrency(entry.techFee)}</td>
+                    <td className="px-4 py-3">
+                      <input
+                        className="h-8 w-20 rounded-md border border-line bg-white px-2 text-sm"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={entry.commissionSplit}
+                        disabled={!canManage}
+                        onChange={(event) => onOverrideCommission(entry.orderId, Number(event.target.value))}
+                      />
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-slate-900">{formatCurrency(entry.appraiserSplit)}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn("chip", entry.status === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800")}>{entry.status}</span>
+                      {entry.paidAt && <div className="mt-1 text-xs text-slate-500">Paid {formatDate(entry.paidAt)}</div>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="border-t border-line px-4 py-3 text-sm text-slate-500">{filteredEntries.length} completed orders in payroll view</div>
         </div>
       </div>
-      <aside className="panel p-5">
-        <SectionHeader icon={WalletCards} title={user.appraiserName ? "Pay Details" : "Client Invoices"} />
-        <div className="mt-4 space-y-3">
-          {user.appraiserName ? scopedEntries.map((entry) => (
-            <div key={entry.id} className="rounded-md border border-line px-3 py-2 text-sm">
-              <div className="flex items-center justify-between gap-3"><span className="font-medium text-slate-800">{entry.orderId}</span><span>{formatCurrency(entry.appraiserSplit)}</span></div>
-              <div className="mt-1 text-xs text-slate-500">{entry.status}</div>
-            </div>
-          )) : invoices.map((invoice) => (
-            <div key={invoice.id} className="rounded-md border border-line px-3 py-2 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-slate-800">{invoice.client}</span>
-                <span className="text-slate-600">{formatCurrency(invoice.amount)}</span>
+
+      <aside className="grid content-start gap-5">
+        <div className="panel p-5">
+          <SectionHeader icon={UserCog} title="Commission Defaults" />
+          <div className="mt-4 space-y-3">
+            {appraisers.map((appraiser) => (
+              <div key={appraiser.id} className="rounded-md border border-line p-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-slate-900">{appraiser.name}</div>
+                    <div className="text-xs text-slate-500">{appraiser.role} - {appraiser.counties.slice(0, 2).join(", ")}</div>
+                  </div>
+                  <input
+                    className="h-9 w-20 rounded-md border border-line px-2 text-right text-sm"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={appraiser.defaultCommissionSplit ?? 60}
+                    disabled={!canManage}
+                    onChange={(event) => onUpdateDefaultSplit(appraiser.name, Number(event.target.value))}
+                  />
+                </div>
               </div>
-              <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500">
-                <span>{invoice.status} - due {formatDate(invoice.dueDate)}</span>
-                {invoice.status === "Draft" && <button className="secondary-button h-7 px-2 text-xs" onClick={() => onMarkInvoiceSent(invoice.id)}>Send</button>}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-        <button className="secondary-button mt-4 w-full justify-center"><Download className="h-4 w-4" /> CSV export</button>
+        <div className="panel p-5">
+          <SectionHeader icon={ReceiptText} title={user.appraiserName ? "Pay History" : "Client Invoices"} />
+          <div className="mt-4 space-y-3">
+            {user.appraiserName ? filteredEntries.filter((entry) => entry.status === "Paid").map((entry) => (
+              <div key={entry.id} className="rounded-md border border-line px-3 py-2 text-sm">
+                <div className="flex items-center justify-between gap-3"><span className="font-medium text-slate-800">{entry.orderId}</span><span>{formatCurrency(entry.appraiserSplit)}</span></div>
+                <div className="mt-1 text-xs text-slate-500">Paid {entry.paidAt ? formatDate(entry.paidAt) : "date pending"}</div>
+              </div>
+            )) : invoices.map((invoice) => (
+              <div key={invoice.id} className="rounded-md border border-line px-3 py-2 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-slate-800">{invoice.client}</span>
+                  <span className="text-slate-600">{formatCurrency(invoice.amount)}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500">
+                  <span>{invoice.status} - due {formatDate(invoice.dueDate)}</span>
+                  {invoice.status === "Draft" && <button className="secondary-button h-7 px-2 text-xs" onClick={() => onMarkInvoiceSent(invoice.id)}>Send</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </aside>
     </section>
   );
 }
 
-function CalendarView() {
-  return <SimpleFoundationView icon={CalendarDays} title="Calendar" items={["Inspection calendar", "Due date calendar", "Appraiser workload calendar", "Review due calendar", "Completed order calendar"]} />;
-}
+function CalendarView({
+  orderList,
+  appraisers,
+  preferences,
+  onTogglePreference
+}: {
+  orderList: Order[];
+  appraisers: AppraiserProfile[];
+  preferences: CalendarPreference[];
+  onTogglePreference: (preferenceId: string, key: keyof Pick<CalendarPreference, "googleConnected" | "syncInspections" | "syncDueDates">) => void;
+}) {
+  const inspections = orderList.filter((order) => order.inspectionDate).sort((a, b) => new Date(a.inspectionDate ?? "").getTime() - new Date(b.inspectionDate ?? "").getTime());
+  const dueDates = [...orderList].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).slice(0, 8);
 
-function ClientsView() {
-  return <SimpleFoundationView icon={Building2} title="Clients" items={clients.map((client) => `${client} - volume, revenue, contacts, invoice status, client rules`)} />;
-}
-
-function AnalyticsView() {
   return (
-    <section className="grid gap-5 xl:grid-cols-2">
-      <div className="panel p-5"><SectionHeader icon={BarChart3} title="Order Analytics" /><LineChart data={volumeChart} suffix=" orders" /></div>
-      <div className="panel p-5"><SectionHeader icon={CircleDollarSign} title="Revenue Analytics" /><LineChart data={revenueChart} prefix="$" suffix="k" /></div>
-      <SimpleFoundationView icon={Gauge} title="Performance Signals" items={["Turn time by appraiser", "Revision rate by client", "Revenue by county", "Past due trend"]} compact />
+    <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid gap-5">
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="panel p-5">
+            <SectionHeader icon={CalendarDays} title="Inspection Calendar" />
+            <div className="mt-4 space-y-3">
+              {inspections.slice(0, 7).map((order) => (
+                <button key={order.id} className="flex w-full items-center justify-between gap-3 rounded-md border border-line px-3 py-2 text-left text-sm hover:bg-slate-50">
+                  <span><span className="font-semibold text-slate-900">{formatDate(order.inspectionDate ?? order.dueDate)}</span> - {order.borrower}</span>
+                  <span className="text-slate-500">{order.appraiser}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="panel p-5">
+            <SectionHeader icon={Clock3} title="Due Date Calendar" />
+            <div className="mt-4 space-y-3">
+              {dueDates.map((order) => (
+                <div key={order.id} className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2 text-sm">
+                  <div>
+                    <div className="font-semibold text-slate-900">{order.fileNumber}</div>
+                    <div className="text-xs text-slate-500">{order.client} - {order.productType}</div>
+                  </div>
+                  <DueChip date={order.dueDate} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="panel p-5">
+          <SectionHeader icon={Gauge} title="Appraiser Workload Calendar" />
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {appraisers.map((appraiser) => (
+              <div key={appraiser.id} className="rounded-md border border-line p-3">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="font-semibold text-slate-900">{appraiser.name}</span>
+                  <span className="text-slate-500">{appraiser.dueThisWeek} due this week</span>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-slate-100">
+                  <div className={cn("h-2 rounded-full", workloadPercent(appraiser) > 85 ? "bg-rose-500" : "bg-brand-600")} style={{ width: `${Math.min(100, workloadPercent(appraiser))}%` }} />
+                </div>
+                <div className="mt-2 text-xs text-slate-500">{appraiser.activeOrders}/{appraiser.capacity} active - {appraiser.avgTurnDays}d avg turn</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <aside className="panel p-5">
+        <SectionHeader icon={Sparkles} title="Google Calendar Foundation" />
+        <button className="secondary-button mt-4 w-full justify-center"><CalendarDays className="h-4 w-4" /> Connect Google Calendar</button>
+        <div className="mt-4 space-y-3">
+          {preferences.map((preference) => (
+            <div key={preference.id} className="rounded-md border border-line p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold text-slate-900">{preference.appraiser}</span>
+                <span className={cn("chip", preference.googleConnected ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600")}>{preference.googleConnected ? "Connected" : "Not connected"}</span>
+              </div>
+              <div className="mt-3 grid gap-2">
+                <label className="flex items-center justify-between gap-3"><span>Google connected</span><input type="checkbox" checked={preference.googleConnected} onChange={() => onTogglePreference(preference.id, "googleConnected")} /></label>
+                <label className="flex items-center justify-between gap-3"><span>Sync inspections</span><input type="checkbox" checked={preference.syncInspections} onChange={() => onTogglePreference(preference.id, "syncInspections")} /></label>
+                <label className="flex items-center justify-between gap-3"><span>Sync due dates</span><input type="checkbox" checked={preference.syncDueDates} onChange={() => onTogglePreference(preference.id, "syncDueDates")} /></label>
+              </div>
+            </div>
+          ))}
+        </div>
+      </aside>
     </section>
+  );
+}
+
+function ClientsView({
+  user,
+  clientList,
+  orderList,
+  onAddClient,
+  onUpdateClient
+}: {
+  user: PortalUser;
+  clientList: ClientProfile[];
+  orderList: Order[];
+  onAddClient: () => void;
+  onUpdateClient: (clientId: string, patch: Partial<ClientProfile>) => void;
+}) {
+  const [selectedClientId, setSelectedClientId] = useState(clientList[0]?.id ?? "");
+  const selectedClient = clientList.find((client) => client.id === selectedClientId) ?? clientList[0];
+  const canManage = canManageClients(user);
+  const history = selectedClient ? orderList.filter((order) => order.client === selectedClient.name) : [];
+
+  useEffect(() => {
+    if (!clientList.some((client) => client.id === selectedClientId)) {
+      setSelectedClientId(clientList[0]?.id ?? "");
+    }
+  }, [clientList, selectedClientId]);
+
+  if (!selectedClient) {
+    return <SimpleFoundationView icon={Building2} title="Clients" items={["No clients yet."]} />;
+  }
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[360px_1fr]">
+      <aside className="panel overflow-hidden">
+        <TableHeader title="Clients" icon={Building2} />
+        <div className="p-4">
+          <button className="primary-button w-full justify-center disabled:opacity-50" disabled={!canManage} onClick={onAddClient}><Plus className="h-4 w-4" /> Add client</button>
+        </div>
+        <div className="divide-y divide-line">
+          {clientList.map((client) => (
+            <button key={client.id} className={cn("block w-full px-4 py-3 text-left text-sm hover:bg-slate-50", selectedClient.id === client.id && "bg-brand-50")} onClick={() => setSelectedClientId(client.id)}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold text-slate-900">{client.name}</span>
+                <span className={cn("chip", client.status === "Active" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600")}>{client.status}</span>
+              </div>
+              <div className="mt-1 text-xs text-slate-500">{client.defaultTurnDays}d turn - {client.contacts.length} contacts</div>
+            </button>
+          ))}
+        </div>
+      </aside>
+      <div className="grid gap-5">
+        <div className="panel p-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-semibold text-slate-950">{selectedClient.name}</h2>
+                <span className={cn("chip", selectedClient.status === "Active" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600")}>{selectedClient.status}</span>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">{history.length} orders - {formatCurrency(history.reduce((total, order) => total + order.fee, 0))} lifetime demo volume</p>
+            </div>
+            <button
+              className="secondary-button disabled:opacity-50"
+              disabled={!canManage}
+              onClick={() => onUpdateClient(selectedClient.id, { status: selectedClient.status === "Active" ? "Inactive" : "Active" })}
+            >
+              {selectedClient.status === "Active" ? "Deactivate" : "Activate"}
+            </button>
+          </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            <Field label="Default turn time">
+              <input className="control w-full" type="number" value={selectedClient.defaultTurnDays} disabled={!canManage} onChange={(event) => onUpdateClient(selectedClient.id, { defaultTurnDays: Number(event.target.value) })} />
+            </Field>
+            {selectedClient.defaultFees.slice(0, 2).map((fee, index) => (
+              <Field key={fee.productType} label={`${fee.productType} fee`}>
+                <input
+                  className="control w-full"
+                  type="number"
+                  value={fee.fee}
+                  disabled={!canManage}
+                  onChange={(event) => {
+                    const defaultFees = selectedClient.defaultFees.map((item, itemIndex) => itemIndex === index ? { ...item, fee: Number(event.target.value) } : item);
+                    onUpdateClient(selectedClient.id, { defaultFees });
+                  }}
+                />
+              </Field>
+            ))}
+            <Field label="Client notes" span>
+              <textarea className="control min-h-24 w-full py-3" value={selectedClient.notes} disabled={!canManage} onChange={(event) => onUpdateClient(selectedClient.id, { notes: event.target.value })} />
+            </Field>
+          </div>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="panel p-5">
+            <SectionHeader icon={Users2} title="Client Contacts" />
+            <div className="mt-4 space-y-3">
+              {selectedClient.contacts.map((contact) => (
+                <div key={contact.id} className="rounded-md border border-line p-3 text-sm">
+                  <div className="font-semibold text-slate-900">{contact.name}</div>
+                  <div className="text-slate-500">{contact.title}</div>
+                  <div className="mt-2 text-xs text-slate-500">{contact.email} - {contact.phone}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="panel p-5">
+            <SectionHeader icon={ListChecks} title="Order History" />
+            <div className="mt-4 space-y-3">
+              {(history.length ? history : orderList.slice(0, 3)).map((order) => (
+                <div key={order.id} className="rounded-md border border-line p-3 text-sm">
+                  <div className="flex items-center justify-between gap-3"><span className="font-semibold text-slate-900">{order.fileNumber}</span><StatusChip status={order.status} /></div>
+                  <div className="mt-1 text-slate-500">{order.productType} - {formatCurrency(order.fee)} - due {formatDate(order.dueDate)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AnalyticsView({ entries, orderList }: { entries: AccountingEntry[]; orderList: Order[] }) {
+  const byProduct = summarizeAccounting(entries, "productType");
+  const byClient = summarizeAccounting(entries, "client");
+  const byAppraiser = summarizeAccounting(entries, "appraiser");
+  const byCounty = summarizeAccounting(entries, "county");
+  const topProduct = byProduct[0]?.label ?? "No product";
+  const lastMonth = entries.filter((entry) => entry.month === "2026-06").reduce((total, entry) => total + entry.fee, 0);
+  const thisMonth = entries.filter((entry) => entry.month === "2026-07").reduce((total, entry) => total + entry.fee, 0);
+  const thisYear = entries.reduce((total, entry) => total + entry.fee, 0);
+  const lastYear = Math.round(thisYear * 0.84);
+  const averageFee = byProduct.map((product) => {
+    const matching = entries.filter((entry) => entry.productType === product.label);
+    return `${product.label}: ${formatCurrency(Math.round(product.revenue / Math.max(1, matching.length)))}`;
+  });
+
+  return (
+    <section className="grid gap-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricTile label="Most sold report" value={topProduct} />
+        <MetricTile label="This year" value={formatCurrency(thisYear)} />
+        <MetricTile label="Last year" value={formatCurrency(lastYear)} />
+        <MetricTile label="Month over month" value={`${lastMonth ? Math.round(((thisMonth - lastMonth) / lastMonth) * 100) : 0}%`} />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <div className="panel p-5"><SectionHeader icon={BarChart3} title="Order Volume" /><LineChart data={volumeChart} suffix=" orders" /></div>
+        <div className="panel p-5"><SectionHeader icon={CircleDollarSign} title="Revenue Trend" /><LineChart data={revenueChart} prefix="$" suffix="k" /></div>
+      </div>
+      <div className="grid gap-5 xl:grid-cols-4">
+        <AnalyticsList title="Revenue by Product" items={byProduct.map((item) => `${item.label}: ${formatCurrency(item.revenue)} (${item.count})`)} />
+        <AnalyticsList title="Revenue by Client" items={byClient.map((item) => `${item.label}: ${formatCurrency(item.revenue)} (${item.count})`)} />
+        <AnalyticsList title="Revenue by Appraiser" items={byAppraiser.map((item) => `${item.label}: ${formatCurrency(item.revenue)} (${item.count})`)} />
+        <AnalyticsList title="Revenue by County" items={byCounty.map((item) => `${item.label}: ${formatCurrency(item.revenue)} (${item.count})`)} />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-3">
+        <SimpleFoundationView icon={Gauge} title="Average Fee by Product" items={averageFee} compact />
+        <SimpleFoundationView icon={Building2} title="Best Clients" items={byClient.slice(0, 3).map((item) => `${item.label}: ${item.count} orders, ${formatCurrency(item.revenue)}`)} compact />
+        <SimpleFoundationView icon={AlertTriangle} title="Watch Clients" items={orderList.filter((order) => daysUntil(order.dueDate) < 0).map((order) => `${order.client}: ${order.fileNumber} past due`).slice(0, 4)} compact />
+      </div>
+    </section>
+  );
+}
+
+function summarizeAccounting(entries: AccountingEntry[], key: "productType" | "client" | "appraiser" | "county") {
+  const grouped = entries.reduce<Record<string, { label: string; revenue: number; count: number }>>((accumulator, entry) => {
+    const label = entry[key];
+    accumulator[label] = accumulator[label] ?? { label, revenue: 0, count: 0 };
+    accumulator[label].revenue += entry.fee;
+    accumulator[label].count += 1;
+    return accumulator;
+  }, {});
+
+  return Object.values(grouped).sort((a, b) => b.revenue - a.revenue);
+}
+
+function AnalyticsList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="panel p-5">
+      <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+      <div className="mt-4 space-y-2">
+        {items.map((item) => <div key={item} className="rounded-md border border-line px-3 py-2 text-sm text-slate-700">{item}</div>)}
+      </div>
+    </div>
   );
 }
 
@@ -2053,24 +2847,107 @@ function NotificationsView() {
   );
 }
 
-function SettingsView() {
-  const roles = ["Admin", "Office", "Appraiser", "Reviewer", "AMC Admin"];
+function SettingsView({
+  user,
+  companyUsers,
+  onInviteUser,
+  onChangeRole,
+  onTogglePermission,
+  onDeactivateUser
+}: {
+  user: PortalUser;
+  companyUsers: CompanyUser[];
+  onInviteUser: () => void;
+  onChangeRole: (userId: string, role: UserRole) => void;
+  onTogglePermission: (userId: string, permission: PermissionKey) => void;
+  onDeactivateUser: (userId: string) => void;
+}) {
+  const [selectedUserId, setSelectedUserId] = useState(companyUsers[0]?.id ?? "");
+  const selectedUser = companyUsers.find((companyUser) => companyUser.id === selectedUserId) ?? companyUsers[0];
+  const canInvite = canInviteUsers(user);
+  const canManage = canManageCompanyUsers(user);
+
+  useEffect(() => {
+    if (!companyUsers.some((companyUser) => companyUser.id === selectedUserId)) {
+      setSelectedUserId(companyUsers[0]?.id ?? "");
+    }
+  }, [companyUsers, selectedUserId]);
+
   return (
-    <section className="panel overflow-hidden">
-      <TableHeader title="Roles and Permissions" icon={Settings} />
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] text-left text-sm">
-          <thead className="border-b border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500"><tr><th className="px-5 py-3">Permission</th>{roles.map((role) => <th key={role} className="px-5 py-3">{role}</th>)}</tr></thead>
-          <tbody className="divide-y divide-line">
-            {permissionCatalog.map((permission, index) => (
-              <tr key={permission.key} className="hover:bg-slate-50">
-                <td className="px-5 py-3"><div className="font-medium text-slate-900">{permission.label}</div><div className="text-xs text-slate-500">{permission.group}</div></td>
-                {roles.map((role, roleIndex) => <td key={role} className="px-5 py-3"><input type="checkbox" defaultChecked={roleIndex === 0 || (role === "Reviewer" && permission.group === "Review") || (role === "AMC Admin" && permission.group === "AMC") || (role === "Office" && index < 6)} className="h-4 w-4 rounded border-line text-brand-600" /></td>)}
+    <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="panel overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-line p-5 lg:flex-row lg:items-center lg:justify-between">
+          <SectionHeader icon={Settings} title="Company Users and Permissions" />
+          <button className="primary-button disabled:opacity-50" disabled={!canInvite} onClick={onInviteUser}><UserCheck className="h-4 w-4" /> Invite user</button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[920px] text-left text-sm">
+            <thead className="border-b border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500">
+              <tr>
+                <th className="px-5 py-3">User</th>
+                <th className="px-5 py-3">Role</th>
+                <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Permissions</th>
+                <th className="px-5 py-3">Last active</th>
+                <th className="px-5 py-3">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {companyUsers.map((companyUser) => (
+                <tr key={companyUser.id} className={cn("hover:bg-slate-50", selectedUser?.id === companyUser.id && "bg-brand-50/60")} onClick={() => setSelectedUserId(companyUser.id)}>
+                  <td className="px-5 py-4">
+                    <div className="font-semibold text-slate-900">{companyUser.name}</div>
+                    <div className="text-xs text-slate-500">{companyUser.email}</div>
+                  </td>
+                  <td className="px-5 py-4" onClick={(event) => event.stopPropagation()}>
+                    <select className="control h-9" value={companyUser.role} disabled={!canManage} onChange={(event) => onChangeRole(companyUser.id, event.target.value as UserRole)}>
+                      {Object.keys(roleNavigation).map((role) => <option key={role} value={role}>{roleLabel(role as UserRole)}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-5 py-4"><span className={cn("chip", companyUser.status === "Active" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : companyUser.status === "Pending invite" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-slate-200 bg-slate-50 text-slate-600")}>{companyUser.status}</span></td>
+                  <td className="px-5 py-4 text-slate-600">{companyUser.permissions.length}</td>
+                  <td className="px-5 py-4 text-slate-600">{companyUser.lastActive}</td>
+                  <td className="px-5 py-4" onClick={(event) => event.stopPropagation()}>
+                    <button className="secondary-button h-8 px-2 text-xs disabled:opacity-50" disabled={!canManage} onClick={() => onDeactivateUser(companyUser.id)}>
+                      {companyUser.status === "Inactive" ? "Reactivate" : "Deactivate"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+      <aside className="panel p-5">
+        <SectionHeader icon={ShieldCheck} title="Permission Toggles" />
+        {selectedUser ? (
+          <>
+            <div className="mt-4 rounded-md border border-line bg-slate-50 p-3 text-sm">
+              <div className="font-semibold text-slate-900">{selectedUser.name}</div>
+              <div className="mt-1 text-slate-500">{roleLabel(selectedUser.role)} - {selectedUser.status}</div>
+            </div>
+            <div className="mt-4 max-h-[620px] space-y-2 overflow-y-auto pr-1">
+              {permissionCatalog.map((permission) => (
+                <label key={permission.key} className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2 text-sm">
+                  <span>
+                    <span className="block font-medium text-slate-800">{permission.label}</span>
+                    <span className="text-xs text-slate-500">{permission.group}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-line text-brand-600"
+                    checked={selectedUser.permissions.includes(permission.key)}
+                    disabled={!canManage}
+                    onChange={() => onTogglePermission(selectedUser.id, permission.key)}
+                  />
+                </label>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="mt-4 rounded-md border border-dashed border-line p-4 text-sm text-slate-500">Select a user to manage permissions.</div>
+        )}
+      </aside>
     </section>
   );
 }
@@ -2215,6 +3092,39 @@ function TableHeader({ icon, title }: { icon: LucideIcon; title: string }) {
 
 function Field({ label, children, span }: { label: string; children: React.ReactNode; span?: boolean }) {
   return <label className={cn("grid gap-1.5 text-sm font-medium text-slate-700", span && "md:col-span-2")}><span>{label}</span>{children}</label>;
+}
+
+function TemplateFieldPreview({ field }: { field: OrderFormTemplate["sections"][number]["fields"][number] }) {
+  if (field.type === "textarea") {
+    return <textarea className="control min-h-20 w-full py-3" placeholder={field.label} />;
+  }
+
+  if (field.type === "select") {
+    return (
+      <select className="control w-full">
+        {(field.options ?? ["Option 1", "Option 2"]).map((option) => <option key={option}>{option}</option>)}
+      </select>
+    );
+  }
+
+  if (field.type === "date") {
+    return <input className="control w-full" type="date" defaultValue="2026-07-08" />;
+  }
+
+  if (field.type === "currency") {
+    return <input className="control w-full" inputMode="numeric" placeholder="$0" />;
+  }
+
+  if (field.type === "upload") {
+    return (
+      <button type="button" className="secondary-button justify-center">
+        <UploadCloud className="h-4 w-4" />
+        Add files
+      </button>
+    );
+  }
+
+  return <input className="control w-full" placeholder={field.label} />;
 }
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
