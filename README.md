@@ -27,9 +27,17 @@ Copy `.env.example` to `.env.local` and set Supabase values when connecting to a
 
 ## Supabase
 
-The initial schema is in `supabase/migrations/202606290001_initial_schema.sql` and demo data is in `supabase/seed.sql`.
+CAS now has a Supabase foundation while still keeping demo mode as the default fallback.
+
+- Leave `NEXT_PUBLIC_CAS_DATA_SOURCE=demo` to use the current local demo state.
+- Set `NEXT_PUBLIC_CAS_DATA_SOURCE=supabase` and provide `NEXT_PUBLIC_SUPABASE_URL` plus `NEXT_PUBLIC_SUPABASE_ANON_KEY` when testing against a Supabase project.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` server-side only. It is for seed/admin scripts, not browser code.
+
+The schema starts in `supabase/migrations/202606290001_initial_schema.sql` and Phase 5 backend extensions are in `supabase/migrations/202607090001_phase5_backend_foundation.sql`. Demo seed data is in `supabase/seed.sql`.
 
 The schema is intentionally automation-ready and AI-ready: workflow steps, required fields/documents, automation rules, review state, audit logs, and notification records are first-class tables instead of hard-coded UI-only state.
+
+The app data-access layer lives in `src/lib/repositories`. It returns demo data by default and can load from Supabase once auth, tenant membership, and project environment variables are configured.
 
 ## Validation
 
