@@ -58,6 +58,11 @@ export function CasApp() {
   const visibleOrders = filterOrdersForUser(orderList, activeUser, activeOrganization);
   const selectedOrder = visibleOrders.find((order) => order.id === selectedOrderId) ?? visibleOrders[0] ?? orderList[0];
 
+  function openView(preferred: NavId, fallback: NavId = "dashboard") {
+    const navigation = roleNavigation[activeUser.role];
+    setActiveView(navigation.includes(preferred) ? preferred : navigation.includes(fallback) ? fallback : "dashboard");
+  }
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
@@ -511,13 +516,23 @@ export function CasApp() {
           {activeView === "dashboard" && (
             <DashboardView
               orderList={visibleOrders}
+              appraisers={appraiserList}
               user={activeUser}
               organization={activeOrganization}
               vendors={vendorList}
+              vendorDocuments={vendorDocumentList}
               accountingEntries={accountingList}
+              invoices={invoiceList}
               onOpenOrders={() => setActiveView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders")}
               onPlaceOrder={() => setActiveView(["amc_admin", "amc_staff", "client_user", "solo_appraiser"].includes(activeUser.role) ? "place-order" : canCreateOrders(activeUser) ? "new-order" : "orders")}
               onInviteVendor={handleInviteVendor}
+              onOpenReview={() => openView(activeUser.role === "reviewer" ? "review-queue" : "review", "orders")}
+              onOpenAccounting={() => openView(activeUser.role === "appraiser" || activeUser.role === "solo_appraiser" ? "pay" : "accounting", "dashboard")}
+              onOpenClients={() => openView("clients", "orders")}
+              onOpenVendors={() => openView(activeUser.role === "amc_admin" || activeUser.role === "amc_staff" ? "compliance" : "vendors", "orders")}
+              onOpenMessages={() => openView("messages", "notifications")}
+              onOpenDocuments={() => openView("documents", "orders")}
+              onOpenCalendar={() => openView("calendar", "orders")}
             />
           )}
           {(activeView === "orders" || activeView === "my-orders") && (
@@ -552,7 +567,7 @@ export function CasApp() {
           {(activeView === "review" || activeView === "review-queue") && <ReviewView orderList={visibleOrders.length ? visibleOrders : orderList} user={activeUser} onReviewAction={handleReviewAction} onSelectOrder={(order) => { setSelectedOrderId(order.id); setActiveView("orders"); }} />}
           {activeView === "completed-reviews" && <CompletedReviewsView orderList={orderList} />}
           {activeView === "templates" && <ReviewTemplatesView />}
-          {activeView === "appraisers" && <AppraiserPortalView orderList={visibleOrders.length ? visibleOrders : orderList} />}
+          {activeView === "appraisers" && <AppraiserPortalView orderList={visibleOrders.length ? visibleOrders : orderList} appraiserList={appraiserList} />}
           {activeView === "clients" && (
             <ClientsView
               user={activeUser}
@@ -617,4 +632,3 @@ export function CasApp() {
     </div>
   );
 }
-
