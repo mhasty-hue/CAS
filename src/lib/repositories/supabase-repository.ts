@@ -90,12 +90,15 @@ function mapOrganization(row: OrganizationRow): Organization {
   return {
     id: row.id,
     name: row.name,
+    slug: row.slug ?? undefined,
     type: row.type,
     status: row.status === "inactive" ? "Suspended" : "Active",
     primaryContact: row.primary_contact ?? "",
     email: row.email ?? "",
     phone: row.phone ?? "",
-    address: row.address ?? ""
+    address: row.address ?? "",
+    logoUrl: row.logo_url ?? undefined,
+    brandColor: row.brand_color ?? undefined
   };
 }
 
@@ -232,13 +235,31 @@ function mapAccounting(row: AccountingEntryRow, ordersById: Map<string, Order>, 
 }
 
 function mapInvoice(row: InvoiceRow, clientsById: Map<string, ClientRow>): Invoice {
+  const status = ["Draft", "Issued", "Sent", "Viewed", "Partially Paid", "Paid", "Overdue", "Void"].includes(row.status) ? row.status as Invoice["status"] : "Draft";
+
   return {
     id: row.id,
+    organizationId: row.organization_id,
+    orderId: row.order_id ?? undefined,
+    invoiceNumber: row.invoice_number,
     client: row.client_id ? clientsById.get(row.client_id)?.name ?? "Unknown client" : "Unknown client",
+    billingParty: row.billing_party ?? undefined,
+    billToContact: row.bill_to_contact ?? undefined,
     amount: toCurrency(row.amount),
-    status: row.status === "Sent" || row.status === "Paid" || row.status === "Overdue" ? row.status : "Draft",
+    subtotal: row.subtotal ?? undefined,
+    taxAmount: row.tax_amount ?? undefined,
+    balanceDue: row.balance_due ?? undefined,
+    status,
     dueDate: dateOnly(row.due_at),
-    orderCount: row.order_count
+    orderCount: row.order_count,
+    paymentTerms: row.payment_terms ?? undefined,
+    notes: row.notes ?? undefined,
+    draftDate: dateOnly(row.draft_at) || undefined,
+    issuedDate: dateOnly(row.issued_at) || undefined,
+    sentDate: dateOnly(row.sent_at) || undefined,
+    viewedDate: dateOnly(row.viewed_at) || undefined,
+    paidDate: dateOnly(row.paid_at) || undefined,
+    partialPayment: row.partial_payment_amount ?? undefined
   };
 }
 
@@ -299,6 +320,15 @@ export class SupabaseCasRepository implements CasRepository {
         vendorDocuments: [],
         accountingEntries: [],
         invoices: [],
+        invoiceSettings: [],
+        invitations: [],
+        publicOrderSettings: [],
+        publicOrderRequests: [],
+        notificationPreferences: [],
+        notificationTemplates: [],
+        emailDeliveryRecords: [],
+        integrations: [],
+        integrationLogs: [],
         orderFormTemplate: defaultOrderFormTemplate,
         calendarPreferences: []
       };
@@ -399,6 +429,15 @@ export class SupabaseCasRepository implements CasRepository {
       vendorDocuments: [] as VendorDocument[],
       accountingEntries: accountingRows.map((row) => mapAccounting(row, ordersById, clientsById, appraisersById)),
       invoices: invoiceRows.map((row) => mapInvoice(row, clientsById)),
+      invoiceSettings: [],
+      invitations: [],
+      publicOrderSettings: [],
+      publicOrderRequests: [],
+      notificationPreferences: [],
+      notificationTemplates: [],
+      emailDeliveryRecords: [],
+      integrations: [],
+      integrationLogs: [],
       orderFormTemplate: mapOrderFormTemplate(templateRows[0]),
       calendarPreferences: calendarRows.map((row) => mapCalendarPreference(row, appraisersById))
     };

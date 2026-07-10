@@ -1,5 +1,20 @@
 import { appraisers, calendarPreferences, clientProfiles, companyUsers, defaultOrderFormTemplate, orders, vendors } from "@/data/demo";
-import { accountingEntries, invoices, organizations, portalUsers, vendorDocuments } from "@/data/platform";
+import {
+  accountingEntries,
+  emailDeliveryRecords,
+  integrationLogs,
+  integrationSettings,
+  invoiceSettings,
+  invoices,
+  notificationPreferences,
+  notificationTemplates,
+  organizationInvitations,
+  organizations,
+  portalUsers,
+  publicOrderRequests,
+  publicOrderSettings,
+  vendorDocuments
+} from "@/data/platform";
 import { getPermissions } from "@/lib/permissions";
 import type { CasAuthContext, CasBootstrapData, CasRepository } from "./types";
 
@@ -18,6 +33,15 @@ export class DemoCasRepository implements CasRepository {
       vendorDocuments,
       accountingEntries,
       invoices,
+      invoiceSettings,
+      invitations: organizationInvitations,
+      publicOrderSettings,
+      publicOrderRequests,
+      notificationPreferences,
+      notificationTemplates,
+      emailDeliveryRecords,
+      integrations: integrationSettings,
+      integrationLogs,
       orderFormTemplate: defaultOrderFormTemplate,
       calendarPreferences
     };

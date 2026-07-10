@@ -108,7 +108,7 @@ export const orderStatusOptions: OrderStatus[] = [
   "Cancelled"
 ];
 
-export const demoMode = true;
+export const demoMode = process.env.NEXT_PUBLIC_CAS_DEMO_MODE !== "false" && process.env.NEXT_PUBLIC_CAS_DATA_SOURCE !== "supabase";
 
 
 export function roleLabel(role: UserRole) {

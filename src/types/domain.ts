@@ -33,17 +33,33 @@ export type PermissionKey =
   | "invite_users"
   | "manage_company_users"
   | "manage_accounting"
-  | "customize_order_forms";
+  | "customize_order_forms"
+  | "view_accounting_summary"
+  | "view_full_accounting"
+  | "prepare_payroll"
+  | "approve_payroll"
+  | "edit_commission_defaults"
+  | "override_order_commission"
+  | "generate_invoices"
+  | "edit_invoices"
+  | "mark_invoices_paid"
+  | "view_own_pay"
+  | "manage_public_ordering"
+  | "manage_notification_settings"
+  | "manage_integrations";
 
 export type Organization = {
   id: string;
   name: string;
+  slug?: string;
   type: OrganizationType;
   status: "Active" | "Invited" | "Pending docs" | "Under review" | "Approved" | "Suspended";
   primaryContact: string;
   email: string;
   phone: string;
   address: string;
+  logoUrl?: string;
+  brandColor?: string;
 };
 
 export type PortalUser = {
@@ -253,11 +269,54 @@ export type AccountingEntry = {
 
 export type Invoice = {
   id: string;
+  organizationId?: string;
+  orderId?: string;
+  invoiceNumber?: string;
   client: string;
+  billingParty?: string;
+  billToContact?: string;
+  lineItems?: InvoiceLineItem[];
   amount: number;
-  status: "Draft" | "Sent" | "Paid" | "Overdue";
+  subtotal?: number;
+  taxAmount?: number;
+  balanceDue?: number;
+  status: InvoiceStatus;
   dueDate: string;
   orderCount: number;
+  paymentTerms?: string;
+  notes?: string;
+  draftDate?: string;
+  issuedDate?: string;
+  sentDate?: string;
+  viewedDate?: string;
+  paidDate?: string;
+  partialPayment?: number;
+};
+
+export type InvoiceStatus = "Draft" | "Issued" | "Sent" | "Viewed" | "Partially Paid" | "Paid" | "Overdue" | "Void";
+
+export type InvoiceLineItem = {
+  id: string;
+  label: string;
+  description?: string;
+  quantity: number;
+  unitAmount: number;
+  amount: number;
+  type: "Appraisal fee" | "Technology fee" | "Rush fee" | "Additional service" | "Credit" | "Tax";
+};
+
+export type InvoiceSettings = {
+  id: string;
+  organizationId: string;
+  companyName: string;
+  companyAddress: string;
+  logoUrl?: string;
+  taxId?: string;
+  invoicePrefix: string;
+  nextInvoiceNumber: number;
+  defaultPaymentTerms: string;
+  defaultInvoiceNotes: string;
+  paymentInstructions: string;
 };
 
 export type ReviewQueueItem = {
@@ -296,6 +355,78 @@ export type CompanyUser = {
   status: "Active" | "Pending invite" | "Inactive";
   permissions: PermissionKey[];
   lastActive: string;
+};
+
+export type InvitationStatus = "Pending" | "Accepted" | "Expired" | "Revoked";
+
+export type OrganizationInvitation = {
+  id: string;
+  organizationId: string;
+  email: string;
+  invitedName: string;
+  role: UserRole;
+  permissions: PermissionKey[];
+  status: InvitationStatus;
+  token: string;
+  invitedBy: string;
+  expiresAt: string;
+  acceptedAt?: string;
+  revokedAt?: string;
+  note?: string;
+};
+
+export type PublicOrderPurpose =
+  | "Estate"
+  | "Divorce"
+  | "Tax appeal"
+  | "Pre-listing"
+  | "Purchase"
+  | "Refinance"
+  | "PMI removal"
+  | "Litigation"
+  | "Financial planning"
+  | "Date-of-death appraisal"
+  | "Other";
+
+export type PublicOrderSettings = {
+  id: string;
+  organizationId: string;
+  enabled: boolean;
+  publicSlug: string;
+  buttonLabel: string;
+  brandName: string;
+  brandColor: string;
+  logoUrl?: string;
+  confirmationMessage: string;
+  notificationRecipients: string[];
+  requiredFields: string[];
+  customQuestions: Array<{ id: string; label: string; required: boolean }>;
+  updatedAt: string;
+};
+
+export type PublicOrderRequestStatus = "Pending review" | "Converted" | "Declined" | "Archived";
+
+export type PublicOrderRequest = {
+  id: string;
+  organizationId: string;
+  requesterName: string;
+  email: string;
+  phone: string;
+  propertyAddress: string;
+  propertyType: string;
+  purpose: PublicOrderPurpose;
+  intendedUse: string;
+  ownerBorrowerName: string;
+  accessContact: string;
+  preferredContactMethod: "Email" | "Phone" | "Text";
+  requestedTiming: string;
+  comments: string;
+  consentAccepted: boolean;
+  documentCount: number;
+  status: PublicOrderRequestStatus;
+  submittedAt: string;
+  convertedOrderId?: string;
+  auditTrail: AuditTrailItem[];
 };
 
 export type OrderFormField = {
@@ -349,4 +480,109 @@ export type NotificationItem = {
   detail: string;
   tone: "info" | "warning" | "success" | "danger";
   time: string;
+};
+
+export type NotificationEventKey =
+  | "new_order_received"
+  | "public_order_request_submitted"
+  | "order_assigned"
+  | "appraiser_accepted"
+  | "appraiser_declined"
+  | "inspection_scheduled"
+  | "inspection_rescheduled"
+  | "inspection_completed"
+  | "report_submitted"
+  | "report_entered_review"
+  | "revisions_requested"
+  | "revision_response_received"
+  | "report_approved"
+  | "report_delivered"
+  | "order_completed"
+  | "order_placed_on_hold"
+  | "order_cancelled"
+  | "invoice_generated"
+  | "invoice_paid"
+  | "vendor_compliance_document_expiring"
+  | "license_expiring"
+  | "eo_expiring"
+  | "w9_missing"
+  | "due_date_warning"
+  | "past_due_warning";
+
+export type NotificationPreference = {
+  id: string;
+  organizationId: string;
+  userId?: string;
+  eventKey: NotificationEventKey;
+  emailEnabled: boolean;
+  inAppEnabled: boolean;
+  cadence: "Immediate" | "Daily digest";
+};
+
+export type NotificationTemplate = {
+  eventKey: NotificationEventKey;
+  label: string;
+  subject: string;
+  preview: string;
+  defaultAudience: string;
+};
+
+export type EmailDeliveryRecord = {
+  id: string;
+  organizationId: string;
+  eventKey: NotificationEventKey;
+  recipient: string;
+  subject: string;
+  status: "Logged" | "Queued" | "Sent" | "Failed";
+  provider: "development-log" | "resend" | "postmark" | "sendgrid" | "custom";
+  createdAt: string;
+  error?: string;
+};
+
+export type LosProviderKey = "lendingqb_meridianlink" | "encompass" | "byte" | "calyx" | "empower" | "other";
+
+export type IntegrationStatus = "Not connected" | "Connected" | "Needs attention" | "Error" | "Paused";
+
+export type IntegrationSetting = {
+  id: string;
+  organizationId: string;
+  provider: LosProviderKey;
+  providerLabel: string;
+  status: IntegrationStatus;
+  lastSyncAt?: string;
+  credentialReference?: string;
+  syncStatus: "Idle" | "Syncing" | "Retry scheduled" | "Failed";
+  retryCount: number;
+  fieldMappings: IntegrationFieldMapping[];
+  statusMappings: IntegrationStatusMapping[];
+  documentMappings: IntegrationDocumentMapping[];
+};
+
+export type IntegrationFieldMapping = {
+  id: string;
+  externalField: string;
+  casField: string;
+  required: boolean;
+};
+
+export type IntegrationStatusMapping = {
+  id: string;
+  externalStatus: string;
+  casStatus: OrderStatus;
+};
+
+export type IntegrationDocumentMapping = {
+  id: string;
+  externalDocumentType: string;
+  casDocumentType: string;
+  direction: "Import" | "Export" | "Both";
+};
+
+export type IntegrationLog = {
+  id: string;
+  integrationId: string;
+  event: string;
+  status: "Success" | "Warning" | "Error";
+  detail: string;
+  createdAt: string;
 };

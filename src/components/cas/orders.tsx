@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, Archive, ClipboardCheck, Clock3, Download, Eye, FileCheck2, FilePlus2, History, Home, ListChecks, MessageSquare, Plus, ReceiptText, Search, Send, SlidersHorizontal, UploadCloud, UserCheck, X } from "lucide-react";
 import { appraisers, savedViews } from "@/data/demo";
 import type { AppraiserProfile, Order, OrderStatus, PortalUser } from "@/types/domain";
-import { canAssignOrders, canCreateOrders, canViewAccounting } from "@/lib/permissions";
+import { canAssignOrders, canCreateOrders, canGenerateInvoices, canViewAccounting } from "@/lib/permissions";
 import { cn, daysUntil, formatCurrency, formatDate } from "@/lib/utils";
 import { orderStatusOptions, statusFilters, type SavedView } from "./config";
 import { DetailSection, DocumentStatusChip, DueChip, InfoRow, ListOrEmpty, MetricTile, PriorityChip, StatusChip, SummaryItem } from "./shared";
@@ -58,7 +58,8 @@ export function OrdersView({
   onSelectOrder,
   onAssignOrder,
   onStatusChange,
-  onAddNote
+  onAddNote,
+  onGenerateInvoice
 }: {
   orderList: Order[];
   selectedOrder: Order;
@@ -67,18 +68,27 @@ export function OrdersView({
   onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
   onStatusChange: (orderId: string, status: OrderStatus) => void;
   onAddNote: (orderId: string) => void;
+  onGenerateInvoice: (orderId: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | OrderStatus>("All");
-  const [sortBy, setSortBy] = useState("Due date");
+  const [sortBy, setSortBy] = useState("Due date ascending");
+  const [appraiserFilter, setAppraiserFilter] = useState("All appraisers");
+  const [clientFilter, setClientFilter] = useState("All clients");
+  const [priorityFilter, setPriorityFilter] = useState<"All" | Order["priority"]>("All");
   const [view, setView] = useState<SavedView>("All");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const appraiserOptions = Array.from(new Set(orderList.map((order) => order.appraiser))).sort();
+  const clientOptions = Array.from(new Set(orderList.map((order) => order.client))).sort();
 
   const filteredOrders = useMemo(() => {
     const needle = search.toLowerCase();
     return orderList
       .filter((order) => orderMatchesView(order, view))
       .filter((order) => statusFilter === "All" || order.status === statusFilter)
+      .filter((order) => appraiserFilter === "All appraisers" || order.appraiser === appraiserFilter)
+      .filter((order) => clientFilter === "All clients" || order.client === clientFilter)
+      .filter((order) => priorityFilter === "All" || order.priority === priorityFilter)
       .filter((order) =>
         [order.fileNumber, order.client, order.borrower, order.address, order.appraiser, order.reviewer, order.county, order.productType]
           .join(" ")
@@ -88,10 +98,14 @@ export function OrdersView({
       .sort((a, b) => {
         if (sortBy === "Fee") return b.fee - a.fee;
         if (sortBy === "Priority") return priorityRank(a.priority) - priorityRank(b.priority);
-        if (sortBy === "Last update") return a.lastUpdate.localeCompare(b.lastUpdate);
+        if (sortBy === "Last update") return b.lastUpdate.localeCompare(a.lastUpdate);
+        if (sortBy === "Assigned appraiser") return a.appraiser.localeCompare(b.appraiser);
+        if (sortBy === "Client") return a.client.localeCompare(b.client);
+        if (sortBy === "Status") return a.status.localeCompare(b.status);
+        if (sortBy === "Due date descending") return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
         return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
       });
-  }, [orderList, search, sortBy, statusFilter, view]);
+  }, [appraiserFilter, clientFilter, orderList, priorityFilter, search, sortBy, statusFilter, view]);
 
   function applySavedView(nextView: SavedView) {
     setView(nextView);
@@ -147,7 +161,7 @@ export function OrdersView({
               ))}
             </div>
 
-            <div className="grid gap-2 md:grid-cols-[1fr_190px_160px]">
+            <div className="grid gap-2 md:grid-cols-[1fr_190px_180px_170px_150px_200px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input className="control w-full pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search file, borrower, client, address, appraiser" />
@@ -155,8 +169,27 @@ export function OrdersView({
               <select className="control" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "All" | OrderStatus)}>
                 {statusFilters.map((status) => <option key={status}>{status}</option>)}
               </select>
+              <select className="control" value={appraiserFilter} onChange={(event) => setAppraiserFilter(event.target.value)}>
+                <option>All appraisers</option>
+                {appraiserOptions.map((appraiser) => <option key={appraiser}>{appraiser}</option>)}
+              </select>
+              <select className="control" value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}>
+                <option>All clients</option>
+                {clientOptions.map((client) => <option key={client}>{client}</option>)}
+              </select>
+              <select className="control" value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as "All" | Order["priority"])}>
+                <option>All</option>
+                <option>Rush</option>
+                <option>High</option>
+                <option>Standard</option>
+                <option>Watch</option>
+              </select>
               <select className="control" value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
-                <option>Due date</option>
+                <option>Due date ascending</option>
+                <option>Due date descending</option>
+                <option>Assigned appraiser</option>
+                <option>Client</option>
+                <option>Status</option>
                 <option>Fee</option>
                 <option>Priority</option>
                 <option>Last update</option>
@@ -245,7 +278,7 @@ export function OrdersView({
           <span>{selectedIds.length} selected</span>
         </div>
       </section>
-      <OrderDetailPanel order={selectedOrder} user={user} onAssignOrder={onAssignOrder} onStatusChange={onStatusChange} onAddNote={onAddNote} />
+      <OrderDetailPanel order={selectedOrder} user={user} onAssignOrder={onAssignOrder} onStatusChange={onStatusChange} onAddNote={onAddNote} onGenerateInvoice={onGenerateInvoice} />
     </div>
   );
 }
@@ -257,17 +290,20 @@ export function OrderDetailPanel({
   user,
   onAssignOrder,
   onStatusChange,
-  onAddNote
+  onAddNote,
+  onGenerateInvoice
 }: {
   order: Order;
   user: PortalUser;
   onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
   onStatusChange: (orderId: string, status: OrderStatus) => void;
   onAddNote: (orderId: string) => void;
+  onGenerateInvoice: (orderId: string) => void;
 }) {
   const reviewComplete = order.reviewItems.filter((item) => item.complete).length;
   const showAccounting = canViewAccounting(user);
   const showAssignment = canAssignOrders(user);
+  const showInvoiceAction = canGenerateInvoices(user);
   return (
     <aside className="panel overflow-hidden 2xl:sticky 2xl:top-20 2xl:max-h-[calc(100vh-6rem)] 2xl:overflow-y-auto">
       <div className="border-b border-line bg-white p-5">
@@ -299,6 +335,7 @@ export function OrderDetailPanel({
             <select className="control" value={order.status} onChange={(event) => onStatusChange(order.id, event.target.value as OrderStatus)}>
               {orderStatusOptions.map((status) => <option key={status}>{status}</option>)}
             </select>
+            {showInvoiceAction && <button className="secondary-button justify-center px-2" onClick={() => onGenerateInvoice(order.id)}><ReceiptText className="h-4 w-4" /> Invoice</button>}
             <button className="secondary-button justify-center px-2"><UploadCloud className="h-4 w-4" /> Upload</button>
           </div>
         </section>

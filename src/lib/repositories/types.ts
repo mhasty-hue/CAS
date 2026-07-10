@@ -4,12 +4,21 @@ import type {
   CalendarPreference,
   ClientProfile,
   CompanyUser,
+  EmailDeliveryRecord,
+  IntegrationLog,
+  IntegrationSetting,
   Invoice,
+  InvoiceSettings,
+  NotificationPreference,
+  NotificationTemplate,
   Order,
   OrderFormTemplate,
   Organization,
+  OrganizationInvitation,
   PermissionKey,
   PortalUser,
+  PublicOrderRequest,
+  PublicOrderSettings,
   VendorDocument,
   VendorProfile
 } from "@/types/domain";
@@ -27,6 +36,15 @@ export type CasBootstrapData = {
   vendorDocuments: VendorDocument[];
   accountingEntries: AccountingEntry[];
   invoices: Invoice[];
+  invoiceSettings: InvoiceSettings[];
+  invitations: OrganizationInvitation[];
+  publicOrderSettings: PublicOrderSettings[];
+  publicOrderRequests: PublicOrderRequest[];
+  notificationPreferences: NotificationPreference[];
+  notificationTemplates: NotificationTemplate[];
+  emailDeliveryRecords: EmailDeliveryRecord[];
+  integrations: IntegrationSetting[];
+  integrationLogs: IntegrationLog[];
   orderFormTemplate: OrderFormTemplate;
   calendarPreferences: CalendarPreference[];
 };

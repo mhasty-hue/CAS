@@ -10,7 +10,7 @@ type TableDefinition<Row> = {
 export type OrganizationRow = {
   id: string;
   name: string;
-  slug: string;
+  slug: string | null;
   type: "appraisal_firm" | "solo_appraiser" | "amc" | "lender_client";
   status: string;
   logo_url: string | null;
@@ -249,12 +249,161 @@ export type InvoiceRow = {
   id: string;
   organization_id: string;
   client_id: string | null;
+  order_id: string | null;
   invoice_number: string;
   amount: number;
   status: string;
   due_at: string | null;
   paid_at: string | null;
+  billing_party: string | null;
+  bill_to_contact: string | null;
+  subtotal: number | null;
+  tax_amount: number | null;
+  balance_due: number | null;
+  payment_terms: string | null;
+  notes: string | null;
+  draft_at: string | null;
+  issued_at: string | null;
+  sent_at: string | null;
+  viewed_at: string | null;
+  partial_payment_amount: number | null;
   order_count: number;
+  created_at: string;
+};
+
+export type PublicOrderSettingRow = {
+  id: string;
+  organization_id: string;
+  enabled: boolean;
+  public_slug: string;
+  button_label: string;
+  brand_name: string;
+  brand_color: string | null;
+  logo_url: string | null;
+  confirmation_message: string;
+  notification_recipients: string[];
+  required_fields: string[];
+  custom_questions: Json;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PublicOrderRequestRow = {
+  id: string;
+  organization_id: string;
+  requester_name: string;
+  email: string;
+  phone: string | null;
+  property_address: string;
+  property_type: string | null;
+  purpose: string;
+  intended_use: string | null;
+  owner_borrower_name: string | null;
+  access_contact: string | null;
+  preferred_contact_method: string | null;
+  requested_timing: string | null;
+  comments: string | null;
+  consent_accepted: boolean;
+  document_count: number;
+  status: string;
+  converted_order_id: string | null;
+  metadata: Json;
+  submitted_at: string;
+  updated_at: string;
+};
+
+export type NotificationPreferenceRow = {
+  id: string;
+  organization_id: string;
+  user_id: string | null;
+  event_key: string;
+  email_enabled: boolean;
+  in_app_enabled: boolean;
+  cadence: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EmailDeliveryRow = {
+  id: string;
+  organization_id: string;
+  event_key: string;
+  recipient: string;
+  subject: string;
+  status: string;
+  provider: string;
+  provider_message_id: string | null;
+  error: string | null;
+  created_at: string;
+};
+
+export type InvoiceSettingsRow = {
+  id: string;
+  organization_id: string;
+  company_name: string;
+  company_address: string | null;
+  logo_url: string | null;
+  tax_id: string | null;
+  invoice_prefix: string;
+  next_invoice_number: number;
+  default_payment_terms: string;
+  default_invoice_notes: string | null;
+  payment_instructions: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InvoiceLineItemRow = {
+  id: string;
+  invoice_id: string;
+  organization_id: string;
+  label: string;
+  description: string | null;
+  quantity: number;
+  unit_amount: number;
+  amount: number;
+  line_type: string;
+  sort_order: number;
+  created_at: string;
+};
+
+export type IntegrationRow = {
+  id: string;
+  organization_id: string;
+  provider_key: string;
+  provider_label: string;
+  status: string;
+  credential_reference: string | null;
+  config: Json;
+  last_sync_at: string | null;
+  sync_status: string;
+  retry_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IntegrationMappingRow = {
+  id: string;
+  integration_id: string;
+  organization_id: string;
+  mapping_type: string;
+  external_key: string;
+  cas_key: string;
+  direction: string | null;
+  required: boolean;
+  metadata: Json;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IntegrationLogRow = {
+  id: string;
+  integration_id: string;
+  organization_id: string;
+  event_type: string;
+  status: string;
+  detail: string | null;
+  payload: Json;
   created_at: string;
 };
 
@@ -298,9 +447,20 @@ export type Database = {
       clients: TableDefinition<ClientRow>;
       coverage_areas: TableDefinition<Record<string, Json>>;
       documents: TableDefinition<Record<string, Json>>;
+      email_deliveries: TableDefinition<EmailDeliveryRow>;
       invitations: TableDefinition<Record<string, Json>>;
+      integration_external_mappings: TableDefinition<Record<string, Json>>;
+      integration_logs: TableDefinition<IntegrationLogRow>;
+      integration_mappings: TableDefinition<IntegrationMappingRow>;
+      integration_webhook_events: TableDefinition<Record<string, Json>>;
+      integrations: TableDefinition<IntegrationRow>;
+      invoice_line_items: TableDefinition<InvoiceLineItemRow>;
+      invoice_payments: TableDefinition<Record<string, Json>>;
+      invoice_settings: TableDefinition<InvoiceSettingsRow>;
       invoices: TableDefinition<InvoiceRow>;
       notifications: TableDefinition<Record<string, Json>>;
+      notification_preferences: TableDefinition<NotificationPreferenceRow>;
+      notification_templates: TableDefinition<Record<string, Json>>;
       order_assignments: TableDefinition<Record<string, Json>>;
       order_documents: TableDefinition<OrderDocumentRow>;
       order_form_template_fields: TableDefinition<Record<string, Json>>;
@@ -315,6 +475,9 @@ export type Database = {
       payroll_run_items: TableDefinition<Record<string, Json>>;
       payroll_runs: TableDefinition<Record<string, Json>>;
       permissions: TableDefinition<Record<string, Json>>;
+      public_order_request_documents: TableDefinition<Record<string, Json>>;
+      public_order_requests: TableDefinition<PublicOrderRequestRow>;
+      public_order_settings: TableDefinition<PublicOrderSettingRow>;
       revision_requests: TableDefinition<Record<string, Json>>;
       review_checklist_items: TableDefinition<Record<string, Json>>;
       review_checklists: TableDefinition<Record<string, Json>>;

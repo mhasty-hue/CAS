@@ -49,7 +49,20 @@ export const permissionCatalog: Array<{ key: PermissionKey; label: string; group
   { key: "invite_users", label: "canInviteUsers", group: "Company users" },
   { key: "manage_company_users", label: "canManageCompanyUsers", group: "Company users" },
   { key: "manage_accounting", label: "canManageAccounting", group: "Accounting" },
-  { key: "customize_order_forms", label: "canCustomizeOrderForms", group: "Order intake" }
+  { key: "customize_order_forms", label: "canCustomizeOrderForms", group: "Order intake" },
+  { key: "view_accounting_summary", label: "View accounting summary", group: "Accounting" },
+  { key: "view_full_accounting", label: "View full accounting", group: "Accounting" },
+  { key: "prepare_payroll", label: "Prepare payroll", group: "Accounting" },
+  { key: "approve_payroll", label: "Approve payroll", group: "Accounting" },
+  { key: "edit_commission_defaults", label: "Edit commission defaults", group: "Accounting" },
+  { key: "override_order_commission", label: "Override order commission", group: "Accounting" },
+  { key: "generate_invoices", label: "Generate invoices", group: "Invoicing" },
+  { key: "edit_invoices", label: "Edit invoices", group: "Invoicing" },
+  { key: "mark_invoices_paid", label: "Mark invoices paid", group: "Invoicing" },
+  { key: "view_own_pay", label: "View own pay", group: "Accounting" },
+  { key: "manage_public_ordering", label: "Manage public ordering", group: "Public intake" },
+  { key: "manage_notification_settings", label: "Manage notification settings", group: "Notifications" },
+  { key: "manage_integrations", label: "Manage integrations", group: "Integrations" }
 ];
 
 const documents = (fileNumber: string, reportStatus: "Ready" | "Missing" | "Needs review" = "Ready") => [

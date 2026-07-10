@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { AlertTriangle, BarChart3, Building2, CheckCircle2, CircleDollarSign, Download, Gauge, ReceiptText, UserCog, WalletCards } from "lucide-react";
 import { revenueChart, volumeChart } from "@/data/demo";
-import type { AccountingEntry, AppraiserProfile, Invoice, Order, PortalUser } from "@/types/domain";
-import { canManageAccounting } from "@/lib/permissions";
+import type { AccountingEntry, AppraiserProfile, Invoice, InvoiceSettings, Order, PortalUser } from "@/types/domain";
+import { canApprovePayroll, canEditCommissionDefaults, canEditInvoices, canGenerateInvoices, canMarkInvoicesPaid, canOverrideOrderCommission } from "@/lib/permissions";
 import { cn, daysUntil, formatCurrency, formatDate } from "@/lib/utils";
 import { Field, LineChart, MetricTile, SectionHeader, SimpleFoundationView, TableHeader } from "./shared";
 
@@ -10,8 +10,10 @@ export function AccountingView({
   user,
   entries,
   invoices,
+  invoiceSettings,
   appraisers,
   onMarkInvoiceSent,
+  onMarkInvoicePaid,
   onUpdateDefaultSplit,
   onOverrideCommission,
   onMarkPaid,
@@ -20,8 +22,10 @@ export function AccountingView({
   user: PortalUser;
   entries: AccountingEntry[];
   invoices: Invoice[];
+  invoiceSettings: InvoiceSettings[];
   appraisers: AppraiserProfile[];
   onMarkInvoiceSent: (invoiceId: string) => void;
+  onMarkInvoicePaid: (invoiceId: string) => void;
   onUpdateDefaultSplit: (appraiserName: string, split: number) => void;
   onOverrideCommission: (orderId: string, split: number) => void;
   onMarkPaid: (entryIds: string[]) => void;
@@ -66,7 +70,12 @@ export function AccountingView({
   const payoutDue = filteredEntries.filter((entry) => entry.status !== "Paid").reduce((total, entry) => total + entry.appraiserSplit, 0);
   const paidTotal = filteredEntries.filter((entry) => entry.status === "Paid").reduce((total, entry) => total + entry.appraiserSplit, 0);
   const companyRevenue = filteredEntries.reduce((total, entry) => total + entry.companyRevenue, 0);
-  const canManage = canManageAccounting(user);
+  const canApprove = canApprovePayroll(user);
+  const canEditDefaults = canEditCommissionDefaults(user);
+  const canOverride = canOverrideOrderCommission(user);
+  const canEditInvoiceRecords = canEditInvoices(user) || canGenerateInvoices(user);
+  const canMarkInvoiceRecordsPaid = canMarkInvoicesPaid(user);
+  const activeInvoiceSettings = invoiceSettings[0];
 
   return (
     <section className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -126,7 +135,7 @@ export function AccountingView({
             <button className="secondary-button" onClick={() => onExportCsv(filteredEntries)}><Download className="h-4 w-4" /> Export CSV</button>
             <button
               className="primary-button disabled:opacity-50"
-              disabled={!canManage || selectedEntries.length === 0}
+              disabled={!canApprove || selectedEntries.length === 0}
               onClick={() => {
                 onMarkPaid(selectedEntries.map((entry) => entry.id));
                 setSelectedIds([]);
@@ -182,7 +191,7 @@ export function AccountingView({
                         min="0"
                         max="100"
                         value={entry.commissionSplit}
-                        disabled={!canManage}
+                        disabled={!canOverride}
                         onChange={(event) => onOverrideCommission(entry.orderId, Number(event.target.value))}
                       />
                     </td>
@@ -217,7 +226,7 @@ export function AccountingView({
                     min="0"
                     max="100"
                     value={appraiser.defaultCommissionSplit ?? 60}
-                    disabled={!canManage}
+                    disabled={!canEditDefaults}
                     onChange={(event) => onUpdateDefaultSplit(appraiser.name, Number(event.target.value))}
                   />
                 </div>
@@ -227,6 +236,15 @@ export function AccountingView({
         </div>
         <div className="panel p-5">
           <SectionHeader icon={ReceiptText} title={user.appraiserName ? "Pay History" : "Client Invoices"} />
+          {!user.appraiserName && activeInvoiceSettings && (
+            <div className="mt-4 rounded-md border border-line bg-slate-50 p-3 text-sm">
+              <div className="font-semibold text-slate-900">{activeInvoiceSettings.companyName}</div>
+              <div className="mt-1 text-slate-500">
+                Next: {activeInvoiceSettings.invoicePrefix}-{activeInvoiceSettings.nextInvoiceNumber} - {activeInvoiceSettings.defaultPaymentTerms}
+              </div>
+              <div className="mt-2 text-xs text-slate-500">{activeInvoiceSettings.paymentInstructions}</div>
+            </div>
+          )}
           <div className="mt-4 space-y-3">
             {user.appraiserName ? filteredEntries.filter((entry) => entry.status === "Paid").map((entry) => (
               <div key={entry.id} className="rounded-md border border-line px-3 py-2 text-sm">
@@ -236,12 +254,18 @@ export function AccountingView({
             )) : invoices.map((invoice) => (
               <div key={invoice.id} className="rounded-md border border-line px-3 py-2 text-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="font-medium text-slate-800">{invoice.client}</span>
-                  <span className="text-slate-600">{formatCurrency(invoice.amount)}</span>
+                  <span className="font-medium text-slate-800">{invoice.invoiceNumber ?? invoice.client}</span>
+                  <span className="text-slate-600">{formatCurrency(invoice.balanceDue ?? invoice.amount)}</span>
                 </div>
+                <div className="mt-1 text-xs text-slate-500">{invoice.client} - {invoice.billingParty ?? "Billing party pending"}</div>
                 <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500">
                   <span>{invoice.status} - due {formatDate(invoice.dueDate)}</span>
-                  {invoice.status === "Draft" && <button className="secondary-button h-7 px-2 text-xs" onClick={() => onMarkInvoiceSent(invoice.id)}>Send</button>}
+                  <span>{invoice.lineItems?.length ?? invoice.orderCount} line items</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {invoice.status === "Draft" && <button className="secondary-button h-7 px-2 text-xs disabled:opacity-50" disabled={!canEditInvoiceRecords} onClick={() => onMarkInvoiceSent(invoice.id)}>Send</button>}
+                  {invoice.status !== "Paid" && invoice.status !== "Void" && <button className="secondary-button h-7 px-2 text-xs disabled:opacity-50" disabled={!canMarkInvoiceRecordsPaid} onClick={() => onMarkInvoicePaid(invoice.id)}>Mark paid</button>}
+                  <button className="secondary-button h-7 px-2 text-xs">PDF view</button>
                 </div>
               </div>
             ))}
@@ -322,5 +346,4 @@ export function AnalyticsList({ title, items }: { title: string; items: string[]
     </div>
   );
 }
-
 

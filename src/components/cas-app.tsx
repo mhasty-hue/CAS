@@ -2,13 +2,34 @@
 
 import { useEffect, useState } from "react";
 import { appraisers, calendarPreferences, clientProfiles, companyUsers, defaultOrderFormTemplate, orders, vendors } from "@/data/demo";
-import { accountingEntries, invoices, organizations, portalUsers, vendorDocuments } from "@/data/platform";
-import type { AccountingEntry, AppraiserProfile, CalendarPreference, ClientProfile, CompanyUser, Invoice, Note, Order, OrderFormTemplate, OrderStatus, Organization, PermissionKey, PortalUser, UserRole, VendorDocument, VendorProfile } from "@/types/domain";
+import {
+  accountingEntries,
+  emailDeliveryRecords,
+  integrationLogs,
+  integrationSettings,
+  invoiceSettings,
+  invoices,
+  notificationPreferences,
+  notificationTemplates,
+  organizationInvitations,
+  organizations,
+  portalUsers,
+  publicOrderRequests,
+  publicOrderSettings,
+  vendorDocuments
+} from "@/data/platform";
+import type { AccountingEntry, AppraiserProfile, CalendarPreference, ClientProfile, CompanyUser, EmailDeliveryRecord, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, Note, NotificationPreference, NotificationTemplate, Order, OrderFormTemplate, OrderStatus, Organization, OrganizationInvitation, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, UserRole, VendorDocument, VendorProfile } from "@/types/domain";
+import { loadCasAuthContext } from "@/lib/auth/context";
+import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
 import { canCreateOrders, canViewAllOrders, canViewOwnOrdersOnly } from "@/lib/permissions";
+import { publicRequestToOrderSeed } from "@/lib/public-intake/service";
+import { getCasRepository } from "@/lib/repositories";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { AccountingView, AnalyticsView } from "./cas/accounting";
+import { ProductionAccessGate } from "./cas/auth";
 import { CalendarView } from "./cas/calendar";
 import { ClientsView } from "./cas/clients";
-import { navCatalog, roleNavigation, type NavId } from "./cas/config";
+import { demoMode, navCatalog, roleNavigation, type NavId } from "./cas/config";
 import { AppraiserPortalView, DashboardView } from "./cas/dashboard";
 import { NewOrderView } from "./cas/forms";
 import { CommandPalette, Sidebar, Topbar } from "./cas/layout";
@@ -38,6 +59,10 @@ function filterOrdersForUser(orderList: Order[], user: PortalUser, organization:
 
 export function CasApp() {
   const [activeView, setActiveView] = useState<NavId>("dashboard");
+  const [authState, setAuthState] = useState<"loading" | "ready" | "signed-out" | "error">(demoMode ? "ready" : "loading");
+  const [authError, setAuthError] = useState("");
+  const [runtimeUser, setRuntimeUser] = useState<PortalUser | null>(null);
+  const [runtimeOrganization, setRuntimeOrganization] = useState<Organization | null>(null);
   const [orderList, setOrderList] = useState<Order[]>(orders);
   const [appraiserList, setAppraiserList] = useState<AppraiserProfile[]>(appraisers);
   const [clientList, setClientList] = useState<ClientProfile[]>(clientProfiles);
@@ -45,15 +70,27 @@ export function CasApp() {
   const [vendorList, setVendorList] = useState<VendorProfile[]>(vendors);
   const [vendorDocumentList, setVendorDocumentList] = useState<VendorDocument[]>(vendorDocuments);
   const [invoiceList, setInvoiceList] = useState<Invoice[]>(invoices);
+  const [invoiceSettingsList, setInvoiceSettingsList] = useState<InvoiceSettings[]>(invoiceSettings);
   const [accountingList, setAccountingList] = useState<AccountingEntry[]>(accountingEntries);
+  const [invitationList, setInvitationList] = useState<OrganizationInvitation[]>(organizationInvitations);
+  const [publicOrderSettingsList, setPublicOrderSettingsList] = useState<PublicOrderSettings[]>(publicOrderSettings);
+  const [publicOrderRequestList, setPublicOrderRequestList] = useState<PublicOrderRequest[]>(publicOrderRequests);
+  const [notificationPreferenceList, setNotificationPreferenceList] = useState<NotificationPreference[]>(notificationPreferences);
+  const [notificationTemplateList, setNotificationTemplateList] = useState<NotificationTemplate[]>(notificationTemplates);
+  const [emailDeliveryList, setEmailDeliveryList] = useState<EmailDeliveryRecord[]>(emailDeliveryRecords);
+  const [integrationList, setIntegrationList] = useState<IntegrationSetting[]>(integrationSettings);
+  const [integrationLogList, setIntegrationLogList] = useState<IntegrationLog[]>(integrationLogs);
   const [orderFormTemplate, setOrderFormTemplate] = useState<OrderFormTemplate>(defaultOrderFormTemplate);
   const [calendarPreferenceList, setCalendarPreferenceList] = useState<CalendarPreference[]>(calendarPreferences);
   const [activeUserId, setActiveUserId] = useState(portalUsers[0].id);
   const [selectedOrderId, setSelectedOrderId] = useState(orders[0].id);
   const [commandOpen, setCommandOpen] = useState(false);
   const [globalQuery, setGlobalQuery] = useState("");
-  const activeUser = portalUsers.find((user) => user.id === activeUserId) ?? portalUsers[0];
-  const activeOrganization = organizations.find((organization) => organization.id === activeUser.organizationId) ?? organizations[0];
+  const demoActiveUser = portalUsers.find((user) => user.id === activeUserId) ?? portalUsers[0];
+  const activeUser = demoMode ? demoActiveUser : runtimeUser ?? demoActiveUser;
+  const activeOrganization = demoMode
+    ? organizations.find((organization) => organization.id === activeUser.organizationId) ?? organizations[0]
+    : runtimeOrganization ?? organizations.find((organization) => organization.id === activeUser.organizationId) ?? organizations[0];
   const activeNavItems = roleNavigation[activeUser.role].map((id) => ({ id, ...navCatalog[id] }));
   const visibleOrders = filterOrdersForUser(orderList, activeUser, activeOrganization);
   const selectedOrder = visibleOrders.find((order) => order.id === selectedOrderId) ?? visibleOrders[0] ?? orderList[0];
@@ -82,6 +119,68 @@ export function CasApp() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (demoMode) return;
+    let canceled = false;
+
+    async function loadProductionWorkspace() {
+      if (!isSupabaseConfigured()) {
+        setAuthState("error");
+        setAuthError("Supabase is not configured. Set environment keys or enable demo mode to continue.");
+        return;
+      }
+
+      try {
+        setAuthState("loading");
+        const context = await loadCasAuthContext();
+        if (canceled) return;
+
+        if (!context.user || !context.organization) {
+          setAuthState("signed-out");
+          return;
+        }
+
+        setRuntimeUser(context.user);
+        setRuntimeOrganization(context.organization);
+        setActiveUserId(context.user.id);
+
+        const bootstrap = await getCasRepository("supabase").loadBootstrapData(context.organization.id);
+        if (canceled) return;
+
+        setOrderList(bootstrap.orders.length ? bootstrap.orders : orders);
+        setClientList(bootstrap.clients.length ? bootstrap.clients : clientProfiles);
+        setCompanyUserList(bootstrap.companyUsers.length ? bootstrap.companyUsers : companyUsers);
+        setAppraiserList(bootstrap.appraisers.length ? bootstrap.appraisers : appraisers);
+        setVendorList(bootstrap.vendors.length ? bootstrap.vendors : vendors);
+        setVendorDocumentList(bootstrap.vendorDocuments);
+        setAccountingList(bootstrap.accountingEntries.length ? bootstrap.accountingEntries : accountingEntries);
+        setInvoiceList(bootstrap.invoices.length ? bootstrap.invoices : invoices);
+        setInvoiceSettingsList(bootstrap.invoiceSettings);
+        setInvitationList(bootstrap.invitations);
+        setPublicOrderSettingsList(bootstrap.publicOrderSettings);
+        setPublicOrderRequestList(bootstrap.publicOrderRequests);
+        setNotificationPreferenceList(bootstrap.notificationPreferences);
+        setNotificationTemplateList(bootstrap.notificationTemplates);
+        setEmailDeliveryList(bootstrap.emailDeliveryRecords);
+        setIntegrationList(bootstrap.integrations);
+        setIntegrationLogList(bootstrap.integrationLogs);
+        setOrderFormTemplate(bootstrap.orderFormTemplate);
+        setCalendarPreferenceList(bootstrap.calendarPreferences.length ? bootstrap.calendarPreferences : calendarPreferences);
+        setAuthState("ready");
+      } catch (error) {
+        if (canceled) return;
+        setAuthState("error");
+        setAuthError(error instanceof Error ? error.message : "CAS could not load production access.");
+      }
+    }
+
+    void loadProductionWorkspace();
+
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -442,6 +541,20 @@ export function CasApp() {
   }
 
   function handleInviteCompanyUser() {
+    const invitation: OrganizationInvitation = {
+      id: `invite-${Date.now()}`,
+      organizationId: activeOrganization.id,
+      email: `invite${invitationList.length + 1}@${activeOrganization.slug ?? "cas"}.example`,
+      invitedName: "Pending teammate",
+      role: "office_staff",
+      permissions: ["view_all_orders", "create_orders"],
+      status: "Pending",
+      token: `invite-${Date.now()}`,
+      invitedBy: activeUser.name,
+      expiresAt: "2026-07-24",
+      note: "Created from company user management."
+    };
+    setInvitationList((current) => [invitation, ...current]);
     setCompanyUserList((current) => [
       {
         id: `company-user-${Date.now()}`,
@@ -475,6 +588,149 @@ export function CasApp() {
     );
   }
 
+  function handleUpdateInvitationStatus(invitationId: string, status: OrganizationInvitation["status"]) {
+    setInvitationList((current) =>
+      current.map((invitation) =>
+        invitation.id === invitationId
+          ? {
+              ...invitation,
+              status,
+              acceptedAt: status === "Accepted" ? "Just now" : invitation.acceptedAt,
+              revokedAt: status === "Revoked" ? "Just now" : invitation.revokedAt
+            }
+          : invitation
+      )
+    );
+  }
+
+  function handleTogglePublicOrdering(organizationId: string) {
+    setPublicOrderSettingsList((current) =>
+      current.map((settings) => (settings.organizationId === organizationId ? { ...settings, enabled: !settings.enabled, updatedAt: "Just now" } : settings))
+    );
+  }
+
+  function handleUpdatePublicConfirmation(organizationId: string, confirmationMessage: string) {
+    setPublicOrderSettingsList((current) =>
+      current.map((settings) => (settings.organizationId === organizationId ? { ...settings, confirmationMessage, updatedAt: "Just now" } : settings))
+    );
+  }
+
+  function handleToggleNotificationPreference(preferenceId: string, channel: "emailEnabled" | "inAppEnabled") {
+    setNotificationPreferenceList((current) =>
+      current.map((preference) => (preference.id === preferenceId ? { ...preference, [channel]: !preference[channel] } : preference))
+    );
+  }
+
+  function handleGenerateInvoice(orderId: string) {
+    const order = orderList.find((item) => item.id === orderId);
+    if (!order) return;
+    const settings = invoiceSettingsList.find((item) => item.organizationId === activeOrganization.id);
+    const invoice = buildInvoiceFromOrder(order, activeOrganization, settings, invoiceList.length);
+    setInvoiceList((current) => [invoice, ...current]);
+    updateOrder(order.id, (currentOrder) => ({
+      ...currentOrder,
+      lastUpdate: `Invoice ${invoice.invoiceNumber} generated`,
+      auditTrail: [
+        {
+          id: `${currentOrder.id}-invoice-${Date.now()}`,
+          action: `Generated draft invoice ${invoice.invoiceNumber}`,
+          actor: activeUser.name,
+          at: "Just now"
+        },
+        ...currentOrder.auditTrail
+      ]
+    }));
+  }
+
+  function handleMarkInvoicePaid(invoiceId: string) {
+    setInvoiceList((current) =>
+      current.map((invoice) =>
+        invoice.id === invoiceId
+          ? { ...invoice, status: "Paid", paidDate: "Just now", balanceDue: 0, partialPayment: undefined }
+          : invoice
+      )
+    );
+  }
+
+  function handleConvertPublicRequest(requestId: string) {
+    const request = publicOrderRequestList.find((item) => item.id === requestId);
+    if (!request) return;
+    const seed = publicRequestToOrderSeed(request);
+    const nextNumber = `CAA-PUB-${2000 + orderList.length}`;
+    const newOrder: Order = {
+      id: `ord-public-${Date.now()}`,
+      fileNumber: nextNumber,
+      productType: "Private appraisal consultation",
+      client: request.requesterName,
+      amc: "Direct private client",
+      borrower: seed.borrower,
+      address: seed.address,
+      city: seed.city,
+      state: seed.state,
+      zip: seed.zip,
+      county: "Pending",
+      appraiser: "Unassigned",
+      reviewer: "Maya Chen",
+      orderedDate: "2026-07-10",
+      dueDate: "2026-07-17",
+      status: "New",
+      priority: request.requestedTiming.toLowerCase().includes("week") ? "High" : "Standard",
+      fee: 0,
+      techFee: 0,
+      appraiserPayout: 0,
+      documents: request.documentCount,
+      lastUpdate: "Converted from public request",
+      nextAction: seed.nextAction,
+      loanType: seed.loanType,
+      occupancy: "Unknown",
+      propertyType: seed.propertyType,
+      contactName: seed.contactName,
+      contactPhone: seed.contactPhone,
+      accessInfo: seed.accessInfo,
+      assignmentPreference: seed.assignmentPreference,
+      lenderContact: seed.lenderContact,
+      parcelNumber: "Pending",
+      timeline: [
+        {
+          label: "Public request converted",
+          detail: `${request.requesterName} request moved into order workflow`,
+          at: "Just now",
+          actor: activeUser.name
+        }
+      ],
+      notes: [
+        {
+          id: `${request.id}-note`,
+          author: "CAS Public Intake",
+          body: request.comments || "Public request converted. Staff should complete professional fields.",
+          visibility: "internal",
+          createdAt: "Just now"
+        }
+      ],
+      clientComments: [],
+      documentsList: [],
+      assignmentHistory: [],
+      revisionLog: [],
+      auditTrail: [
+        ...request.auditTrail,
+        {
+          id: `${request.id}-converted`,
+          action: `Converted to ${nextNumber}`,
+          actor: activeUser.name,
+          at: "Just now"
+        }
+      ],
+      reviewItems: []
+    };
+
+    setOrderList((current) => [newOrder, ...current]);
+    setPublicOrderRequestList((current) =>
+      current.map((item) => (item.id === requestId ? { ...item, status: "Converted", convertedOrderId: newOrder.id } : item))
+    );
+    setSelectedOrderId(newOrder.id);
+    setActiveView("orders");
+  }
+
   function handleDeactivateCompanyUser(userId: string) {
     setCompanyUserList((current) =>
       current.map((companyUser) =>
@@ -491,6 +747,10 @@ export function CasApp() {
         preference.id === preferenceId ? { ...preference, [key]: !preference[key] } : preference
       )
     );
+  }
+
+  if (!demoMode && authState !== "ready") {
+    return <ProductionAccessGate state={authState === "loading" ? "loading" : authState === "signed-out" ? "signed-out" : "error"} detail={authError} />;
   }
 
   return (
@@ -544,6 +804,7 @@ export function CasApp() {
               onAssignOrder={handleAssignOrder}
               onStatusChange={handleStatusChange}
               onAddNote={handleAddNote}
+              onGenerateInvoice={handleGenerateInvoice}
             />
           )}
           {(activeView === "new-order" || activeView === "place-order") && (
@@ -585,8 +846,10 @@ export function CasApp() {
               user={activeUser}
               entries={accountingList}
               invoices={invoiceList}
+              invoiceSettings={invoiceSettingsList}
               appraisers={appraiserList}
               onMarkInvoiceSent={(invoiceId) => setInvoiceList((current) => current.map((invoice) => invoice.id === invoiceId ? { ...invoice, status: "Sent" } : invoice))}
+              onMarkInvoicePaid={handleMarkInvoicePaid}
               onUpdateDefaultSplit={handleUpdateDefaultSplit}
               onOverrideCommission={handleOverrideCommission}
               onMarkPaid={handleMarkPayrollPaid}
@@ -602,11 +865,26 @@ export function CasApp() {
           {activeView === "settings" && (
             <SettingsView
               user={activeUser}
+              organization={activeOrganization}
               companyUsers={companyUserList}
+              invitations={invitationList}
+              publicOrderSettings={publicOrderSettingsList}
+              publicOrderRequests={publicOrderRequestList}
+              notificationPreferences={notificationPreferenceList}
+              notificationTemplates={notificationTemplateList}
+              emailDeliveryRecords={emailDeliveryList}
+              invoiceSettings={invoiceSettingsList}
+              integrations={integrationList}
+              integrationLogs={integrationLogList}
               onInviteUser={handleInviteCompanyUser}
+              onUpdateInvitationStatus={handleUpdateInvitationStatus}
               onChangeRole={handleChangeCompanyUserRole}
               onTogglePermission={handleToggleCompanyUserPermission}
               onDeactivateUser={handleDeactivateCompanyUser}
+              onTogglePublicOrdering={handleTogglePublicOrdering}
+              onUpdatePublicConfirmation={handleUpdatePublicConfirmation}
+              onToggleNotificationPreference={handleToggleNotificationPreference}
+              onConvertPublicRequest={handleConvertPublicRequest}
             />
           )}
         </main>
