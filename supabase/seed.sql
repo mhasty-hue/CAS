@@ -5,6 +5,15 @@ insert into public.permissions (key, label, group_name) values
   ('edit_due_dates', 'Edit due dates', 'Orders'),
   ('upload_documents', 'Upload documents', 'Documents'),
   ('delete_documents', 'Delete documents', 'Documents'),
+  ('upload_order_documents', 'canUploadOrderDocuments', 'Documents'),
+  ('view_internal_documents', 'canViewInternalDocuments', 'Documents'),
+  ('view_client_documents', 'canViewClientDocuments', 'Documents'),
+  ('archive_documents', 'canArchiveDocuments', 'Documents'),
+  ('manage_document_visibility', 'canManageDocumentVisibility', 'Documents'),
+  ('deliver_final_report', 'canDeliverFinalReport', 'Documents'),
+  ('view_vendor_compliance_documents', 'canViewVendorComplianceDocuments', 'Documents'),
+  ('download_xml', 'canDownloadXML', 'Documents'),
+  ('view_workfile_documents', 'canViewWorkfileDocuments', 'Documents'),
   ('see_accounting', 'See accounting', 'Accounting'),
   ('see_appraiser_payouts', 'See appraiser payouts', 'Accounting'),
   ('manage_users', 'Manage users', 'Admin'),
@@ -56,17 +65,36 @@ insert into public.role_permissions (role_id, permission_key, enabled) values
   ('aaaaaaaa-0000-4000-8000-000000000002', 'assign_orders', true),
   ('aaaaaaaa-0000-4000-8000-000000000002', 'edit_due_dates', true),
   ('aaaaaaaa-0000-4000-8000-000000000002', 'upload_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'upload_order_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'view_internal_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'view_client_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'archive_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'manage_document_visibility', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'deliver_final_report', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'download_xml', true),
   ('aaaaaaaa-0000-4000-8000-000000000002', 'manage_clients', true),
   ('aaaaaaaa-0000-4000-8000-000000000003', 'view_all_orders', true),
+  ('aaaaaaaa-0000-4000-8000-000000000003', 'upload_order_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000003', 'view_internal_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000003', 'view_workfile_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000003', 'download_xml', true),
   ('aaaaaaaa-0000-4000-8000-000000000003', 'review_reports', true),
   ('aaaaaaaa-0000-4000-8000-000000000003', 'deliver_reports', true),
+  ('aaaaaaaa-0000-4000-8000-000000000003', 'deliver_final_report', true),
   ('aaaaaaaa-0000-4000-8000-000000000004', 'upload_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000004', 'upload_order_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000004', 'view_workfile_documents', true),
+  ('aaaaaaaa-0000-4000-8000-000000000004', 'download_xml', true),
   ('aaaaaaaa-0000-4000-8000-000000000004', 'see_appraiser_payouts', true),
   ('aaaaaaaa-0000-4000-8000-000000000004', 'view_own_orders_only', true),
   ('bbbbbbbb-0000-4000-8000-000000000001', 'invite_vendors', true),
   ('bbbbbbbb-0000-4000-8000-000000000001', 'approve_vendors', true),
   ('bbbbbbbb-0000-4000-8000-000000000001', 'create_orders', true),
   ('bbbbbbbb-0000-4000-8000-000000000001', 'view_all_orders', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'upload_order_documents', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'view_client_documents', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'view_vendor_compliance_documents', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'deliver_final_report', true),
   ('bbbbbbbb-0000-4000-8000-000000000001', 'export_reports', true)
 on conflict (role_id, permission_key) do update set enabled = excluded.enabled;
 
@@ -318,3 +346,72 @@ insert into public.notifications (id, organization_id, title, body, type, action
   ('bb000000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'Report submitted', 'CAA-26-1048 is ready for review.', 'success', '/orders/CAA-26-1048', '{"order":"CAA-26-1048"}', '2026-06-30 10:48:00-04'),
   ('bb000000-0000-4000-8000-000000000003', '11111111-1111-1111-1111-111111111111', 'Past due order', 'CAA-26-1051 needs escalation.', 'danger', '/orders/CAA-26-1051', '{"order":"CAA-26-1051"}', '2026-06-30 08:00:00-04')
 on conflict (id) do update set title = excluded.title, body = excluded.body, type = excluded.type, action_url = excluded.action_url, metadata = excluded.metadata, created_at = excluded.created_at;
+
+insert into public.documents (id, organization_id, order_id, client_id, vendor_profile_id, name, display_name, document_type, category, storage_bucket, storage_path, visibility, source, status, content_type, file_size_bytes, version_number, checksum, description, tags, audit_metadata, virus_scan_status, duplicate_detection, metadata) values
+  ('91000000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', null, 'Engagement letter.pdf', 'HarborPoint engagement letter', 'Engagement', 'Engagement letter', 'cas-private-documents', 'organizations/11111111-1111-1111-1111-111111111111/orders/e0000000-0000-4000-8000-000000000001/documents/engagement-letter.pdf', 'Organization internal', 'Internal staff upload', 'Uploaded', 'application/pdf', 318000, 1, 'sha256-demo-engagement', 'Signed lender engagement terms for CAA-26-1048.', array['engagement','harborpoint'], '{"createdBy":"Nora Fields","lastAction":"Uploaded","lastActionAt":"2026-06-24 09:20","virusScanStatus":"Passed","duplicateDetection":"Unique"}', 'Passed', 'Unique', '{"source":"phase8-seed"}'),
+  ('91000000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', null, 'CAA-26-1048 final report.pdf', 'Final appraisal report PDF', 'Report', 'Appraisal report PDF', 'cas-private-documents', 'organizations/11111111-1111-1111-1111-111111111111/orders/e0000000-0000-4000-8000-000000000001/documents/final-report-v2.pdf', 'Delivery recipient', 'Appraiser upload', 'Final', 'application/pdf', 5820000, 2, 'sha256-demo-report-v2', 'Final PDF awaiting secure lender delivery.', array['final-report','pdf'], '{"createdBy":"Jordan Lee","lastAction":"Version replaced","lastActionAt":"2026-06-30 10:42","virusScanStatus":"Passed","duplicateDetection":"Unique"}', 'Passed', 'Unique', '{"source":"phase8-seed"}'),
+  ('91000000-0000-4000-8000-000000000003', '22222222-2222-2222-2222-222222222222', null, null, '90000000-0000-4000-8000-000000000001', 'North Metro W-9.pdf', 'North Metro W-9', 'W-9', 'W-9', 'cas-private-documents', 'organizations/22222222-2222-2222-2222-222222222222/vendors/90000000-0000-4000-8000-000000000001/compliance/w9.pdf', 'Organization internal', 'Vendor upload', 'Uploaded', 'application/pdf', 214000, 1, 'sha256-demo-w9', 'Vendor compliance W-9 retained for AMC panel.', array['vendor','w9'], '{"createdBy":"Renee Walker","lastAction":"Uploaded","lastActionAt":"2026-06-20 13:08","virusScanStatus":"Passed","duplicateDetection":"Unique"}', 'Passed', 'Unique', '{"source":"phase8-seed"}'),
+  ('91000000-0000-4000-8000-000000000004', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', null, 'CAA-26-1048 MISMO XML.xml', 'MISMO XML package', 'XML', 'Appraisal XML', 'cas-private-documents', 'organizations/11111111-1111-1111-1111-111111111111/orders/e0000000-0000-4000-8000-000000000001/documents/mismo.xml', 'Delivery recipient', 'Appraiser upload', 'Uploaded', 'application/xml', 742000, 1, 'sha256-demo-xml', 'XML delivery package for HarborPoint Lending.', array['xml','delivery'], '{"createdBy":"Jordan Lee","lastAction":"Uploaded","lastActionAt":"2026-06-30 10:44","virusScanStatus":"Passed","duplicateDetection":"Unique"}', 'Passed', 'Unique', '{"source":"phase8-seed"}'),
+  ('91000000-0000-4000-8000-000000000005', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000002', 'c0000000-0000-4000-8000-000000000002', null, 'FHA repair revision request.pdf', 'FHA repair revision request', 'Revision', 'Revision request', 'cas-private-documents', 'organizations/11111111-1111-1111-1111-111111111111/orders/e0000000-0000-4000-8000-000000000002/documents/fha-revision-request.pdf', 'Reviewer', 'Reviewer upload', 'Uploaded', 'application/pdf', 508000, 1, 'sha256-demo-revision', 'Reviewer revision package for FHA repair condition.', array['revision','fha'], '{"createdBy":"Nora Fields","lastAction":"Uploaded","lastActionAt":"2026-06-30 09:04","virusScanStatus":"Passed","duplicateDetection":"Unique"}', 'Passed', 'Unique', '{"source":"phase8-seed"}')
+on conflict (id) do update set
+  display_name = excluded.display_name,
+  category = excluded.category,
+  storage_bucket = excluded.storage_bucket,
+  storage_path = excluded.storage_path,
+  visibility = excluded.visibility,
+  source = excluded.source,
+  status = excluded.status,
+  file_size_bytes = excluded.file_size_bytes,
+  version_number = excluded.version_number,
+  checksum = excluded.checksum,
+  description = excluded.description,
+  tags = excluded.tags,
+  audit_metadata = excluded.audit_metadata,
+  virus_scan_status = excluded.virus_scan_status,
+  duplicate_detection = excluded.duplicate_detection,
+  metadata = excluded.metadata;
+
+insert into public.document_versions (id, organization_id, document_id, version_number, file_name, storage_bucket, storage_path, content_type, file_size_bytes, checksum, uploaded_by_name, uploaded_at, change_note) values
+  ('91100000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', '91000000-0000-4000-8000-000000000002', 1, 'CAA-26-1048 draft report.pdf', 'cas-private-documents', 'organizations/11111111-1111-1111-1111-111111111111/orders/e0000000-0000-4000-8000-000000000001/documents/draft-report-v1.pdf', 'application/pdf', 5560000, 'sha256-demo-report-v1', 'Jordan Lee', '2026-06-30 09:45:00-04', 'Initial report submitted for review.'),
+  ('91100000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', '91000000-0000-4000-8000-000000000002', 2, 'CAA-26-1048 final report.pdf', 'cas-private-documents', 'organizations/11111111-1111-1111-1111-111111111111/orders/e0000000-0000-4000-8000-000000000001/documents/final-report-v2.pdf', 'application/pdf', 5820000, 'sha256-demo-report-v2', 'Jordan Lee', '2026-06-30 10:42:00-04', 'Reviewer conditions cleared.')
+on conflict (document_id, version_number) do update set file_name = excluded.file_name, storage_path = excluded.storage_path, checksum = excluded.checksum, uploaded_by_name = excluded.uploaded_by_name, uploaded_at = excluded.uploaded_at, change_note = excluded.change_note;
+
+insert into public.required_document_rules (id, organization_id, client_id, product_type, county, category, label, required, visible_to, sort_order) values
+  ('92000000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', null, '1004 URAR', null, 'Engagement letter', 'Signed engagement letter', true, array['Organization internal','Reviewer'], 1),
+  ('92000000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', null, '1004 URAR', null, 'Appraisal report PDF', 'Final report PDF', true, array['Reviewer','Delivery recipient'], 2),
+  ('92000000-0000-4000-8000-000000000003', '11111111-1111-1111-1111-111111111111', 'c0000000-0000-4000-8000-000000000001', null, null, 'Appraisal XML', 'Client XML package', true, array['Delivery recipient'], 3),
+  ('92000000-0000-4000-8000-000000000004', '11111111-1111-1111-1111-111111111111', null, 'FHA 1004', null, 'Revision response', 'FHA revision response', true, array['Reviewer','AMC'], 4)
+on conflict (id) do update set category = excluded.category, label = excluded.label, required = excluded.required, visible_to = excluded.visible_to, sort_order = excluded.sort_order;
+
+insert into public.structured_revision_requests (id, organization_id, order_id, requestor, source, category, priority, due_at, client_visible_wording, internal_reviewer_wording, assigned_appraiser_profile_id, status, received_at) values
+  ('94000000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000002', 'Nora Fields', 'Reviewer', 'FHA condition clarification', 'Rush', '2026-06-30 17:00:00-04', 'Please clarify the FHA repair condition and add the referenced photo.', 'Reviewer needs repair commentary tied to photo exhibit and final condition language.', 'd0000000-0000-4000-8000-000000000002', 'In Progress', '2026-06-30 09:04:00-04')
+on conflict (id) do update set status = excluded.status, due_at = excluded.due_at, client_visible_wording = excluded.client_visible_wording, internal_reviewer_wording = excluded.internal_reviewer_wording;
+
+insert into public.structured_revision_items (id, organization_id, revision_request_id, label, related_page_section, related_document_id, response, completed, reviewer_approved, attachment_document_ids) values
+  ('94100000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', '94000000-0000-4000-8000-000000000001', 'Add FHA repair condition commentary', 'Improvements / Condition', '91000000-0000-4000-8000-000000000005', null, false, false, '{}'::uuid[]),
+  ('94100000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', '94000000-0000-4000-8000-000000000001', 'Reference supporting photo exhibit', 'Photo addendum', '91000000-0000-4000-8000-000000000005', 'Photo exhibit identified; waiting on final appraiser wording.', true, false, array['91000000-0000-4000-8000-000000000005']::uuid[])
+on conflict (id) do update set label = excluded.label, response = excluded.response, completed = excluded.completed, reviewer_approved = excluded.reviewer_approved, attachment_document_ids = excluded.attachment_document_ids;
+
+insert into public.revision_item_events (id, organization_id, revision_request_id, revision_item_id, actor_name, action, detail, created_at) values
+  ('94200000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', '94000000-0000-4000-8000-000000000001', '94100000-0000-4000-8000-000000000001', 'Nora Fields', 'Revision item created', 'Reviewer created FHA condition clarification item.', '2026-06-30 09:04:00-04')
+on conflict (id) do update set action = excluded.action, detail = excluded.detail, created_at = excluded.created_at;
+
+insert into public.order_messages (id, organization_id, order_id, sender_name, sender_role, channel, visibility, body, attachment_document_ids, pinned, assigned_follow_up_owner, follow_up_due_at, related_revision_id, related_document_id, created_at) values
+  ('93000000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000001', 'Nora Fields', 'office_staff', 'System activity', 'Internal team', 'Final report package submitted for review with PDF and XML attached.', array['91000000-0000-4000-8000-000000000002','91000000-0000-4000-8000-000000000004']::uuid[], true, null, null, null, '91000000-0000-4000-8000-000000000002', '2026-06-30 10:48:00-04'),
+  ('93000000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000002', 'Nora Fields', 'reviewer', 'Revision request', 'Reviewer', '@Priya please update the FHA repair condition language and return the revision today.', array['91000000-0000-4000-8000-000000000005']::uuid[], true, 'Priya Shah', '2026-06-30 17:00:00-04', '94000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000005', '2026-06-30 09:04:00-04'),
+  ('93000000-0000-4000-8000-000000000003', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000002', 'Priya Shah', 'appraiser', 'Revision response', 'Internal team', 'I have the photo exhibit and am updating the condition paragraph now.', '{}'::uuid[], false, null, null, '94000000-0000-4000-8000-000000000001', null, '2026-06-30 10:02:00-04')
+on conflict (id) do update set body = excluded.body, attachment_document_ids = excluded.attachment_document_ids, pinned = excluded.pinned, assigned_follow_up_owner = excluded.assigned_follow_up_owner, follow_up_due_at = excluded.follow_up_due_at, related_revision_id = excluded.related_revision_id, related_document_id = excluded.related_document_id, created_at = excluded.created_at;
+
+insert into public.report_submissions (id, organization_id, order_id, submitted_by_name, submitted_at, report_pdf_document_id, xml_document_id, supporting_document_ids, submission_note, certification_accepted, status) values
+  ('95000000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000001', 'Jordan Lee', '2026-06-30 10:48:00-04', '91000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000004', array['91000000-0000-4000-8000-000000000001']::uuid[], 'Final package submitted with certification accepted.', true, 'Approved')
+on conflict (id) do update set submitted_at = excluded.submitted_at, report_pdf_document_id = excluded.report_pdf_document_id, xml_document_id = excluded.xml_document_id, supporting_document_ids = excluded.supporting_document_ids, submission_note = excluded.submission_note, certification_accepted = excluded.certification_accepted, status = excluded.status;
+
+insert into public.report_deliveries (id, organization_id, order_id, delivered_by_name, delivered_at, recipient_name, recipient_email, delivery_method, included_document_ids, secure_delivery_url, status) values
+  ('96000000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000001', 'Nora Fields', '2026-06-30 11:05:00-04', 'Claire Moon', 'claire@harborpoint.example', 'Secure link', array['91000000-0000-4000-8000-000000000002','91000000-0000-4000-8000-000000000004']::uuid[], '/deliveries/CAA-26-1048-demo', 'Delivered')
+on conflict (id) do update set delivered_at = excluded.delivered_at, recipient_name = excluded.recipient_name, recipient_email = excluded.recipient_email, included_document_ids = excluded.included_document_ids, secure_delivery_url = excluded.secure_delivery_url, status = excluded.status;
+
+insert into public.document_audit_events (id, organization_id, order_id, document_id, message_id, revision_id, event, actor_name, detail, created_at) values
+  ('97000000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000002', '93000000-0000-4000-8000-000000000001', null, 'Uploaded', 'Jordan Lee', 'Final report PDF uploaded to org-scoped private storage.', '2026-06-30 10:42:00-04'),
+  ('97000000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000002', null, null, 'Delivered', 'Nora Fields', 'Final report package delivered by secure link.', '2026-06-30 11:05:00-04'),
+  ('97000000-0000-4000-8000-000000000003', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000005', '93000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000001', 'Revision created', 'Nora Fields', 'Structured FHA revision request created with attached PDF.', '2026-06-30 09:04:00-04')
+on conflict (id) do update set event = excluded.event, actor_name = excluded.actor_name, detail = excluded.detail, created_at = excluded.created_at;

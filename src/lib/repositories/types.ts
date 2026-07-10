@@ -4,14 +4,18 @@ import type {
   CalendarPreference,
   ClientProfile,
   CompanyUser,
+  DeliveryRecord,
+  DocumentAuditEvent,
   EmailDeliveryRecord,
   IntegrationLog,
   IntegrationSetting,
   Invoice,
   InvoiceSettings,
+  ManagedDocument,
   NotificationPreference,
   NotificationTemplate,
   Order,
+  OrderMessage,
   OrderFormTemplate,
   Organization,
   OrganizationInvitation,
@@ -19,6 +23,9 @@ import type {
   PortalUser,
   PublicOrderRequest,
   PublicOrderSettings,
+  ReportSubmission,
+  RequiredDocumentRule,
+  RevisionRequest,
   VendorDocument,
   VendorProfile
 } from "@/types/domain";
@@ -45,6 +52,13 @@ export type CasBootstrapData = {
   emailDeliveryRecords: EmailDeliveryRecord[];
   integrations: IntegrationSetting[];
   integrationLogs: IntegrationLog[];
+  managedDocuments: ManagedDocument[];
+  requiredDocumentRules: RequiredDocumentRule[];
+  orderMessages: OrderMessage[];
+  revisionRequests: RevisionRequest[];
+  reportSubmissions: ReportSubmission[];
+  deliveryRecords: DeliveryRecord[];
+  documentAuditEvents: DocumentAuditEvent[];
   orderFormTemplate: OrderFormTemplate;
   calendarPreferences: CalendarPreference[];
 };

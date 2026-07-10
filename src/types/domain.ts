@@ -46,7 +46,16 @@ export type PermissionKey =
   | "view_own_pay"
   | "manage_public_ordering"
   | "manage_notification_settings"
-  | "manage_integrations";
+  | "manage_integrations"
+  | "upload_order_documents"
+  | "view_internal_documents"
+  | "view_client_documents"
+  | "archive_documents"
+  | "manage_document_visibility"
+  | "deliver_final_report"
+  | "view_vendor_compliance_documents"
+  | "download_xml"
+  | "view_workfile_documents";
 
 export type Organization = {
   id: string;
@@ -117,6 +126,98 @@ export type OrderDocument = {
   uploadedAt: string;
 };
 
+export type DocumentCategory =
+  | "Engagement letter"
+  | "Appraisal order"
+  | "Purchase contract"
+  | "Amendments"
+  | "Disclosures"
+  | "Property information"
+  | "Comparable data"
+  | "Photos"
+  | "Sketch"
+  | "Map"
+  | "Appraisal report PDF"
+  | "Appraisal XML"
+  | "ENV file"
+  | "Workfile"
+  | "Invoice"
+  | "W-9"
+  | "E&O insurance"
+  | "Appraiser license"
+  | "Company license"
+  | "Revision request"
+  | "Revision response"
+  | "Delivery receipt"
+  | "Other";
+
+export type DocumentSource =
+  | "Internal staff upload"
+  | "Appraiser upload"
+  | "Reviewer upload"
+  | "Client/lender upload"
+  | "AMC upload"
+  | "Public order upload"
+  | "LOS import"
+  | "System generated"
+  | "Email ingestion placeholder";
+
+export type DocumentVisibility =
+  | "Organization internal"
+  | "Assigned appraiser"
+  | "Reviewer"
+  | "AMC"
+  | "Lender/client"
+  | "Vendor"
+  | "Public requester"
+  | "Delivery recipient";
+
+export type ManagedDocumentStatus = "Missing" | "Uploaded" | "Needs classification" | "Superseded" | "Final" | "Archived" | "Failed upload";
+
+export type DocumentVersion = {
+  id: string;
+  documentId: string;
+  versionNumber: number;
+  fileName: string;
+  storagePath: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  checksum?: string;
+  changeNote?: string;
+};
+
+export type ManagedDocument = {
+  id: string;
+  organizationId: string;
+  orderId?: string;
+  vendorId?: string;
+  uploaderId: string;
+  uploaderName: string;
+  category: DocumentCategory;
+  fileName: string;
+  displayName: string;
+  fileType: string;
+  fileSizeBytes: number;
+  storagePath: string;
+  versionNumber: number;
+  parentDocumentId?: string;
+  visibility: DocumentVisibility;
+  source: DocumentSource;
+  uploadedAt: string;
+  description: string;
+  tags: string[];
+  status: ManagedDocumentStatus;
+  checksum?: string;
+  auditMetadata: {
+    createdBy: string;
+    lastAction: string;
+    lastActionAt: string;
+    virusScanStatus: "Not scanned" | "Queued" | "Passed" | "Failed";
+    duplicateDetection: "Not checked" | "Unique" | "Possible duplicate";
+  };
+  versions: DocumentVersion[];
+};
+
 export type AssignmentHistoryItem = {
   id: string;
   appraiser: string;
@@ -132,6 +233,133 @@ export type RevisionLogItem = {
   summary: string;
   status: "Open" | "Sent to appraiser" | "Resolved";
   requestedAt: string;
+};
+
+export type MessageChannel =
+  | "Internal note"
+  | "Appraiser message"
+  | "Reviewer comment"
+  | "AMC message"
+  | "Lender/client message"
+  | "Revision request"
+  | "Revision response"
+  | "System activity";
+
+export type OrderMessage = {
+  id: string;
+  organizationId: string;
+  orderId: string;
+  sender: string;
+  senderRole: UserRole;
+  recipients: string[];
+  visibility: DocumentVisibility | "Internal team";
+  body: string;
+  attachmentIds: string[];
+  createdAt: string;
+  editedAt?: string;
+  readBy: string[];
+  pinned: boolean;
+  channel: MessageChannel;
+  relatedRevisionId?: string;
+  relatedDocumentId?: string;
+  assignedFollowUpOwner?: string;
+  followUpDueDate?: string;
+  auditMetadata: {
+    createdBy: string;
+    lastEditedBy?: string;
+    externalDelivery?: "Not sent" | "Queued" | "Sent";
+  };
+};
+
+export type RevisionStatus = "New" | "Assigned" | "In Progress" | "Response Submitted" | "Reviewer Follow-Up" | "Approved" | "Closed" | "Rejected/Clarification Needed";
+
+export type RevisionItem = {
+  id: string;
+  label: string;
+  relatedPageSection: string;
+  relatedDocumentId?: string;
+  response?: string;
+  completed: boolean;
+  attachmentIds: string[];
+  reviewerApproved: boolean;
+  conversationMessageIds: string[];
+  history: Array<{ at: string; actor: string; action: string }>;
+};
+
+export type RevisionRequest = {
+  id: string;
+  organizationId: string;
+  orderId: string;
+  requestor: string;
+  receivedAt: string;
+  source: "Reviewer" | "Client" | "AMC" | "Lender" | "System";
+  category: string;
+  priority: Priority;
+  dueDate: string;
+  clientVisibleWording: string;
+  internalReviewerWording: string;
+  assignedAppraiser: string;
+  status: RevisionStatus;
+  items: RevisionItem[];
+  auditTrail: AuditTrailItem[];
+};
+
+export type ReportSubmission = {
+  id: string;
+  organizationId: string;
+  orderId: string;
+  submittedBy: string;
+  submittedAt: string;
+  reportPdfDocumentId?: string;
+  xmlDocumentId?: string;
+  envDocumentId?: string;
+  invoiceDocumentId?: string;
+  supportingDocumentIds: string[];
+  submissionNote: string;
+  certificationAccepted: boolean;
+  status: "Draft" | "Submitted" | "Returned" | "Approved";
+};
+
+export type DeliveryRecord = {
+  id: string;
+  organizationId: string;
+  orderId: string;
+  recipientName: string;
+  recipientEmail: string;
+  fileIds: string[];
+  deliveryNote: string;
+  secureLink: string;
+  deliveredAt?: string;
+  status: "Ready" | "Delivered" | "Viewed" | "Expired" | "Failed";
+  deliveryReceiptDocumentId?: string;
+  losHookStatus: "Not configured" | "Queued" | "Sent" | "Failed";
+  emailHookStatus: "Development log" | "Queued" | "Sent" | "Failed";
+};
+
+export type RequiredDocumentRule = {
+  id: string;
+  organizationId: string;
+  productType?: string;
+  client?: string;
+  loanType?: string;
+  appraisalPurpose?: string;
+  workflowStage: "Intake" | "Assignment" | "Submission" | "Review" | "Delivery" | "Vendor approval";
+  category: DocumentCategory;
+  label: string;
+  required: boolean;
+};
+
+export type DocumentAuditEvent = {
+  id: string;
+  organizationId: string;
+  orderId?: string;
+  documentId?: string;
+  messageId?: string;
+  revisionId?: string;
+  event: "Uploaded" | "Viewed" | "Downloaded" | "Renamed" | "Visibility changed" | "Version replaced" | "Archived" | "Restored" | "Deleted" | "Delivered" | "Message sent" | "Message edited" | "Revision created" | "Revision responded to" | "Revision approved";
+  actor: string;
+  at: string;
+  detail: string;
 };
 
 export type AuditTrailItem = {
@@ -507,7 +735,18 @@ export type NotificationEventKey =
   | "eo_expiring"
   | "w9_missing"
   | "due_date_warning"
-  | "past_due_warning";
+  | "past_due_warning"
+  | "new_internal_mention"
+  | "new_client_message"
+  | "new_appraiser_message"
+  | "new_reviewer_comment"
+  | "revision_requested"
+  | "revision_response_submitted"
+  | "updated_report_uploaded"
+  | "final_report_ready_for_delivery"
+  | "final_report_delivered"
+  | "document_requested"
+  | "requested_document_uploaded";
 
 export type NotificationPreference = {
   id: string;

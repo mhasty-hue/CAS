@@ -432,6 +432,163 @@ export type CalendarPreferenceRow = {
   updated_at: string;
 };
 
+export type DocumentVersionRow = {
+  id: string;
+  organization_id: string;
+  document_id: string;
+  version_number: number;
+  file_name: string;
+  storage_bucket: string;
+  storage_path: string;
+  content_type: string | null;
+  file_size_bytes: number | null;
+  checksum: string | null;
+  uploaded_by: string | null;
+  uploaded_by_name: string | null;
+  uploaded_at: string;
+  change_note: string | null;
+  metadata: Json;
+};
+
+export type RequiredDocumentRuleRow = {
+  id: string;
+  organization_id: string | null;
+  client_id: string | null;
+  product_type: string | null;
+  county: string | null;
+  category: string;
+  label: string;
+  required: boolean;
+  visible_to: string[];
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StructuredRevisionRequestRow = {
+  id: string;
+  organization_id: string;
+  order_id: string;
+  requestor: string;
+  source: string;
+  category: string;
+  priority: string;
+  due_at: string | null;
+  client_visible_wording: string;
+  internal_reviewer_wording: string;
+  assigned_appraiser_profile_id: string | null;
+  status: string;
+  received_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StructuredRevisionItemRow = {
+  id: string;
+  organization_id: string;
+  revision_request_id: string;
+  label: string;
+  related_page_section: string | null;
+  related_document_id: string | null;
+  response: string | null;
+  completed: boolean;
+  reviewer_approved: boolean;
+  attachment_document_ids: string[];
+  metadata: Json;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RevisionItemEventRow = {
+  id: string;
+  organization_id: string;
+  revision_request_id: string;
+  revision_item_id: string | null;
+  actor_id: string | null;
+  actor_name: string;
+  action: string;
+  detail: string | null;
+  created_at: string;
+};
+
+export type OrderMessageRow = {
+  id: string;
+  organization_id: string;
+  order_id: string;
+  sender_id: string | null;
+  sender_name: string;
+  sender_role: string | null;
+  channel: string;
+  visibility: string;
+  body: string;
+  attachment_document_ids: string[];
+  pinned: boolean;
+  assigned_follow_up_owner: string | null;
+  follow_up_due_at: string | null;
+  related_revision_id: string | null;
+  related_document_id: string | null;
+  metadata: Json;
+  created_at: string;
+  edited_at: string | null;
+};
+
+export type MessageReadReceiptRow = {
+  message_id: string;
+  user_id: string;
+  read_at: string;
+};
+
+export type ReportSubmissionRow = {
+  id: string;
+  organization_id: string;
+  order_id: string;
+  submitted_by: string | null;
+  submitted_by_name: string | null;
+  submitted_at: string;
+  report_pdf_document_id: string | null;
+  xml_document_id: string | null;
+  env_document_id: string | null;
+  invoice_document_id: string | null;
+  supporting_document_ids: string[];
+  submission_note: string | null;
+  certification_accepted: boolean;
+  status: string;
+  metadata: Json;
+  created_at: string;
+};
+
+export type ReportDeliveryRow = {
+  id: string;
+  organization_id: string;
+  order_id: string;
+  delivered_by: string | null;
+  delivered_by_name: string | null;
+  delivered_at: string;
+  recipient_name: string;
+  recipient_email: string | null;
+  delivery_method: string;
+  included_document_ids: string[];
+  secure_delivery_url: string | null;
+  status: string;
+  metadata: Json;
+};
+
+export type DocumentAuditEventRow = {
+  id: string;
+  organization_id: string;
+  order_id: string | null;
+  document_id: string | null;
+  message_id: string | null;
+  revision_id: string | null;
+  event: string;
+  actor_id: string | null;
+  actor_name: string;
+  detail: string;
+  metadata: Json;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -446,6 +603,8 @@ export type Database = {
       client_fee_defaults: TableDefinition<ClientFeeDefaultRow>;
       clients: TableDefinition<ClientRow>;
       coverage_areas: TableDefinition<Record<string, Json>>;
+      document_audit_events: TableDefinition<DocumentAuditEventRow>;
+      document_versions: TableDefinition<DocumentVersionRow>;
       documents: TableDefinition<Record<string, Json>>;
       email_deliveries: TableDefinition<EmailDeliveryRow>;
       invitations: TableDefinition<Record<string, Json>>;
@@ -458,6 +617,7 @@ export type Database = {
       invoice_payments: TableDefinition<Record<string, Json>>;
       invoice_settings: TableDefinition<InvoiceSettingsRow>;
       invoices: TableDefinition<InvoiceRow>;
+      message_read_receipts: TableDefinition<MessageReadReceiptRow>;
       notifications: TableDefinition<Record<string, Json>>;
       notification_preferences: TableDefinition<NotificationPreferenceRow>;
       notification_templates: TableDefinition<Record<string, Json>>;
@@ -467,6 +627,7 @@ export type Database = {
       order_form_template_sections: TableDefinition<Record<string, Json>>;
       order_form_templates: TableDefinition<OrderFormTemplateRow>;
       order_notes: TableDefinition<OrderNoteRow>;
+      order_messages: TableDefinition<OrderMessageRow>;
       order_review_items: TableDefinition<Record<string, Json>>;
       order_reviews: TableDefinition<Record<string, Json>>;
       order_status_history: TableDefinition<Record<string, Json>>;
@@ -478,11 +639,17 @@ export type Database = {
       public_order_request_documents: TableDefinition<Record<string, Json>>;
       public_order_requests: TableDefinition<PublicOrderRequestRow>;
       public_order_settings: TableDefinition<PublicOrderSettingRow>;
+      report_deliveries: TableDefinition<ReportDeliveryRow>;
+      report_submissions: TableDefinition<ReportSubmissionRow>;
+      required_document_rules: TableDefinition<RequiredDocumentRuleRow>;
+      revision_item_events: TableDefinition<RevisionItemEventRow>;
       revision_requests: TableDefinition<Record<string, Json>>;
       review_checklist_items: TableDefinition<Record<string, Json>>;
       review_checklists: TableDefinition<Record<string, Json>>;
       role_permissions: TableDefinition<RolePermissionRow>;
       roles: TableDefinition<RoleRow>;
+      structured_revision_items: TableDefinition<StructuredRevisionItemRow>;
+      structured_revision_requests: TableDefinition<StructuredRevisionRequestRow>;
       user_profiles: TableDefinition<UserProfileRow>;
       vendor_documents: TableDefinition<Record<string, Json>>;
       vendor_profiles: TableDefinition<VendorProfileRow>;
@@ -492,6 +659,7 @@ export type Database = {
     Views: Record<string, never>;
     Functions: {
       current_organization_id: { Args: Record<string, never>; Returns: string | null };
+      has_any_permission: { Args: { target_organization_id: string; target_permissions: string[] }; Returns: boolean };
       has_permission: { Args: { target_organization_id: string; target_permission: string }; Returns: boolean };
       is_org_admin: { Args: { target_organization_id: string }; Returns: boolean };
       is_org_member: { Args: { target_organization_id: string }; Returns: boolean };

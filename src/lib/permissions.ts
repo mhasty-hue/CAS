@@ -16,6 +16,17 @@ const fullAccountingPermissions: PermissionKey[] = [
 const appraiserPayPermissions: PermissionKey[] = ["see_appraiser_payouts", "view_own_pay"];
 const invoicePermissions: PermissionKey[] = ["generate_invoices", "edit_invoices", "mark_invoices_paid"];
 const platformAdminPermissions: PermissionKey[] = ["manage_public_ordering", "manage_notification_settings", "manage_integrations"];
+const documentManagerPermissions: PermissionKey[] = [
+  "upload_order_documents",
+  "view_internal_documents",
+  "view_client_documents",
+  "archive_documents",
+  "manage_document_visibility",
+  "deliver_final_report",
+  "view_vendor_compliance_documents",
+  "download_xml",
+  "view_workfile_documents"
+];
 
 const rolePermissions: Record<UserRole, PermissionKey[]> = {
   super_admin: [
@@ -40,7 +51,8 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "manage_workflows",
     "export_reports",
     ...fullAccountingPermissions,
-    ...platformAdminPermissions
+    ...platformAdminPermissions,
+    ...documentManagerPermissions
   ],
   company_admin: [
     "view_all_orders",
@@ -62,7 +74,8 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "manage_accounting",
     "customize_order_forms",
     ...fullAccountingPermissions,
-    ...platformAdminPermissions
+    ...platformAdminPermissions,
+    ...documentManagerPermissions
   ],
   office_staff: [
     "view_all_orders",
@@ -70,6 +83,13 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "assign_orders",
     "edit_due_dates",
     "upload_documents",
+    "upload_order_documents",
+    "view_internal_documents",
+    "view_client_documents",
+    "archive_documents",
+    "manage_document_visibility",
+    "deliver_final_report",
+    "download_xml",
     "manage_clients",
     ...accountingSummaryPermissions,
     "export_reports"
@@ -78,17 +98,22 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "view_all_orders",
     "assign_orders",
     "upload_documents",
+    "upload_order_documents",
+    "view_internal_documents",
+    "view_workfile_documents",
+    "download_xml",
     "see_appraiser_payouts",
     "view_accounting_summary",
     "view_own_pay",
     "manage_users",
     "export_reports"
   ],
-  appraiser: ["upload_documents", "see_appraiser_payouts", "view_own_pay", "view_own_orders_only"],
+  appraiser: ["upload_documents", "upload_order_documents", "view_workfile_documents", "download_xml", "see_appraiser_payouts", "view_own_pay", "view_own_orders_only"],
   solo_appraiser: [
     "create_orders",
     "assign_orders",
     "upload_documents",
+    ...documentManagerPermissions,
     "see_accounting",
     "see_appraiser_payouts",
     "manage_accounting",
@@ -100,11 +125,15 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "manage_integrations",
     "view_own_orders_only"
   ],
-  reviewer: ["view_all_orders", "upload_documents", "review_reports", "deliver_reports"],
+  reviewer: ["view_all_orders", "upload_documents", "upload_order_documents", "view_internal_documents", "view_workfile_documents", "download_xml", "review_reports", "deliver_reports", "deliver_final_report"],
   amc_admin: [
     "view_all_orders",
     "create_orders",
     "upload_documents",
+    "upload_order_documents",
+    "view_client_documents",
+    "view_vendor_compliance_documents",
+    "deliver_final_report",
     "invite_vendors",
     "approve_vendors",
     "manage_users",
@@ -114,8 +143,8 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "manage_integrations",
     "export_reports"
   ],
-  amc_staff: ["view_all_orders", "create_orders", "upload_documents", "invite_vendors", "export_reports"],
-  client_user: ["create_orders", "upload_documents", "view_own_orders_only"]
+  amc_staff: ["view_all_orders", "create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_vendor_compliance_documents", "invite_vendors", "export_reports"],
+  client_user: ["create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_own_orders_only"]
 };
 
 export function getPermissions(user: PortalUser) {
@@ -242,4 +271,44 @@ export function canManageNotificationSettings(user: PortalUser) {
 
 export function canManageIntegrations(user: PortalUser) {
   return hasPermission(user, "manage_integrations") || canManageCompanyUsers(user);
+}
+
+export function canUploadOrderDocuments(user: PortalUser) {
+  return hasPermission(user, "upload_order_documents") || hasPermission(user, "upload_documents");
+}
+
+export function canViewInternalDocuments(user: PortalUser) {
+  return hasPermission(user, "view_internal_documents") || canManageCompanyUsers(user);
+}
+
+export function canViewClientDocuments(user: PortalUser) {
+  return hasPermission(user, "view_client_documents") || canViewAllOrders(user) || canViewOwnOrdersOnly(user);
+}
+
+export function canDeleteDocuments(user: PortalUser) {
+  return hasPermission(user, "delete_documents") || canManageCompanyUsers(user);
+}
+
+export function canArchiveDocuments(user: PortalUser) {
+  return hasPermission(user, "archive_documents") || canDeleteDocuments(user);
+}
+
+export function canManageDocumentVisibility(user: PortalUser) {
+  return hasPermission(user, "manage_document_visibility") || canManageCompanyUsers(user);
+}
+
+export function canDeliverFinalReport(user: PortalUser) {
+  return hasPermission(user, "deliver_final_report") || hasPermission(user, "deliver_reports");
+}
+
+export function canViewVendorComplianceDocuments(user: PortalUser) {
+  return hasPermission(user, "view_vendor_compliance_documents") || canApproveVendors(user);
+}
+
+export function canDownloadXML(user: PortalUser) {
+  return hasPermission(user, "download_xml") || canDeliverFinalReport(user);
+}
+
+export function canViewWorkfileDocuments(user: PortalUser) {
+  return hasPermission(user, "view_workfile_documents") || canReviewReports(user);
 }

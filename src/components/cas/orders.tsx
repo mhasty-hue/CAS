@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Archive, ClipboardCheck, Clock3, Download, Eye, FileCheck2, FilePlus2, History, Home, ListChecks, MessageSquare, Plus, ReceiptText, Search, Send, SlidersHorizontal, UploadCloud, UserCheck, X } from "lucide-react";
+import { Archive, ClipboardCheck, Clock3, Download, Eye, FileCheck2, History, Home, ListChecks, MessageSquare, Plus, ReceiptText, Search, SlidersHorizontal, UploadCloud, UserCheck, X } from "lucide-react";
 import { appraisers, savedViews } from "@/data/demo";
-import type { AppraiserProfile, Order, OrderStatus, PortalUser } from "@/types/domain";
+import type { AppraiserProfile, DeliveryRecord, DocumentCategory, ManagedDocument, MessageChannel, Order, OrderMessage, OrderStatus, PortalUser, RequiredDocumentRule, RevisionRequest, RevisionStatus } from "@/types/domain";
 import { canAssignOrders, canCreateOrders, canGenerateInvoices, canViewAccounting } from "@/lib/permissions";
 import { cn, daysUntil, formatCurrency, formatDate } from "@/lib/utils";
 import { orderStatusOptions, statusFilters, type SavedView } from "./config";
-import { DetailSection, DocumentStatusChip, DueChip, InfoRow, ListOrEmpty, MetricTile, PriorityChip, StatusChip, SummaryItem } from "./shared";
+import { DetailSection, DueChip, InfoRow, ListOrEmpty, MetricTile, PriorityChip, StatusChip, SummaryItem } from "./shared";
+import { OrderDocumentWorkspace, RequiredDocumentSummary } from "./documents/workspace";
+import { OrderConversationPanel } from "./messages/conversation";
+import { RevisionSummary, RevisionWorkflowPanel } from "./revisions/workflow";
 
 export function orderMatchesView(order: Order, view: SavedView) {
   const days = daysUntil(order.dueDate);
@@ -59,7 +62,23 @@ export function OrdersView({
   onAssignOrder,
   onStatusChange,
   onAddNote,
-  onGenerateInvoice
+  onGenerateInvoice,
+  managedDocuments,
+  requiredDocumentRules,
+  orderMessages,
+  revisionRequests,
+  deliveryRecords,
+  onUploadDocument,
+  onArchiveDocument,
+  onRestoreDocument,
+  onReplaceDocumentVersion,
+  onSubmitReport,
+  onDeliverReport,
+  onSendMessage,
+  onToggleMessagePinned,
+  onToggleMessageRead,
+  onUpdateRevisionStatus,
+  onRespondToRevisionItem
 }: {
   orderList: Order[];
   selectedOrder: Order;
@@ -69,6 +88,22 @@ export function OrdersView({
   onStatusChange: (orderId: string, status: OrderStatus) => void;
   onAddNote: (orderId: string) => void;
   onGenerateInvoice: (orderId: string) => void;
+  managedDocuments: ManagedDocument[];
+  requiredDocumentRules: RequiredDocumentRule[];
+  orderMessages: OrderMessage[];
+  revisionRequests: RevisionRequest[];
+  deliveryRecords: DeliveryRecord[];
+  onUploadDocument: (orderId: string, category: DocumentCategory) => void;
+  onArchiveDocument: (documentId: string) => void;
+  onRestoreDocument: (documentId: string) => void;
+  onReplaceDocumentVersion: (documentId: string) => void;
+  onSubmitReport: (orderId: string) => void;
+  onDeliverReport: (orderId: string) => void;
+  onSendMessage: (orderId: string, channel: MessageChannel, body: string) => void;
+  onToggleMessagePinned: (messageId: string) => void;
+  onToggleMessageRead: (messageId: string) => void;
+  onUpdateRevisionStatus: (revisionId: string, status: RevisionStatus) => void;
+  onRespondToRevisionItem: (revisionId: string, itemId: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | OrderStatus>("All");
@@ -278,7 +313,30 @@ export function OrdersView({
           <span>{selectedIds.length} selected</span>
         </div>
       </section>
-      <OrderDetailPanel order={selectedOrder} user={user} onAssignOrder={onAssignOrder} onStatusChange={onStatusChange} onAddNote={onAddNote} onGenerateInvoice={onGenerateInvoice} />
+      <OrderDetailPanel
+        order={selectedOrder}
+        user={user}
+        onAssignOrder={onAssignOrder}
+        onStatusChange={onStatusChange}
+        onAddNote={onAddNote}
+        onGenerateInvoice={onGenerateInvoice}
+        managedDocuments={managedDocuments}
+        requiredDocumentRules={requiredDocumentRules}
+        orderMessages={orderMessages}
+        revisionRequests={revisionRequests}
+        deliveryRecords={deliveryRecords}
+        onUploadDocument={onUploadDocument}
+        onArchiveDocument={onArchiveDocument}
+        onRestoreDocument={onRestoreDocument}
+        onReplaceDocumentVersion={onReplaceDocumentVersion}
+        onSubmitReport={onSubmitReport}
+        onDeliverReport={onDeliverReport}
+        onSendMessage={onSendMessage}
+        onToggleMessagePinned={onToggleMessagePinned}
+        onToggleMessageRead={onToggleMessageRead}
+        onUpdateRevisionStatus={onUpdateRevisionStatus}
+        onRespondToRevisionItem={onRespondToRevisionItem}
+      />
     </div>
   );
 }
@@ -291,7 +349,23 @@ export function OrderDetailPanel({
   onAssignOrder,
   onStatusChange,
   onAddNote,
-  onGenerateInvoice
+  onGenerateInvoice,
+  managedDocuments,
+  requiredDocumentRules,
+  orderMessages,
+  revisionRequests,
+  deliveryRecords,
+  onUploadDocument,
+  onArchiveDocument,
+  onRestoreDocument,
+  onReplaceDocumentVersion,
+  onSubmitReport,
+  onDeliverReport,
+  onSendMessage,
+  onToggleMessagePinned,
+  onToggleMessageRead,
+  onUpdateRevisionStatus,
+  onRespondToRevisionItem
 }: {
   order: Order;
   user: PortalUser;
@@ -299,6 +373,22 @@ export function OrderDetailPanel({
   onStatusChange: (orderId: string, status: OrderStatus) => void;
   onAddNote: (orderId: string) => void;
   onGenerateInvoice: (orderId: string) => void;
+  managedDocuments: ManagedDocument[];
+  requiredDocumentRules: RequiredDocumentRule[];
+  orderMessages: OrderMessage[];
+  revisionRequests: RevisionRequest[];
+  deliveryRecords: DeliveryRecord[];
+  onUploadDocument: (orderId: string, category: DocumentCategory) => void;
+  onArchiveDocument: (documentId: string) => void;
+  onRestoreDocument: (documentId: string) => void;
+  onReplaceDocumentVersion: (documentId: string) => void;
+  onSubmitReport: (orderId: string) => void;
+  onDeliverReport: (orderId: string) => void;
+  onSendMessage: (orderId: string, channel: MessageChannel, body: string) => void;
+  onToggleMessagePinned: (messageId: string) => void;
+  onToggleMessageRead: (messageId: string) => void;
+  onUpdateRevisionStatus: (revisionId: string, status: RevisionStatus) => void;
+  onRespondToRevisionItem: (revisionId: string, itemId: string) => void;
 }) {
   const reviewComplete = order.reviewItems.filter((item) => item.complete).length;
   const showAccounting = canViewAccounting(user);
@@ -341,6 +431,8 @@ export function OrderDetailPanel({
         </section>
 
         {showAssignment && <AssignmentPanel order={order} onAssignOrder={onAssignOrder} />}
+        <RequiredDocumentSummary order={order} documents={managedDocuments} rules={requiredDocumentRules} />
+        <RevisionSummary order={order} revisions={revisionRequests} />
 
         <DetailSection icon={Home} title="Property, Borrower, Client">
           <div className="grid gap-2 text-sm">
@@ -396,25 +488,31 @@ export function OrderDetailPanel({
           </div>
         </DetailSection>
 
-        <DetailSection icon={Send} title="Client-Facing Comments">
-          <ListOrEmpty
-            empty="No client-facing comments yet."
-            items={order.clientComments.map((comment) => `${comment.createdAt} - ${comment.author}: ${comment.body}`)}
+        <DetailSection icon={MessageSquare} title="Order Communication">
+          <OrderConversationPanel
+            order={order}
+            user={user}
+            messages={orderMessages}
+            onSendMessage={onSendMessage}
+            onTogglePinned={onToggleMessagePinned}
+            onToggleRead={onToggleMessageRead}
           />
         </DetailSection>
 
-        <DetailSection icon={FilePlus2} title="Documents and Uploads">
-          <div className="space-y-2">
-            {order.documentsList.map((document) => (
-              <div key={document.id} className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2 text-sm">
-                <div className="min-w-0">
-                  <div className="truncate font-medium text-slate-900">{document.name}</div>
-                  <div className="text-xs text-slate-500">{document.type} - {document.uploadedBy} - {document.uploadedAt}</div>
-                </div>
-                <DocumentStatusChip status={document.status} />
-              </div>
-            ))}
-          </div>
+        <DetailSection icon={UploadCloud} title="Documents and Uploads">
+          <OrderDocumentWorkspace
+            order={order}
+            user={user}
+            documents={managedDocuments}
+            requiredRules={requiredDocumentRules}
+            deliveryRecords={deliveryRecords}
+            onUploadDocument={onUploadDocument}
+            onArchiveDocument={onArchiveDocument}
+            onRestoreDocument={onRestoreDocument}
+            onReplaceDocumentVersion={onReplaceDocumentVersion}
+            onSubmitReport={onSubmitReport}
+            onDeliverReport={onDeliverReport}
+          />
         </DetailSection>
 
         <DetailSection icon={History} title="Assignment History">
@@ -441,10 +539,13 @@ export function OrderDetailPanel({
           </div>
         </DetailSection>
 
-        <DetailSection icon={AlertTriangle} title="Revision Log">
-          <ListOrEmpty
-            empty="No revisions requested."
-            items={order.revisionLog.map((item) => `${item.requestedAt} - ${item.status}: ${item.summary}`)}
+        <DetailSection icon={FileCheck2} title="Structured Revision Workflow">
+          <RevisionWorkflowPanel
+            order={order}
+            revisions={revisionRequests}
+            documents={managedDocuments}
+            onUpdateRevisionStatus={onUpdateRevisionStatus}
+            onRespondToRevisionItem={onRespondToRevisionItem}
           />
         </DetailSection>
 

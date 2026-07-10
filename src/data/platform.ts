@@ -1,17 +1,24 @@
 import type {
   AccountingEntry,
+  DeliveryRecord,
+  DocumentAuditEvent,
   EmailDeliveryRecord,
   IntegrationLog,
   IntegrationSetting,
   Invoice,
   InvoiceSettings,
+  ManagedDocument,
   NotificationPreference,
   NotificationTemplate,
+  OrderMessage,
   OrganizationInvitation,
   Organization,
   PortalUser,
   PublicOrderRequest,
   PublicOrderSettings,
+  ReportSubmission,
+  RequiredDocumentRule,
+  RevisionRequest,
   ReviewQueueItem,
   VendorDocument
 } from "@/types/domain";
@@ -255,6 +262,257 @@ export const vendorDocuments: VendorDocument[] = [
   { id: "vd-4", vendorId: "ven-2", type: "W-9", status: "Missing", uploadedAt: "Not uploaded" },
   { id: "vd-5", vendorId: "ven-2", type: "E&O", status: "Needs review", uploadedAt: "Jun 28", expiresAt: "2026-12-31" },
   { id: "vd-6", vendorId: "ven-3", type: "E&O", status: "Expired", uploadedAt: "May 2", expiresAt: "2026-06-15" }
+];
+
+export const managedDocuments: ManagedDocument[] = [
+  {
+    id: "doc-1001-order",
+    organizationId: "org-firm-1",
+    orderId: "ord-1001",
+    uploaderId: "user-office",
+    uploaderName: "Mina Patel",
+    category: "Appraisal order",
+    fileName: "CAA-26-1048-order.pdf",
+    displayName: "Client order package",
+    fileType: "application/pdf",
+    fileSizeBytes: 842112,
+    storagePath: "organizations/org-firm-1/orders/ord-1001/documents/CAA-26-1048-order-v1.pdf",
+    versionNumber: 1,
+    visibility: "Organization internal",
+    source: "Internal staff upload",
+    uploadedAt: "2026-06-24T13:44:00Z",
+    description: "Original lender order package with contact and scope notes.",
+    tags: ["intake", "lender", "scope"],
+    status: "Uploaded",
+    checksum: "sha256-demo-order-1001",
+    auditMetadata: { createdBy: "Mina Patel", lastAction: "Uploaded", lastActionAt: "Jun 24, 1:44 PM", virusScanStatus: "Passed", duplicateDetection: "Unique" },
+    versions: [
+      { id: "docv-1001-order-1", documentId: "doc-1001-order", versionNumber: 1, fileName: "CAA-26-1048-order.pdf", storagePath: "organizations/org-firm-1/orders/ord-1001/documents/CAA-26-1048-order-v1.pdf", uploadedBy: "Mina Patel", uploadedAt: "Jun 24, 1:44 PM", checksum: "sha256-demo-order-1001" }
+    ]
+  },
+  {
+    id: "doc-1001-report",
+    organizationId: "org-firm-1",
+    orderId: "ord-1001",
+    uploaderId: "user-appraiser",
+    uploaderName: "Jordan Lee",
+    category: "Appraisal report PDF",
+    fileName: "CAA-26-1048-report-v2.pdf",
+    displayName: "Submitted appraisal report",
+    fileType: "application/pdf",
+    fileSizeBytes: 4219981,
+    storagePath: "organizations/org-firm-1/orders/ord-1001/documents/CAA-26-1048-report-v2.pdf",
+    versionNumber: 2,
+    visibility: "Reviewer",
+    source: "Appraiser upload",
+    uploadedAt: "2026-07-10T09:30:00Z",
+    description: "Updated report version after reviewer exhibit request.",
+    tags: ["report", "review", "final-candidate"],
+    status: "Final",
+    checksum: "sha256-demo-report-1001-v2",
+    auditMetadata: { createdBy: "Jordan Lee", lastAction: "Version replaced", lastActionAt: "Today, 9:30 AM", virusScanStatus: "Passed", duplicateDetection: "Unique" },
+    versions: [
+      { id: "docv-1001-report-1", documentId: "doc-1001-report", versionNumber: 1, fileName: "CAA-26-1048-report-v1.pdf", storagePath: "organizations/org-firm-1/orders/ord-1001/documents/CAA-26-1048-report-v1.pdf", uploadedBy: "Jordan Lee", uploadedAt: "Jul 9, 3:48 PM", checksum: "sha256-demo-report-1001-v1", changeNote: "Initial submitted report." },
+      { id: "docv-1001-report-2", documentId: "doc-1001-report", versionNumber: 2, fileName: "CAA-26-1048-report-v2.pdf", storagePath: "organizations/org-firm-1/orders/ord-1001/documents/CAA-26-1048-report-v2.pdf", uploadedBy: "Jordan Lee", uploadedAt: "Today, 9:30 AM", checksum: "sha256-demo-report-1001-v2", changeNote: "Added contract addendum and corrected map exhibit." }
+    ]
+  },
+  {
+    id: "doc-1001-xml",
+    organizationId: "org-firm-1",
+    orderId: "ord-1001",
+    uploaderId: "user-appraiser",
+    uploaderName: "Jordan Lee",
+    category: "Appraisal XML",
+    fileName: "CAA-26-1048.xml",
+    displayName: "MISMO XML export",
+    fileType: "application/xml",
+    fileSizeBytes: 318624,
+    storagePath: "organizations/org-firm-1/orders/ord-1001/documents/CAA-26-1048-v2.xml",
+    versionNumber: 2,
+    visibility: "Reviewer",
+    source: "Appraiser upload",
+    uploadedAt: "2026-07-10T09:31:00Z",
+    description: "XML package paired with the submitted report.",
+    tags: ["xml", "delivery"],
+    status: "Uploaded",
+    checksum: "sha256-demo-xml-1001-v2",
+    auditMetadata: { createdBy: "Jordan Lee", lastAction: "Uploaded", lastActionAt: "Today, 9:31 AM", virusScanStatus: "Passed", duplicateDetection: "Unique" },
+    versions: []
+  },
+  {
+    id: "doc-1002-revision",
+    organizationId: "org-firm-1",
+    orderId: "ord-1002",
+    uploaderId: "user-reviewer",
+    uploaderName: "Evan Brooks",
+    category: "Revision request",
+    fileName: "CAA-26-1049-revision-request.pdf",
+    displayName: "FHA repair revision request",
+    fileType: "application/pdf",
+    fileSizeBytes: 184220,
+    storagePath: "organizations/org-firm-1/orders/ord-1002/documents/CAA-26-1049-revision-request.pdf",
+    versionNumber: 1,
+    visibility: "Assigned appraiser",
+    source: "Reviewer upload",
+    uploadedAt: "2026-07-09T14:12:00Z",
+    description: "Reviewer-marked FHA repair comments and exhibit references.",
+    tags: ["revision", "fha", "repair"],
+    status: "Uploaded",
+    auditMetadata: { createdBy: "Evan Brooks", lastAction: "Uploaded", lastActionAt: "Jul 9, 2:12 PM", virusScanStatus: "Passed", duplicateDetection: "Unique" },
+    versions: []
+  },
+  {
+    id: "doc-vendor-eo",
+    organizationId: "org-amc-1",
+    vendorId: "ven-2",
+    uploaderId: "user-amc",
+    uploaderName: "Derek Sloan",
+    category: "E&O insurance",
+    fileName: "north-metro-eo.pdf",
+    displayName: "North Metro E&O policy",
+    fileType: "application/pdf",
+    fileSizeBytes: 524000,
+    storagePath: "organizations/org-amc-1/vendors/ven-2/compliance/north-metro-eo.pdf",
+    versionNumber: 1,
+    visibility: "Vendor",
+    source: "AMC upload",
+    uploadedAt: "2026-06-28T12:00:00Z",
+    description: "Vendor compliance E&O document pending approval.",
+    tags: ["vendor", "compliance", "insurance"],
+    status: "Needs classification",
+    auditMetadata: { createdBy: "Derek Sloan", lastAction: "Uploaded", lastActionAt: "Jun 28, 12:00 PM", virusScanStatus: "Queued", duplicateDetection: "Not checked" },
+    versions: []
+  }
+];
+
+export const requiredDocumentRules: RequiredDocumentRule[] = [
+  { id: "rule-purchase-contract", organizationId: "org-firm-1", productType: "1004 URAR", loanType: "Purchase", workflowStage: "Intake", category: "Purchase contract", label: "Purchase contract required for purchase assignments", required: true },
+  { id: "rule-final-pdf", organizationId: "org-firm-1", workflowStage: "Submission", category: "Appraisal report PDF", label: "Final submission requires report PDF", required: true },
+  { id: "rule-final-xml", organizationId: "org-firm-1", workflowStage: "Submission", category: "Appraisal XML", label: "Final submission requires XML", required: true },
+  { id: "rule-private-engagement", organizationId: "org-firm-1", appraisalPurpose: "Estate", workflowStage: "Intake", category: "Engagement letter", label: "Private estate appraisal requires engagement letter", required: true },
+  { id: "rule-vendor-w9", organizationId: "org-amc-1", workflowStage: "Vendor approval", category: "W-9", label: "Vendor approval requires W-9", required: true },
+  { id: "rule-vendor-eo", organizationId: "org-amc-1", workflowStage: "Vendor approval", category: "E&O insurance", label: "Vendor approval requires E&O insurance", required: true },
+  { id: "rule-vendor-license", organizationId: "org-amc-1", workflowStage: "Vendor approval", category: "Appraiser license", label: "Vendor approval requires current license", required: true }
+];
+
+export const orderMessages: OrderMessage[] = [
+  {
+    id: "msg-1001-1",
+    organizationId: "org-firm-1",
+    orderId: "ord-1001",
+    sender: "Maya Chen",
+    senderRole: "reviewer",
+    recipients: ["Nora Fields", "Jordan Lee"],
+    visibility: "Internal team",
+    body: "@Nora please confirm whether the contract addendum can be client-visible before final delivery.",
+    attachmentIds: ["doc-1001-report"],
+    createdAt: "Today, 9:45 AM",
+    readBy: ["Maya Chen"],
+    pinned: true,
+    channel: "Reviewer comment",
+    relatedDocumentId: "doc-1001-report",
+    assignedFollowUpOwner: "Nora Fields",
+    followUpDueDate: "2026-07-10",
+    auditMetadata: { createdBy: "Maya Chen", externalDelivery: "Not sent" }
+  },
+  {
+    id: "msg-1001-2",
+    organizationId: "org-firm-1",
+    orderId: "ord-1001",
+    sender: "CAS Workflow",
+    senderRole: "company_admin",
+    recipients: ["Maya Chen"],
+    visibility: "Reviewer",
+    body: "Updated report and XML were uploaded. Reviewer notification queued according to notification preferences.",
+    attachmentIds: ["doc-1001-report", "doc-1001-xml"],
+    createdAt: "Today, 9:32 AM",
+    readBy: ["Maya Chen", "Nora Fields"],
+    pinned: false,
+    channel: "System activity",
+    relatedDocumentId: "doc-1001-report",
+    auditMetadata: { createdBy: "CAS Workflow", externalDelivery: "Queued" }
+  },
+  {
+    id: "msg-1002-1",
+    organizationId: "org-firm-1",
+    orderId: "ord-1002",
+    sender: "Evan Brooks",
+    senderRole: "reviewer",
+    recipients: ["Priya Shah"],
+    visibility: "Assigned appraiser",
+    body: "Please respond item by item to the FHA repair commentary before uploading the revised report.",
+    attachmentIds: ["doc-1002-revision"],
+    createdAt: "Jul 9, 2:18 PM",
+    readBy: ["Evan Brooks"],
+    pinned: false,
+    channel: "Revision request",
+    relatedRevisionId: "rev-1002-fha",
+    auditMetadata: { createdBy: "Evan Brooks", externalDelivery: "Not sent" }
+  }
+];
+
+export const revisionRequests: RevisionRequest[] = [
+  {
+    id: "rev-1002-fha",
+    organizationId: "org-firm-1",
+    orderId: "ord-1002",
+    requestor: "Evan Brooks",
+    receivedAt: "2026-07-09",
+    source: "Reviewer",
+    category: "FHA repair commentary",
+    priority: "Rush",
+    dueDate: "2026-07-10",
+    clientVisibleWording: "The report is being updated to clarify FHA repair commentary.",
+    internalReviewerWording: "Clarify repair condition, photo reference, and cost-to-cure support.",
+    assignedAppraiser: "Priya Shah",
+    status: "In Progress",
+    items: [
+      { id: "revitem-1002-1", label: "Add photo reference for damaged fascia", relatedPageSection: "Subject improvements", relatedDocumentId: "doc-1002-revision", response: "Photo 14 added with comment.", completed: true, attachmentIds: [], reviewerApproved: false, conversationMessageIds: ["msg-1002-1"], history: [{ at: "Jul 9, 2:18 PM", actor: "Evan Brooks", action: "Revision item created" }] },
+      { id: "revitem-1002-2", label: "Clarify whether repair is required prior to closing", relatedPageSection: "FHA VC sheet", response: "", completed: false, attachmentIds: [], reviewerApproved: false, conversationMessageIds: ["msg-1002-1"], history: [{ at: "Jul 9, 2:18 PM", actor: "Evan Brooks", action: "Revision item created" }] }
+    ],
+    auditTrail: [
+      { id: "rev-1002-audit-1", action: "Revision created", actor: "Evan Brooks", at: "Jul 9, 2:18 PM" },
+      { id: "rev-1002-audit-2", action: "Assigned to Priya Shah", actor: "Nora Fields", at: "Jul 9, 2:31 PM" }
+    ]
+  }
+];
+
+export const reportSubmissions: ReportSubmission[] = [
+  {
+    id: "submission-1001",
+    organizationId: "org-firm-1",
+    orderId: "ord-1001",
+    submittedBy: "Jordan Lee",
+    submittedAt: "Today, 9:32 AM",
+    reportPdfDocumentId: "doc-1001-report",
+    xmlDocumentId: "doc-1001-xml",
+    supportingDocumentIds: ["doc-1001-order"],
+    submissionNote: "Updated report package includes addendum and XML.",
+    certificationAccepted: true,
+    status: "Submitted"
+  }
+];
+
+export const deliveryRecords: DeliveryRecord[] = [
+  {
+    id: "delivery-1001",
+    organizationId: "org-firm-1",
+    orderId: "ord-1001",
+    recipientName: "Claire Moon",
+    recipientEmail: "claire@harborpoint.example",
+    fileIds: ["doc-1001-report", "doc-1001-xml"],
+    deliveryNote: "Final report package pending reviewer approval.",
+    secureLink: "https://cas.example/deliveries/delivery-1001",
+    status: "Ready",
+    losHookStatus: "Not configured",
+    emailHookStatus: "Development log"
+  }
+];
+
+export const documentAuditEvents: DocumentAuditEvent[] = [
+  { id: "audit-doc-1", organizationId: "org-firm-1", orderId: "ord-1001", documentId: "doc-1001-report", event: "Version replaced", actor: "Jordan Lee", at: "Today, 9:30 AM", detail: "Report PDF replaced with version 2." },
+  { id: "audit-doc-2", organizationId: "org-firm-1", orderId: "ord-1001", messageId: "msg-1001-1", event: "Message sent", actor: "Maya Chen", at: "Today, 9:45 AM", detail: "Reviewer comment created with internal visibility." },
+  { id: "audit-doc-3", organizationId: "org-firm-1", orderId: "ord-1002", revisionId: "rev-1002-fha", event: "Revision created", actor: "Evan Brooks", at: "Jul 9, 2:18 PM", detail: "FHA repair revision request opened." }
 ];
 
 export const accountingEntries: AccountingEntry[] = [

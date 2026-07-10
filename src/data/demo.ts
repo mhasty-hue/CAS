@@ -62,7 +62,16 @@ export const permissionCatalog: Array<{ key: PermissionKey; label: string; group
   { key: "view_own_pay", label: "View own pay", group: "Accounting" },
   { key: "manage_public_ordering", label: "Manage public ordering", group: "Public intake" },
   { key: "manage_notification_settings", label: "Manage notification settings", group: "Notifications" },
-  { key: "manage_integrations", label: "Manage integrations", group: "Integrations" }
+  { key: "manage_integrations", label: "Manage integrations", group: "Integrations" },
+  { key: "upload_order_documents", label: "Upload order documents", group: "Documents" },
+  { key: "view_internal_documents", label: "View internal documents", group: "Documents" },
+  { key: "view_client_documents", label: "View client documents", group: "Documents" },
+  { key: "archive_documents", label: "Archive documents", group: "Documents" },
+  { key: "manage_document_visibility", label: "Manage document visibility", group: "Documents" },
+  { key: "deliver_final_report", label: "Deliver final report", group: "Documents" },
+  { key: "view_vendor_compliance_documents", label: "View vendor compliance", group: "Documents" },
+  { key: "download_xml", label: "Download XML", group: "Documents" },
+  { key: "view_workfile_documents", label: "View workfile documents", group: "Documents" }
 ];
 
 const documents = (fileNumber: string, reportStatus: "Ready" | "Missing" | "Needs review" = "Ready") => [

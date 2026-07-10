@@ -39,7 +39,18 @@ export const notificationEventLabels: Record<NotificationEventKey, string> = {
   eo_expiring: "E&O expiring",
   w9_missing: "W-9 missing",
   due_date_warning: "Due-date warning",
-  past_due_warning: "Past-due warning"
+  past_due_warning: "Past-due warning",
+  new_internal_mention: "New internal mention",
+  new_client_message: "New client message",
+  new_appraiser_message: "New appraiser message",
+  new_reviewer_comment: "New reviewer comment",
+  revision_requested: "Revision requested",
+  revision_response_submitted: "Revision response submitted",
+  updated_report_uploaded: "Updated report uploaded",
+  final_report_ready_for_delivery: "Final report ready for delivery",
+  final_report_delivered: "Final report delivered",
+  document_requested: "Document requested",
+  requested_document_uploaded: "Requested document uploaded"
 };
 
 export function createDevelopmentEmailProvider(): EmailProvider {

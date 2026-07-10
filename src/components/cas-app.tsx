@@ -4,25 +4,35 @@ import { useEffect, useState } from "react";
 import { appraisers, calendarPreferences, clientProfiles, companyUsers, defaultOrderFormTemplate, orders, vendors } from "@/data/demo";
 import {
   accountingEntries,
+  deliveryRecords,
+  documentAuditEvents,
   emailDeliveryRecords,
   integrationLogs,
   integrationSettings,
   invoiceSettings,
   invoices,
+  managedDocuments,
   notificationPreferences,
   notificationTemplates,
+  orderMessages,
   organizationInvitations,
   organizations,
   portalUsers,
   publicOrderRequests,
   publicOrderSettings,
+  reportSubmissions,
+  requiredDocumentRules,
+  revisionRequests,
   vendorDocuments
 } from "@/data/platform";
-import type { AccountingEntry, AppraiserProfile, CalendarPreference, ClientProfile, CompanyUser, EmailDeliveryRecord, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, Note, NotificationPreference, NotificationTemplate, Order, OrderFormTemplate, OrderStatus, Organization, OrganizationInvitation, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, UserRole, VendorDocument, VendorProfile } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationTemplate, Order, OrderFormTemplate, OrderStatus, Organization, OrganizationInvitation, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, UserRole, VendorDocument, VendorProfile } from "@/types/domain";
 import { loadCasAuthContext } from "@/lib/auth/context";
+import { createDeliveryRecord } from "@/lib/delivery/service";
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
 import { canCreateOrders, canViewAllOrders, canViewOwnOrdersOnly } from "@/lib/permissions";
 import { publicRequestToOrderSeed } from "@/lib/public-intake/service";
+import { simulateOrderDocumentUpload } from "@/lib/storage/paths";
+import { createOrderMessage } from "@/lib/messaging/service";
 import { getCasRepository } from "@/lib/repositories";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { AccountingView, AnalyticsView } from "./cas/accounting";
@@ -80,6 +90,13 @@ export function CasApp() {
   const [emailDeliveryList, setEmailDeliveryList] = useState<EmailDeliveryRecord[]>(emailDeliveryRecords);
   const [integrationList, setIntegrationList] = useState<IntegrationSetting[]>(integrationSettings);
   const [integrationLogList, setIntegrationLogList] = useState<IntegrationLog[]>(integrationLogs);
+  const [managedDocumentList, setManagedDocumentList] = useState<ManagedDocument[]>(managedDocuments);
+  const [requiredDocumentRuleList, setRequiredDocumentRuleList] = useState<RequiredDocumentRule[]>(requiredDocumentRules);
+  const [orderMessageList, setOrderMessageList] = useState<OrderMessage[]>(orderMessages);
+  const [revisionRequestList, setRevisionRequestList] = useState<RevisionRequest[]>(revisionRequests);
+  const [reportSubmissionList, setReportSubmissionList] = useState<ReportSubmission[]>(reportSubmissions);
+  const [deliveryRecordList, setDeliveryRecordList] = useState<DeliveryRecord[]>(deliveryRecords);
+  const [documentAuditEventList, setDocumentAuditEventList] = useState<DocumentAuditEvent[]>(documentAuditEvents);
   const [orderFormTemplate, setOrderFormTemplate] = useState<OrderFormTemplate>(defaultOrderFormTemplate);
   const [calendarPreferenceList, setCalendarPreferenceList] = useState<CalendarPreference[]>(calendarPreferences);
   const [activeUserId, setActiveUserId] = useState(portalUsers[0].id);
@@ -166,6 +183,13 @@ export function CasApp() {
         setEmailDeliveryList(bootstrap.emailDeliveryRecords);
         setIntegrationList(bootstrap.integrations);
         setIntegrationLogList(bootstrap.integrationLogs);
+        setManagedDocumentList(bootstrap.managedDocuments);
+        setRequiredDocumentRuleList(bootstrap.requiredDocumentRules);
+        setOrderMessageList(bootstrap.orderMessages);
+        setRevisionRequestList(bootstrap.revisionRequests);
+        setReportSubmissionList(bootstrap.reportSubmissions);
+        setDeliveryRecordList(bootstrap.deliveryRecords);
+        setDocumentAuditEventList(bootstrap.documentAuditEvents);
         setOrderFormTemplate(bootstrap.orderFormTemplate);
         setCalendarPreferenceList(bootstrap.calendarPreferences.length ? bootstrap.calendarPreferences : calendarPreferences);
         setAuthState("ready");
@@ -749,6 +773,174 @@ export function CasApp() {
     );
   }
 
+  function addDocumentAuditEvent(event: DocumentAuditEvent) {
+    setDocumentAuditEventList((current) => [event, ...current]);
+  }
+
+  function handleUploadDocument(orderId: string, category: DocumentCategory) {
+    const order = orderList.find((item) => item.id === orderId);
+    if (!order) return;
+    const extension = category === "Appraisal XML" ? "xml" : category === "ENV file" ? "env" : "pdf";
+    const fileName = `${order.fileNumber}-${category.toLowerCase().replaceAll(" ", "-")}.${extension}`;
+    const document = simulateOrderDocumentUpload({ organization: activeOrganization, order, user: activeUser, category, fileName });
+    setManagedDocumentList((current) => [document, ...current]);
+    updateOrder(orderId, (currentOrder) => ({
+      ...currentOrder,
+      documents: currentOrder.documents + 1,
+      lastUpdate: `${category} uploaded`,
+      timeline: [{ label: "Document uploaded", detail: document.displayName, at: "Just now", actor: activeUser.name }, ...currentOrder.timeline]
+    }));
+    addDocumentAuditEvent({
+      id: `audit-${Date.now()}`,
+      organizationId: activeOrganization.id,
+      orderId,
+      documentId: document.id,
+      event: "Uploaded",
+      actor: activeUser.name,
+      at: "Just now",
+      detail: `${document.displayName} uploaded to secure storage path.`
+    });
+  }
+
+  function handleArchiveDocument(documentId: string) {
+    setManagedDocumentList((current) =>
+      current.map((document) =>
+        document.id === documentId
+          ? { ...document, status: "Archived", auditMetadata: { ...document.auditMetadata, lastAction: "Archived", lastActionAt: "Just now" } }
+          : document
+      )
+    );
+    addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, documentId, event: "Archived", actor: activeUser.name, at: "Just now", detail: "Document archived in demo state." });
+  }
+
+  function handleRestoreDocument(documentId: string) {
+    setManagedDocumentList((current) =>
+      current.map((document) =>
+        document.id === documentId
+          ? { ...document, status: "Uploaded", auditMetadata: { ...document.auditMetadata, lastAction: "Restored", lastActionAt: "Just now" } }
+          : document
+      )
+    );
+    addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, documentId, event: "Restored", actor: activeUser.name, at: "Just now", detail: "Document restored from archive." });
+  }
+
+  function handleReplaceDocumentVersion(documentId: string) {
+    setManagedDocumentList((current) =>
+      current.map((document) => {
+        if (document.id !== documentId) return document;
+        const nextVersion = document.versionNumber + 1;
+        return {
+          ...document,
+          versionNumber: nextVersion,
+          status: document.category === "Appraisal report PDF" ? "Final" : document.status,
+          fileName: document.fileName.replace(/-v\d+/i, `-v${nextVersion}`),
+          auditMetadata: { ...document.auditMetadata, lastAction: "Version replaced", lastActionAt: "Just now" },
+          versions: [
+            {
+              id: `${document.id}-v${nextVersion}`,
+              documentId: document.id,
+              versionNumber: nextVersion,
+              fileName: document.fileName,
+              storagePath: document.storagePath,
+              uploadedBy: activeUser.name,
+              uploadedAt: "Just now",
+              checksum: `sha256-demo-${Date.now()}`,
+              changeNote: "Version replaced from order document workspace."
+            },
+            ...document.versions
+          ]
+        };
+      })
+    );
+    addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, documentId, event: "Version replaced", actor: activeUser.name, at: "Just now", detail: "New document version uploaded." });
+  }
+
+  function handleSubmitReport(orderId: string) {
+    const orderDocuments = managedDocumentList.filter((document) => document.orderId === orderId);
+    const submission: ReportSubmission = {
+      id: `submission-${Date.now()}`,
+      organizationId: activeOrganization.id,
+      orderId,
+      submittedBy: activeUser.name,
+      submittedAt: "Just now",
+      reportPdfDocumentId: orderDocuments.find((document) => document.category === "Appraisal report PDF")?.id,
+      xmlDocumentId: orderDocuments.find((document) => document.category === "Appraisal XML")?.id,
+      envDocumentId: orderDocuments.find((document) => document.category === "ENV file")?.id,
+      supportingDocumentIds: orderDocuments.filter((document) => ["Workfile", "Photos", "Sketch"].includes(document.category)).map((document) => document.id),
+      submissionNote: "Submitted from Phase 8 report workflow with certification.",
+      certificationAccepted: true,
+      status: "Submitted"
+    };
+    setReportSubmissionList((current) => [submission, ...current]);
+    handleStatusChange(orderId, "Submitted");
+    setOrderMessageList((current) => [createOrderMessage(orderList.find((order) => order.id === orderId) ?? orderList[0], activeUser, "System activity", "Final report package submitted for review."), ...current]);
+  }
+
+  function handleDeliverReport(orderId: string) {
+    const order = orderList.find((item) => item.id === orderId);
+    if (!order) return;
+    const delivery = createDeliveryRecord(order, activeUser, managedDocumentList);
+    setDeliveryRecordList((current) => [delivery, ...current]);
+    handleStatusChange(orderId, "Delivered");
+    addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, orderId, event: "Delivered", actor: activeUser.name, at: "Just now", detail: `Secure delivery created for ${delivery.recipientName}.` });
+  }
+
+  function handleSendOrderMessage(orderId: string, channel: MessageChannel, body: string) {
+    const order = orderList.find((item) => item.id === orderId);
+    if (!order) return;
+    const message = createOrderMessage(order, activeUser, channel, body);
+    setOrderMessageList((current) => [message, ...current]);
+    addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, orderId, messageId: message.id, event: "Message sent", actor: activeUser.name, at: "Just now", detail: `${channel} sent.` });
+  }
+
+  function handleToggleMessagePinned(messageId: string) {
+    setOrderMessageList((current) => current.map((message) => (message.id === messageId ? { ...message, pinned: !message.pinned } : message)));
+  }
+
+  function handleToggleMessageRead(messageId: string) {
+    setOrderMessageList((current) =>
+      current.map((message) => {
+        if (message.id !== messageId) return message;
+        const read = message.readBy.includes(activeUser.name);
+        return { ...message, readBy: read ? message.readBy.filter((name) => name !== activeUser.name) : [...message.readBy, activeUser.name] };
+      })
+    );
+  }
+
+  function handleUpdateRevisionStatus(revisionId: string, status: RevisionStatus) {
+    setRevisionRequestList((current) =>
+      current.map((revision) =>
+        revision.id === revisionId
+          ? { ...revision, status, auditTrail: [{ id: `${revision.id}-status-${Date.now()}`, action: `Revision moved to ${status}`, actor: activeUser.name, at: "Just now" }, ...revision.auditTrail] }
+          : revision
+      )
+    );
+  }
+
+  function handleRespondToRevisionItem(revisionId: string, itemId: string) {
+    setRevisionRequestList((current) =>
+      current.map((revision) =>
+        revision.id === revisionId
+          ? {
+              ...revision,
+              status: "Response Submitted",
+              items: revision.items.map((item) =>
+                item.id === itemId
+                  ? {
+                      ...item,
+                      completed: true,
+                      response: item.response || "Appraiser response added from structured revision workflow.",
+                      history: [{ at: "Just now", actor: activeUser.name, action: "Revision item response submitted" }, ...item.history]
+                    }
+                  : item
+              )
+            }
+          : revision
+      )
+    );
+    addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, revisionId, event: "Revision responded to", actor: activeUser.name, at: "Just now", detail: "Revision item response submitted." });
+  }
+
   if (!demoMode && authState !== "ready") {
     return <ProductionAccessGate state={authState === "loading" ? "loading" : authState === "signed-out" ? "signed-out" : "error"} detail={authError} />;
   }
@@ -805,6 +997,22 @@ export function CasApp() {
               onStatusChange={handleStatusChange}
               onAddNote={handleAddNote}
               onGenerateInvoice={handleGenerateInvoice}
+              managedDocuments={managedDocumentList}
+              requiredDocumentRules={requiredDocumentRuleList}
+              orderMessages={orderMessageList}
+              revisionRequests={revisionRequestList}
+              deliveryRecords={deliveryRecordList}
+              onUploadDocument={handleUploadDocument}
+              onArchiveDocument={handleArchiveDocument}
+              onRestoreDocument={handleRestoreDocument}
+              onReplaceDocumentVersion={handleReplaceDocumentVersion}
+              onSubmitReport={handleSubmitReport}
+              onDeliverReport={handleDeliverReport}
+              onSendMessage={handleSendOrderMessage}
+              onToggleMessagePinned={handleToggleMessagePinned}
+              onToggleMessageRead={handleToggleMessageRead}
+              onUpdateRevisionStatus={handleUpdateRevisionStatus}
+              onRespondToRevisionItem={handleRespondToRevisionItem}
             />
           )}
           {(activeView === "new-order" || activeView === "place-order") && (
@@ -857,9 +1065,36 @@ export function CasApp() {
             />
           )}
           {activeView === "analytics" && <AnalyticsView entries={accountingList} orderList={orderList} />}
-          {activeView === "documents" && <DocumentsView orderList={visibleOrders} />}
-          {activeView === "messages" && <MessagesView orderList={visibleOrders} user={activeUser} onAddNote={handleAddNote} />}
-          {activeView === "reports" && <ReportsView orderList={visibleOrders} />}
+          {activeView === "documents" && (
+            <DocumentsView
+              orderList={visibleOrders}
+              user={activeUser}
+              documents={managedDocumentList}
+              requiredRules={requiredDocumentRuleList}
+              vendorDocuments={vendorDocumentList}
+              reportSubmissions={reportSubmissionList}
+              deliveryRecords={deliveryRecordList}
+              auditEvents={documentAuditEventList}
+            />
+          )}
+          {activeView === "messages" && (
+            <MessagesView
+              orderList={visibleOrders}
+              user={activeUser}
+              messages={orderMessageList}
+              onSendMessage={handleSendOrderMessage}
+              onToggleMessagePinned={handleToggleMessagePinned}
+              onToggleMessageRead={handleToggleMessageRead}
+            />
+          )}
+          {activeView === "reports" && (
+            <ReportsView
+              orderList={visibleOrders}
+              documents={managedDocumentList}
+              reportSubmissions={reportSubmissionList}
+              deliveryRecords={deliveryRecordList}
+            />
+          )}
           {activeView === "revisions" && <RevisionsView orderList={visibleOrders} onSelectOrder={(order) => { setSelectedOrderId(order.id); setActiveView("my-orders"); }} />}
           {activeView === "notifications" && <NotificationsView />}
           {activeView === "settings" && (

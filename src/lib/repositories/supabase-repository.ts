@@ -329,6 +329,13 @@ export class SupabaseCasRepository implements CasRepository {
         emailDeliveryRecords: [],
         integrations: [],
         integrationLogs: [],
+        managedDocuments: [],
+        requiredDocumentRules: [],
+        orderMessages: [],
+        revisionRequests: [],
+        reportSubmissions: [],
+        deliveryRecords: [],
+        documentAuditEvents: [],
         orderFormTemplate: defaultOrderFormTemplate,
         calendarPreferences: []
       };
@@ -438,6 +445,13 @@ export class SupabaseCasRepository implements CasRepository {
       emailDeliveryRecords: [],
       integrations: [],
       integrationLogs: [],
+      managedDocuments: [],
+      requiredDocumentRules: [],
+      orderMessages: [],
+      revisionRequests: [],
+      reportSubmissions: [],
+      deliveryRecords: [],
+      documentAuditEvents: [],
       orderFormTemplate: mapOrderFormTemplate(templateRows[0]),
       calendarPreferences: calendarRows.map((row) => mapCalendarPreference(row, appraisersById))
     };
