@@ -36,10 +36,16 @@ export type PermissionKey =
   | "customize_order_forms"
   | "view_accounting_summary"
   | "view_full_accounting"
+  | "view_operational_dashboard"
+  | "view_payroll_summary"
+  | "view_receivables_summary"
+  | "view_profitability_summary"
   | "prepare_payroll"
   | "approve_payroll"
   | "edit_commission_defaults"
   | "override_order_commission"
+  | "edit_inspections"
+  | "reopen_orders"
   | "generate_invoices"
   | "edit_invoices"
   | "mark_invoices_paid"
@@ -139,6 +145,9 @@ export type DocumentCategory =
   | "Map"
   | "Appraisal report PDF"
   | "Appraisal XML"
+  | "UAD 3.6 data package"
+  | "UCDP submission"
+  | "UCDP findings"
   | "ENV file"
   | "Workfile"
   | "Invoice"
@@ -376,6 +385,63 @@ export type ReviewItem = {
   severity?: "warning" | "blocker";
 };
 
+export type ReportStandard = "legacy_uad_2_6" | "uad_3_6" | "non_gse" | "other";
+export type SubmissionFormat = "PDF" | "MISMO XML" | "UAD 3.6 data package" | "ENV" | "Other";
+
+export type ReportMetadata = {
+  reportStandard: ReportStandard;
+  reportSchemaVersion: string;
+  reportType: string;
+  assignmentType: string;
+  inspectionScope: "Interior and exterior" | "Exterior only" | "Desktop/no physical inspection" | "Other";
+  propertyType: string;
+  submissionFormat: readonly SubmissionFormat[];
+  xmlVersion?: string;
+  mismoVersion?: string;
+  ucdpSubmissionStatus?: "Not configured" | "Ready" | "Submitted" | "Accepted" | "Warnings" | "Rejected";
+  ucdpFindings?: string[];
+};
+
+export type InspectionInfo = {
+  scheduledDate?: string;
+  scheduledStartTime?: string;
+  scheduledEndTime?: string;
+  timeZone: string;
+  completedAt?: string;
+  inspectionType: "Interior and exterior" | "Exterior only" | "Desktop/no physical inspection" | "Other";
+  accessContact: string;
+  accessNotes: string;
+  rescheduleReason?: string;
+  cancellationReason?: string;
+  calendarSyncStatus: "Not synced" | "Queued" | "Synced" | "Failed";
+  internalNote?: string;
+};
+
+export type PayrollCalculationSource =
+  | "Fixed order payout"
+  | "Order split override"
+  | "Appraiser default split"
+  | "Organization default split"
+  | "Manual accounting adjustment"
+  | "Requires review";
+
+export type PayrollSnapshot = {
+  grossFee: number;
+  techFee: number;
+  otherNonCommissionableFees: number;
+  commissionableBase: number;
+  defaultAppraiserSplit?: number;
+  orderSplitOverride?: number;
+  fixedPayoutOverride?: number;
+  calculatedPayout?: number;
+  finalPayout?: number;
+  calculationSource: PayrollCalculationSource;
+  manualAdjustmentReason?: string;
+  approvedBy?: string;
+  approvedDate?: string;
+  locked?: boolean;
+};
+
 export type Order = {
   id: string;
   fileNumber: string;
@@ -393,6 +459,7 @@ export type Order = {
   orderedDate: string;
   dueDate: string;
   inspectionDate?: string;
+  inspection?: InspectionInfo;
   status: OrderStatus;
   priority: Priority;
   fee: number;
@@ -418,7 +485,11 @@ export type Order = {
   revisionLog: RevisionLogItem[];
   auditTrail: AuditTrailItem[];
   reviewItems: ReviewItem[];
+  reportMetadata?: ReportMetadata;
   commissionSplitOverride?: number;
+  fixedAppraiserPayoutOverride?: number;
+  otherNonCommissionableFees?: number;
+  payrollSnapshot?: PayrollSnapshot;
   paidAt?: string;
 };
 
@@ -487,7 +558,20 @@ export type AccountingEntry = {
   completedAt: string;
   fee: number;
   techFee: number;
+  otherNonCommissionableFees?: number;
   commissionSplit: number;
+  defaultAppraiserSplit?: number;
+  orderSplitOverride?: number;
+  fixedPayoutOverride?: number;
+  commissionableBase?: number;
+  calculatedPayout?: number;
+  finalPayout?: number;
+  calculationSource?: PayrollCalculationSource;
+  manualAdjustmentReason?: string;
+  approvedBy?: string;
+  approvedDate?: string;
+  locked?: boolean;
+  payrollSnapshot?: PayrollSnapshot;
   appraiserSplit: number;
   companyRevenue: number;
   status: "Paid" | "Unpaid" | "Ready to invoice" | "Payout pending";

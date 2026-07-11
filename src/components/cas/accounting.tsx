@@ -3,6 +3,7 @@ import { AlertTriangle, BarChart3, Building2, CheckCircle2, CircleDollarSign, Do
 import { revenueChart, volumeChart } from "@/data/demo";
 import type { AccountingEntry, AppraiserProfile, Invoice, InvoiceSettings, Order, PortalUser } from "@/types/domain";
 import { canApprovePayroll, canEditCommissionDefaults, canEditInvoices, canGenerateInvoices, canMarkInvoicesPaid, canOverrideOrderCommission } from "@/lib/permissions";
+import { explainPayroll } from "@/lib/accounting/payroll";
 import { cn, daysUntil, formatCurrency, formatDate } from "@/lib/utils";
 import { Field, LineChart, MetricTile, SectionHeader, SimpleFoundationView, TableHeader } from "./shared";
 
@@ -16,6 +17,7 @@ export function AccountingView({
   onMarkInvoicePaid,
   onUpdateDefaultSplit,
   onOverrideCommission,
+  onFixedPayoutOverride,
   onMarkPaid,
   onExportCsv
 }: {
@@ -28,6 +30,7 @@ export function AccountingView({
   onMarkInvoicePaid: (invoiceId: string) => void;
   onUpdateDefaultSplit: (appraiserName: string, split: number) => void;
   onOverrideCommission: (orderId: string, split: number) => void;
+  onFixedPayoutOverride: (orderId: string, payout: number) => void;
   onMarkPaid: (entryIds: string[]) => void;
   onExportCsv: (entries: AccountingEntry[]) => void;
 }) {
@@ -150,7 +153,7 @@ export function AccountingView({
         <div className="panel overflow-hidden">
           <TableHeader title="Completed Order Payroll" icon={WalletCards} />
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-left text-sm">
+            <table className="w-full min-w-[1480px] text-left text-sm">
               <thead className="border-b border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500">
                 <tr>
                   <th className="w-10 px-4 py-3"><span className="sr-only">Select</span></th>
@@ -160,19 +163,25 @@ export function AccountingView({
                   <th className="px-4 py-3">Appraiser</th>
                   <th className="px-4 py-3">Product</th>
                   <th className="px-4 py-3">County</th>
-                  <th className="px-4 py-3">Gross / tech</th>
+                  <th className="px-4 py-3">Gross / fees</th>
+                  <th className="px-4 py-3">Commissionable</th>
                   <th className="px-4 py-3">Split</th>
-                  <th className="px-4 py-3">Payout</th>
+                  <th className="px-4 py-3">Fixed payout</th>
+                  <th className="px-4 py-3">Final payout</th>
+                  <th className="px-4 py-3">Source</th>
                   <th className="px-4 py-3">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {filteredEntries.map((entry) => (
+                {filteredEntries.map((entry) => {
+                  const locked = entry.locked || entry.payrollSnapshot?.locked || entry.status === "Paid";
+                  return (
                   <tr key={entry.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <input
                         type="checkbox"
                         className="h-4 w-4 rounded border-line text-brand-600"
+                        disabled={!canApprove || locked}
                         checked={selectedIds.includes(entry.id)}
                         onChange={(event) => setSelectedIds((ids) => event.target.checked ? [...ids, entry.id] : ids.filter((id) => id !== entry.id))}
                       />
@@ -183,7 +192,14 @@ export function AccountingView({
                     <td className="px-4 py-3 text-slate-600">{entry.appraiser}</td>
                     <td className="px-4 py-3 text-slate-600">{entry.productType}</td>
                     <td className="px-4 py-3 text-slate-600">{entry.county}</td>
-                    <td className="px-4 py-3 text-slate-600">{formatCurrency(entry.fee)} / {formatCurrency(entry.techFee)}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      <div>{formatCurrency(entry.fee)} gross</div>
+                      <div className="mt-1 text-xs text-slate-500">{formatCurrency(entry.techFee)} tech + {formatCurrency(entry.otherNonCommissionableFees ?? 0)} other excluded</div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      <div className="font-medium text-slate-800">{formatCurrency(entry.commissionableBase ?? Math.max(0, entry.fee - entry.techFee - (entry.otherNonCommissionableFees ?? 0)))}</div>
+                      <div className="mt-1 text-xs text-slate-500">No negative base</div>
+                    </td>
                     <td className="px-4 py-3">
                       <input
                         className="h-8 w-20 rounded-md border border-line bg-white px-2 text-sm"
@@ -191,17 +207,34 @@ export function AccountingView({
                         min="0"
                         max="100"
                         value={entry.commissionSplit}
-                        disabled={!canOverride}
+                        disabled={!canOverride || locked}
                         onChange={(event) => onOverrideCommission(entry.orderId, Number(event.target.value))}
                       />
                     </td>
-                    <td className="px-4 py-3 font-semibold text-slate-900">{formatCurrency(entry.appraiserSplit)}</td>
+                    <td className="px-4 py-3">
+                      <input
+                        className="h-8 w-24 rounded-md border border-line bg-white px-2 text-sm"
+                        type="number"
+                        min="0"
+                        value={entry.fixedPayoutOverride ?? ""}
+                        disabled={!canOverride || locked}
+                        onChange={(event) => onFixedPayoutOverride(entry.orderId, Number(event.target.value))}
+                        placeholder="None"
+                      />
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-slate-900">{formatCurrency(entry.finalPayout ?? entry.appraiserSplit)}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      <div>{entry.calculationSource ?? "Requires review"}</div>
+                      <div className="mt-1 max-w-[260px] text-xs text-slate-500">{explainPayroll(entry)}</div>
+                      {entry.approvedBy && <div className="mt-1 text-xs text-emerald-700">Approved by {entry.approvedBy}</div>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={cn("chip", entry.status === "Paid" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800")}>{entry.status}</span>
                       {entry.paidAt && <div className="mt-1 text-xs text-slate-500">Paid {formatDate(entry.paidAt)}</div>}
+                      {locked && <div className="mt-1 text-xs text-slate-500">Snapshot locked</div>}
                     </td>
                   </tr>
-                ))}
+                );})}
               </tbody>
             </table>
           </div>
@@ -346,4 +379,3 @@ export function AnalyticsList({ title, items }: { title: string; items: string[]
     </div>
   );
 }
-

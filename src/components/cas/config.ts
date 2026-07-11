@@ -1,11 +1,14 @@
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, BarChart3, Bell, Building2, CalendarDays, ClipboardCheck, FileCheck2, FileText, LayoutDashboard, ListChecks, MessageSquare, Plus, ReceiptText, Settings, ShieldCheck, UserCheck, Users2, WalletCards } from "lucide-react";
+import { AlertTriangle, Archive, BarChart3, Bell, Building2, CalendarDays, ClipboardCheck, FileCheck2, FileText, LayoutDashboard, ListChecks, MessageSquare, Plus, ReceiptText, Settings, ShieldCheck, UserCheck, Users2, WalletCards } from "lucide-react";
 import { savedViews } from "@/data/demo";
 import type { OrderStatus, UserRole } from "@/types/domain";
 
 export type NavId =
   | "dashboard"
   | "orders"
+  | "completed-orders"
+  | "cancelled-orders"
+  | "all-orders"
   | "my-orders"
   | "new-order"
   | "place-order"
@@ -31,7 +34,10 @@ export type NavId =
 
 export const navCatalog: Record<NavId, { label: string; icon: LucideIcon }> = {
   dashboard: { label: "Dashboard", icon: LayoutDashboard },
-  orders: { label: "Orders", icon: ListChecks },
+  orders: { label: "Active Orders", icon: ListChecks },
+  "completed-orders": { label: "Completed", icon: FileCheck2 },
+  "cancelled-orders": { label: "Cancelled", icon: Archive },
+  "all-orders": { label: "All Orders", icon: ListChecks },
   "my-orders": { label: "My Orders", icon: ListChecks },
   "new-order": { label: "New Order", icon: Plus },
   "place-order": { label: "Place Order", icon: Plus },
@@ -57,16 +63,16 @@ export const navCatalog: Record<NavId, { label: string; icon: LucideIcon }> = {
 };
 
 export const roleNavigation: Record<UserRole, NavId[]> = {
-  super_admin: ["dashboard", "orders", "new-order", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "settings"],
-  company_admin: ["dashboard", "orders", "new-order", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "settings"],
-  office_staff: ["dashboard", "orders", "new-order", "calendar", "appraisers", "clients", "documents", "notifications"],
-  appraiser_manager: ["dashboard", "orders", "calendar", "appraisers", "accounting", "analytics"],
-  appraiser: ["dashboard", "my-orders", "calendar", "revisions", "documents", "pay"],
-  solo_appraiser: ["dashboard", "my-orders", "place-order", "calendar", "revisions", "documents", "pay", "settings"],
-  reviewer: ["dashboard", "review-queue", "completed-reviews", "templates"],
-  amc_admin: ["dashboard", "orders", "place-order", "vendors", "vendor-invites", "compliance", "reports", "settings"],
-  amc_staff: ["dashboard", "orders", "place-order", "vendors", "vendor-invites", "reports"],
-  client_user: ["dashboard", "place-order", "my-orders", "documents", "messages"]
+  super_admin: ["dashboard", "orders", "completed-orders", "cancelled-orders", "all-orders", "new-order", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "settings"],
+  company_admin: ["dashboard", "orders", "completed-orders", "cancelled-orders", "all-orders", "new-order", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "settings"],
+  office_staff: ["dashboard", "orders", "completed-orders", "cancelled-orders", "new-order", "calendar", "appraisers", "clients", "documents", "notifications"],
+  appraiser_manager: ["dashboard", "orders", "completed-orders", "calendar", "appraisers", "accounting", "analytics"],
+  appraiser: ["dashboard", "my-orders", "completed-orders", "calendar", "revisions", "documents", "pay"],
+  solo_appraiser: ["dashboard", "my-orders", "completed-orders", "place-order", "calendar", "revisions", "documents", "pay", "settings"],
+  reviewer: ["dashboard", "review-queue", "revisions", "completed-reviews", "documents", "templates"],
+  amc_admin: ["dashboard", "orders", "completed-orders", "cancelled-orders", "place-order", "vendors", "vendor-invites", "compliance", "reports", "settings"],
+  amc_staff: ["dashboard", "orders", "completed-orders", "place-order", "vendors", "vendor-invites", "reports"],
+  client_user: ["dashboard", "place-order", "my-orders", "completed-orders", "documents", "messages"]
 };
 
 export const statusFilters: Array<"All" | OrderStatus> = [
@@ -84,7 +90,9 @@ export const statusFilters: Array<"All" | OrderStatus> = [
   "Revision Sent to Appraiser",
   "Ready for Delivery",
   "Delivered",
-  "Completed"
+  "Completed",
+  "On Hold",
+  "Cancelled"
 ];
 
 export type SavedView = (typeof savedViews)[number];

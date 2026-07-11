@@ -25,7 +25,7 @@ import {
   revisionRequests,
   vendorDocuments
 } from "@/data/platform";
-import type { AccountingEntry, AppraiserProfile, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationTemplate, Order, OrderFormTemplate, OrderStatus, Organization, OrganizationInvitation, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, UserRole, VendorDocument, VendorProfile } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationTemplate, Order, OrderFormTemplate, OrderStatus, Organization, OrganizationInvitation, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, UserRole, VendorDocument, VendorProfile } from "@/types/domain";
 import { loadCasAuthContext } from "@/lib/auth/context";
 import { createDeliveryRecord } from "@/lib/delivery/service";
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
@@ -33,6 +33,7 @@ import { canCreateOrders, canViewAllOrders, canViewOwnOrdersOnly } from "@/lib/p
 import { publicRequestToOrderSeed } from "@/lib/public-intake/service";
 import { simulateOrderDocumentUpload } from "@/lib/storage/paths";
 import { createOrderMessage } from "@/lib/messaging/service";
+import { applyPayrollSnapshot, calculatePayrollSnapshot } from "@/lib/accounting/payroll";
 import { getCasRepository } from "@/lib/repositories";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { AccountingView, AnalyticsView } from "./cas/accounting";
@@ -49,15 +50,7 @@ import { DocumentsView, MessagesView, NotificationsView, ReportsView } from "./c
 import { SettingsView } from "./cas/users";
 import { ComplianceView, VendorInvitesView, VendorView } from "./cas/vendors";
 
-function applyAccountingSplit(entry: AccountingEntry, split: number): AccountingEntry {
-  const payout = Math.round(Math.max(0, entry.fee - entry.techFee) * (split / 100));
-  return {
-    ...entry,
-    commissionSplit: split,
-    appraiserSplit: payout,
-    companyRevenue: Math.max(0, entry.fee - entry.techFee - payout)
-  };
-}
+type InspectionAction = "schedule" | "reschedule" | "complete" | "cancel" | "note";
 
 function filterOrdersForUser(orderList: Order[], user: PortalUser, organization: Organization) {
   if (canViewAllOrders(user)) return orderList;
@@ -477,28 +470,128 @@ export function CasApp() {
     }));
   }
 
+  function handleCompleteReviewItem(orderId: string, label: string) {
+    updateOrder(orderId, (order) => ({
+      ...order,
+      lastUpdate: `Reviewer completed ${label}`,
+      reviewItems: order.reviewItems.map((item) => (item.label === label ? { ...item, complete: true } : item)),
+      auditTrail: [
+        {
+          id: `${order.id}-review-item-${Date.now()}`,
+          action: `Review checklist item completed: ${label}`,
+          actor: activeUser.name,
+          at: "Just now"
+        },
+        ...order.auditTrail
+      ]
+    }));
+  }
+
+  function handleReviewerComment(orderId: string) {
+    handleSendOrderMessage(orderId, "Reviewer comment", "Reviewer added a structured comment from the review drawer.");
+    updateOrder(orderId, (order) => ({
+      ...order,
+      lastUpdate: "Reviewer comment added",
+      notes: [
+        {
+          id: `${order.id}-review-comment-${Date.now()}`,
+          author: activeUser.name,
+          body: "Reviewer comment added from the review queue drawer.",
+          visibility: "internal",
+          createdAt: "Just now"
+        },
+        ...order.notes
+      ]
+    }));
+  }
+
   function handleUpdateDefaultSplit(appraiserName: string, split: number) {
-    setAppraiserList((current) =>
-      current.map((appraiser) =>
-        appraiser.name === appraiserName ? { ...appraiser, defaultCommissionSplit: split } : appraiser
-      )
+    const nextAppraisers = appraiserList.map((appraiser) =>
+      appraiser.name === appraiserName ? { ...appraiser, defaultCommissionSplit: split } : appraiser
     );
+    setAppraiserList(nextAppraisers);
     setAccountingList((current) =>
-      current.map((entry) => (entry.appraiser === appraiserName ? applyAccountingSplit(entry, split) : entry))
+      current.map((entry) =>
+        entry.appraiser === appraiserName
+          ? applyPayrollSnapshot({ ...entry, defaultAppraiserSplit: split }, nextAppraisers, orderList.find((order) => order.id === entry.orderId))
+          : entry
+      )
     );
   }
 
   function handleOverrideCommission(orderId: string, split: number) {
     setAccountingList((current) =>
-      current.map((entry) => (entry.orderId === orderId ? applyAccountingSplit(entry, split) : entry))
+      current.map((entry) =>
+        entry.orderId === orderId
+          ? applyPayrollSnapshot({ ...entry, orderSplitOverride: split, commissionSplit: split }, appraiserList, orderList.find((order) => order.id === orderId))
+          : entry
+      )
     );
     updateOrder(orderId, (order) => {
-      const payout = Math.round(Math.max(0, order.fee - order.techFee) * (split / 100));
+      if (order.payrollSnapshot?.locked || order.paidAt) return order;
+      const appraiser = appraiserList.find((item) => item.name === order.appraiser);
+      const snapshot = calculatePayrollSnapshot({
+        grossFee: order.fee,
+        techFee: order.techFee,
+        otherNonCommissionableFees: order.otherNonCommissionableFees ?? 0,
+        defaultAppraiserSplit: appraiser?.defaultCommissionSplit,
+        orderSplitOverride: split,
+        fixedPayoutOverride: order.fixedAppraiserPayoutOverride
+      });
       return {
         ...order,
         commissionSplitOverride: split,
-        appraiserPayout: payout,
-        lastUpdate: `Commission override set to ${split}%`
+        payrollSnapshot: snapshot,
+        appraiserPayout: snapshot.finalPayout ?? 0,
+        lastUpdate: `Commission override set to ${split}%`,
+        auditTrail: [
+          {
+            id: `${order.id}-commission-${Date.now()}`,
+            action: `Order commission split override set to ${split}%`,
+            actor: activeUser.name,
+            at: "Just now"
+          },
+          ...order.auditTrail
+        ]
+      };
+    });
+  }
+
+  function handleFixedPayoutOverride(orderId: string, payout: number) {
+    setAccountingList((current) =>
+      current.map((entry) =>
+        entry.orderId === orderId
+          ? applyPayrollSnapshot({ ...entry, fixedPayoutOverride: payout, manualAdjustmentReason: "Fixed payout override set in accounting workspace." }, appraiserList, orderList.find((order) => order.id === orderId))
+          : entry
+      )
+    );
+    updateOrder(orderId, (order) => {
+      if (order.payrollSnapshot?.locked || order.paidAt) return order;
+      const appraiser = appraiserList.find((item) => item.name === order.appraiser);
+      const snapshot = calculatePayrollSnapshot({
+        grossFee: order.fee,
+        techFee: order.techFee,
+        otherNonCommissionableFees: order.otherNonCommissionableFees ?? 0,
+        defaultAppraiserSplit: appraiser?.defaultCommissionSplit,
+        orderSplitOverride: order.commissionSplitOverride,
+        fixedPayoutOverride: payout,
+        manualAdjustmentReason: "Fixed payout override set in accounting workspace."
+      });
+      return {
+        ...order,
+        fixedAppraiserPayoutOverride: payout,
+        payrollSnapshot: snapshot,
+        appraiserPayout: snapshot.finalPayout ?? 0,
+        lastUpdate: `Fixed payout override set to $${payout}`,
+        auditTrail: [
+          {
+            id: `${order.id}-fixed-payout-${Date.now()}`,
+            action: `Fixed payout override set to $${payout}`,
+            actor: activeUser.name,
+            at: "Just now"
+          },
+          ...order.auditTrail
+        ]
       };
     });
   }
@@ -508,7 +601,30 @@ export function CasApp() {
     setAccountingList((current) =>
       current.map((entry) =>
         ids.has(entry.id)
-          ? { ...entry, status: "Paid", paidAt: "2026-07-08" }
+          ? {
+              ...entry,
+              status: "Paid",
+              paidAt: "2026-07-08",
+              approvedBy: activeUser.name,
+              approvedDate: "2026-07-08",
+              locked: true,
+              payrollSnapshot: {
+                grossFee: entry.fee,
+                techFee: entry.techFee,
+                otherNonCommissionableFees: entry.otherNonCommissionableFees ?? 0,
+                commissionableBase: entry.commissionableBase ?? Math.max(0, entry.fee - entry.techFee - (entry.otherNonCommissionableFees ?? 0)),
+                defaultAppraiserSplit: entry.defaultAppraiserSplit,
+                orderSplitOverride: entry.orderSplitOverride,
+                fixedPayoutOverride: entry.fixedPayoutOverride,
+                calculatedPayout: entry.calculatedPayout,
+                finalPayout: entry.finalPayout ?? entry.appraiserSplit,
+                calculationSource: entry.calculationSource ?? "Requires review",
+                manualAdjustmentReason: entry.manualAdjustmentReason,
+                approvedBy: activeUser.name,
+                approvedDate: "2026-07-08",
+                locked: true
+              }
+            }
           : entry
       )
     );
@@ -516,7 +632,7 @@ export function CasApp() {
 
   function handleExportPayrollCsv(entriesToExport: AccountingEntry[]) {
     const rows = [
-      ["Order", "Completed", "Client", "Appraiser", "Product", "County", "Gross fee", "Tech fee", "Split", "Payout", "Status"],
+      ["Order", "Completed", "Client", "Appraiser", "Product", "County", "Gross fee", "Tech fee", "Other noncommissionable", "Commissionable base", "Split", "Fixed payout", "Final payout", "Calculation source", "Status"],
       ...entriesToExport.map((entry) => [
         entry.orderId,
         entry.completedAt,
@@ -526,8 +642,12 @@ export function CasApp() {
         entry.county,
         String(entry.fee),
         String(entry.techFee),
+        String(entry.otherNonCommissionableFees ?? 0),
+        String(entry.commissionableBase ?? Math.max(0, entry.fee - entry.techFee - (entry.otherNonCommissionableFees ?? 0))),
         `${entry.commissionSplit}%`,
-        String(entry.appraiserSplit),
+        entry.fixedPayoutOverride ? String(entry.fixedPayoutOverride) : "",
+        String(entry.finalPayout ?? entry.appraiserSplit),
+        entry.calculationSource ?? "Requires review",
         entry.status
       ])
     ];
@@ -539,6 +659,93 @@ export function CasApp() {
     link.download = "cas-payroll-export.csv";
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function handleUpdateInspection(orderId: string, inspection: InspectionInfo, action: InspectionAction, note: string) {
+    const label = action === "complete"
+      ? "Inspection completed"
+      : action === "cancel"
+        ? "Inspection cancelled"
+        : action === "note"
+          ? "Inspection note updated"
+          : action === "reschedule"
+            ? "Inspection rescheduled"
+            : "Inspection scheduled";
+    updateOrder(orderId, (order) => {
+      const nextStatus: OrderStatus = action === "complete"
+        ? "Inspected"
+        : action === "cancel"
+          ? "Accepted"
+          : action === "note"
+            ? order.status
+            : "Inspection Scheduled";
+      const noteBody = note.trim();
+      return {
+        ...order,
+        inspection,
+        inspectionDate: action === "cancel" ? undefined : inspection.scheduledDate,
+        status: nextStatus,
+        lastUpdate: label,
+        nextAction: action === "complete" ? "Continue report production" : action === "cancel" ? "Reschedule inspection" : order.nextAction,
+        notes: noteBody
+          ? [
+              {
+                id: `${order.id}-inspection-note-${Date.now()}`,
+                author: activeUser.name,
+                body: noteBody,
+                visibility: "internal",
+                createdAt: "Just now"
+              },
+              ...order.notes
+            ]
+          : order.notes,
+        timeline: [
+          {
+            label,
+            detail: inspection.scheduledDate ? `${inspection.scheduledDate} ${inspection.scheduledStartTime ?? ""}`.trim() : "Inspection date cleared",
+            at: "Just now",
+            actor: activeUser.name
+          },
+          ...order.timeline
+        ],
+        auditTrail: [
+          {
+            id: `${order.id}-inspection-${Date.now()}`,
+            action: `${label}${noteBody ? `: ${noteBody}` : ""}`,
+            actor: activeUser.name,
+            at: "Just now"
+          },
+          ...order.auditTrail
+        ]
+      };
+    });
+  }
+
+  function handleReopenOrder(orderId: string, reason: string) {
+    updateOrder(orderId, (order) => ({
+      ...order,
+      status: "Assigned",
+      lastUpdate: "Order reopened",
+      nextAction: "Confirm reopened order owner",
+      timeline: [
+        {
+          label: "Order reopened",
+          detail: reason,
+          at: "Just now",
+          actor: activeUser.name
+        },
+        ...order.timeline
+      ],
+      auditTrail: [
+        {
+          id: `${order.id}-reopen-${Date.now()}`,
+          action: `Order reopened: ${reason}`,
+          actor: activeUser.name,
+          at: "Just now"
+        },
+        ...order.auditTrail
+      ]
+    }));
   }
 
   function handleAddClient() {
@@ -752,7 +959,7 @@ export function CasApp() {
       current.map((item) => (item.id === requestId ? { ...item, status: "Converted", convertedOrderId: newOrder.id } : item))
     );
     setSelectedOrderId(newOrder.id);
-    setActiveView("orders");
+    openView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders", "dashboard");
   }
 
   function handleDeactivateCompanyUser(userId: string) {
@@ -987,14 +1194,21 @@ export function CasApp() {
               onOpenCalendar={() => openView("calendar", "orders")}
             />
           )}
-          {(activeView === "orders" || activeView === "my-orders") && (
+          {(activeView === "orders" || activeView === "my-orders" || activeView === "completed-orders" || activeView === "cancelled-orders" || activeView === "all-orders") && (
             <OrdersView
               orderList={visibleOrders}
               selectedOrder={selectedOrder}
+              workspace={activeView === "completed-orders" ? "completed" : activeView === "cancelled-orders" ? "cancelled" : activeView === "all-orders" ? "all" : activeView === "my-orders" ? "mine" : "active"}
               user={activeUser}
               onSelectOrder={(order) => setSelectedOrderId(order.id)}
+              onSwitchWorkspace={(workspace) => {
+                const target: NavId = workspace === "completed" ? "completed-orders" : workspace === "cancelled" ? "cancelled-orders" : workspace === "all" ? "all-orders" : canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders";
+                openView(target, canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders");
+              }}
               onAssignOrder={handleAssignOrder}
               onStatusChange={handleStatusChange}
+              onReopenOrder={handleReopenOrder}
+              onUpdateInspection={handleUpdateInspection}
               onAddNote={handleAddNote}
               onGenerateInvoice={handleGenerateInvoice}
               managedDocuments={managedDocumentList}
@@ -1033,7 +1247,15 @@ export function CasApp() {
               onTogglePreference={handleToggleCalendarPreference}
             />
           )}
-          {(activeView === "review" || activeView === "review-queue") && <ReviewView orderList={visibleOrders.length ? visibleOrders : orderList} user={activeUser} onReviewAction={handleReviewAction} onSelectOrder={(order) => { setSelectedOrderId(order.id); setActiveView("orders"); }} />}
+          {(activeView === "review" || activeView === "review-queue") && (
+            <ReviewView
+              orderList={visibleOrders.length ? visibleOrders : orderList}
+              user={activeUser}
+              onReviewAction={handleReviewAction}
+              onCompleteReviewItem={handleCompleteReviewItem}
+              onReviewerComment={handleReviewerComment}
+            />
+          )}
           {activeView === "completed-reviews" && <CompletedReviewsView orderList={orderList} />}
           {activeView === "templates" && <ReviewTemplatesView />}
           {activeView === "appraisers" && <AppraiserPortalView orderList={visibleOrders.length ? visibleOrders : orderList} appraiserList={appraiserList} />}
@@ -1060,6 +1282,7 @@ export function CasApp() {
               onMarkInvoicePaid={handleMarkInvoicePaid}
               onUpdateDefaultSplit={handleUpdateDefaultSplit}
               onOverrideCommission={handleOverrideCommission}
+              onFixedPayoutOverride={handleFixedPayoutOverride}
               onMarkPaid={handleMarkPayrollPaid}
               onExportCsv={handleExportPayrollCsv}
             />
@@ -1095,7 +1318,7 @@ export function CasApp() {
               deliveryRecords={deliveryRecordList}
             />
           )}
-          {activeView === "revisions" && <RevisionsView orderList={visibleOrders} onSelectOrder={(order) => { setSelectedOrderId(order.id); setActiveView("my-orders"); }} />}
+          {activeView === "revisions" && <RevisionsView orderList={visibleOrders} onSelectOrder={(order) => { setSelectedOrderId(order.id); openView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders", "review-queue"); }} />}
           {activeView === "notifications" && <NotificationsView />}
           {activeView === "settings" && (
             <SettingsView
@@ -1135,7 +1358,7 @@ export function CasApp() {
           }}
           onSelectOrder={(order) => {
             setSelectedOrderId(order.id);
-            setActiveView("orders");
+            openView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders", "review-queue");
             setCommandOpen(false);
           }}
           orderList={visibleOrders}

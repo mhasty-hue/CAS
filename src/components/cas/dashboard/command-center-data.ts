@@ -1,4 +1,5 @@
 import type { AccountingEntry, AppraiserProfile, Invoice, Order, PortalUser, VendorDocument, VendorProfile } from "@/types/domain";
+import { canViewAccounting, canViewPayrollSummary, canViewProfitabilitySummary, canViewReceivablesSummary } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/utils";
 
 export type CommandAction = "orders" | "new-order" | "review" | "accounting" | "clients" | "vendors" | "messages" | "documents" | "pay" | "calendar";
@@ -306,7 +307,7 @@ export function buildMissionItems({
   });
 
   const payrollDue = accountingEntries.filter((entry) => entry.status === "Payout pending" || entry.status === "Unpaid");
-  if (payrollDue.length && canSeeAccounting(user)) {
+  if (payrollDue.length && canViewPayrollSummary(user)) {
     items.push({
       id: "payroll-review",
       priority: "Medium",
@@ -320,7 +321,7 @@ export function buildMissionItems({
   }
 
   const unpaidInvoices = invoices.filter((invoice) => invoice.status !== "Paid");
-  if (unpaidInvoices.length && canSeeAccounting(user)) {
+  if (unpaidInvoices.length && canViewReceivablesSummary(user)) {
     items.push({
       id: "invoice-follow-up",
       priority: unpaidInvoices.some((invoice) => invoice.status === "Overdue") ? "High" : "Medium",
@@ -373,7 +374,7 @@ export function buildSnapshotItems(orderList: Order[], accountingEntries: Accoun
       { label: "My active orders", value: String(openOrders.length), detail: "Assigned or accepted files", tone: "neutral" },
       { label: "Inspections", value: String(openOrders.filter((order) => order.inspectionDate).length), detail: "Scheduled on calendar", tone: "good" },
       { label: "Revisions", value: String(openOrders.filter((order) => order.status.includes("Revision")).length), detail: "Need appraiser response", tone: "warn" },
-      { label: "Pay summary", value: formatCurrency(projectedPayroll), detail: "Projected pending payout", tone: "neutral" }
+      ...(canViewPayrollSummary(user) ? [{ label: "Pay summary", value: formatCurrency(projectedPayroll), detail: "Projected pending payout", tone: "neutral" as const }] : [])
     ];
   }
 
@@ -395,16 +396,29 @@ export function buildSnapshotItems(orderList: Order[], accountingEntries: Accoun
     ];
   }
 
-  return [
-    { label: "Revenue this month", value: formatCurrency(revenueThisMonth), detail: "Recognized from completed work", tone: "good" },
-    { label: "Projected payroll", value: formatCurrency(projectedPayroll), detail: "Pending appraiser payout", tone: "warn" },
-    { label: "Unpaid invoices", value: formatCurrency(unpaidInvoices), detail: "Open receivables", tone: unpaidInvoices > 0 ? "bad" : "good" },
+  const items: SnapshotItem[] = [
+    { label: "Open orders", value: String(openOrders.length), detail: "Active appraisal work", tone: "neutral" },
+    { label: "Due this week", value: String(openOrders.filter((order) => daysFromToday(order.dueDate) <= 7).length), detail: "Needs schedule control", tone: "warn" },
     { label: "Completed this month", value: String(completedThisMonth.length), detail: "Completed or accounting-posted", tone: "neutral" },
     { label: "Top product", value: topProduct, detail: "Report type sold most often", tone: "neutral" },
     { label: "Top client", value: topClient, detail: "Highest order volume", tone: "neutral" },
     { label: "Average turn time", value: `${avgTurnTime.toFixed(1)}d`, detail: "Order-to-due benchmark", tone: "neutral" },
     { label: "YoY trend", value: "+8%", detail: "Placeholder until prior-year data connects", tone: "good" }
   ];
+
+  if (canViewAccounting(user)) {
+    items.unshift({ label: "Revenue this month", value: formatCurrency(revenueThisMonth), detail: "Recognized from completed work", tone: "good" });
+  }
+  if (canViewPayrollSummary(user)) {
+    items.splice(canViewAccounting(user) ? 1 : 0, 0, { label: "Projected payroll", value: formatCurrency(projectedPayroll), detail: "Pending appraiser payout", tone: "warn" });
+  }
+  if (canViewReceivablesSummary(user)) {
+    items.splice(canViewAccounting(user) || canViewPayrollSummary(user) ? 2 : 0, 0, { label: "Unpaid invoices", value: formatCurrency(unpaidInvoices), detail: "Open receivables", tone: unpaidInvoices > 0 ? "bad" : "good" });
+  }
+  if (!canViewProfitabilitySummary(user)) {
+    return items.filter((item) => item.label !== "YoY trend").slice(0, 6);
+  }
+  return items.slice(0, 8);
 }
 
 export function roleSummary(user: PortalUser, criticalCount: number, capacityInsights: CapacityInsight[]) {
@@ -425,7 +439,7 @@ export function roleSummary(user: PortalUser, criticalCount: number, capacityIns
 }
 
 export function canSeeAccounting(user: PortalUser) {
-  return ["super_admin", "company_admin", "appraiser_manager", "solo_appraiser"].includes(user.role);
+  return canViewAccounting(user) || canViewPayrollSummary(user) || canViewReceivablesSummary(user) || canViewProfitabilitySummary(user);
 }
 
 function roleAllowsItem(item: MissionItem, user: PortalUser) {

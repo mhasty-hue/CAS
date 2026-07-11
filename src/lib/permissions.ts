@@ -1,6 +1,12 @@
 import type { PermissionKey, PortalUser, UserRole } from "@/types/domain";
 
-const accountingSummaryPermissions: PermissionKey[] = ["view_accounting_summary"];
+const dashboardVisibilityPermissions: PermissionKey[] = [
+  "view_operational_dashboard",
+  "view_accounting_summary",
+  "view_payroll_summary",
+  "view_receivables_summary",
+  "view_profitability_summary"
+];
 const fullAccountingPermissions: PermissionKey[] = [
   "see_accounting",
   "view_accounting_summary",
@@ -9,6 +15,9 @@ const fullAccountingPermissions: PermissionKey[] = [
   "approve_payroll",
   "edit_commission_defaults",
   "override_order_commission",
+  "view_payroll_summary",
+  "view_receivables_summary",
+  "view_profitability_summary",
   "generate_invoices",
   "edit_invoices",
   "mark_invoices_paid"
@@ -34,6 +43,8 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "create_orders",
     "assign_orders",
     "edit_due_dates",
+    "edit_inspections",
+    "reopen_orders",
     "upload_documents",
     "delete_documents",
     "see_accounting",
@@ -51,6 +62,7 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "manage_workflows",
     "export_reports",
     ...fullAccountingPermissions,
+    ...dashboardVisibilityPermissions,
     ...platformAdminPermissions,
     ...documentManagerPermissions
   ],
@@ -59,6 +71,8 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "create_orders",
     "assign_orders",
     "edit_due_dates",
+    "edit_inspections",
+    "reopen_orders",
     "upload_documents",
     "delete_documents",
     "see_accounting",
@@ -74,6 +88,7 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "manage_accounting",
     "customize_order_forms",
     ...fullAccountingPermissions,
+    ...dashboardVisibilityPermissions,
     ...platformAdminPermissions,
     ...documentManagerPermissions
   ],
@@ -91,7 +106,8 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "deliver_final_report",
     "download_xml",
     "manage_clients",
-    ...accountingSummaryPermissions,
+    "view_operational_dashboard",
+    "edit_inspections",
     "export_reports"
   ],
   appraiser_manager: [
@@ -105,10 +121,11 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "see_appraiser_payouts",
     "view_accounting_summary",
     "view_own_pay",
+    "view_operational_dashboard",
     "manage_users",
     "export_reports"
   ],
-  appraiser: ["upload_documents", "upload_order_documents", "view_workfile_documents", "download_xml", "see_appraiser_payouts", "view_own_pay", "view_own_orders_only"],
+  appraiser: ["upload_documents", "upload_order_documents", "view_workfile_documents", "download_xml", "see_appraiser_payouts", "view_own_pay", "view_payroll_summary", "view_operational_dashboard", "edit_inspections", "view_own_orders_only"],
   solo_appraiser: [
     "create_orders",
     "assign_orders",
@@ -118,6 +135,9 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "see_appraiser_payouts",
     "manage_accounting",
     ...fullAccountingPermissions,
+    ...dashboardVisibilityPermissions,
+    "edit_inspections",
+    "reopen_orders",
     "manage_users",
     "customize_order_forms",
     "manage_public_ordering",
@@ -125,7 +145,7 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "manage_integrations",
     "view_own_orders_only"
   ],
-  reviewer: ["view_all_orders", "upload_documents", "upload_order_documents", "view_internal_documents", "view_workfile_documents", "download_xml", "review_reports", "deliver_reports", "deliver_final_report"],
+  reviewer: ["view_all_orders", "upload_documents", "upload_order_documents", "view_internal_documents", "view_workfile_documents", "download_xml", "review_reports", "deliver_reports", "deliver_final_report", "view_operational_dashboard"],
   amc_admin: [
     "view_all_orders",
     "create_orders",
@@ -137,14 +157,14 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "invite_vendors",
     "approve_vendors",
     "manage_users",
-    ...accountingSummaryPermissions,
+    "view_operational_dashboard",
     "generate_invoices",
     "edit_invoices",
     "manage_integrations",
     "export_reports"
   ],
-  amc_staff: ["view_all_orders", "create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_vendor_compliance_documents", "invite_vendors", "export_reports"],
-  client_user: ["create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_own_orders_only"]
+  amc_staff: ["view_all_orders", "create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_vendor_compliance_documents", "invite_vendors", "export_reports", "view_operational_dashboard"],
+  client_user: ["create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_operational_dashboard", "view_own_orders_only"]
 };
 
 export function getPermissions(user: PortalUser) {
@@ -225,6 +245,22 @@ export function canViewAccountingSummary(user: PortalUser) {
   return hasPermission(user, "view_accounting_summary") || canViewFullAccounting(user);
 }
 
+export function canViewOperationalDashboard(user: PortalUser) {
+  return hasPermission(user, "view_operational_dashboard") || canViewAllOrders(user) || canViewOwnOrdersOnly(user);
+}
+
+export function canViewPayrollSummary(user: PortalUser) {
+  return hasPermission(user, "view_payroll_summary") || canManageAccounting(user) || canViewOwnPay(user);
+}
+
+export function canViewReceivablesSummary(user: PortalUser) {
+  return hasPermission(user, "view_receivables_summary") || canManageAccounting(user);
+}
+
+export function canViewProfitabilitySummary(user: PortalUser) {
+  return hasPermission(user, "view_profitability_summary") || canManageAccounting(user);
+}
+
 export function canViewFullAccounting(user: PortalUser) {
   return hasPermission(user, "view_full_accounting") || hasPermission(user, "see_accounting") || hasPermission(user, "manage_accounting");
 }
@@ -243,6 +279,14 @@ export function canEditCommissionDefaults(user: PortalUser) {
 
 export function canOverrideOrderCommission(user: PortalUser) {
   return hasPermission(user, "override_order_commission") || canManageAccounting(user);
+}
+
+export function canEditInspections(user: PortalUser) {
+  return hasPermission(user, "edit_inspections") || canAssignOrders(user);
+}
+
+export function canReopenOrders(user: PortalUser) {
+  return hasPermission(user, "reopen_orders") || canManageCompanyUsers(user);
 }
 
 export function canGenerateInvoices(user: PortalUser) {
