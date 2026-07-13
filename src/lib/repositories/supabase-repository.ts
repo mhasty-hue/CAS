@@ -35,7 +35,6 @@ import type {
   UserProfileRow,
   VendorProfileRow
 } from "@/types/database";
-import { demoCasRepository } from "./demo-repository";
 import type { CasAuthContext, CasBootstrapData, CasRepository } from "./types";
 
 const orderStatuses: OrderStatus[] = [
@@ -84,6 +83,28 @@ function toUserRole(role: string | null | undefined): UserRole {
     "solo_appraiser"
   ];
   return roles.includes(normalized as UserRole) ? (normalized as UserRole) : "office_staff";
+}
+
+function requireSupabaseClient() {
+  const client = createSupabaseBrowserClient();
+  if (!client) {
+    throw new Error("Supabase is not configured. Set Supabase environment keys or enable demo mode.");
+  }
+  return client;
+}
+
+function readRows<T>(label: string, result: { data: T[] | null; error: { message: string } | null }) {
+  if (result.error) {
+    throw new Error(`Supabase ${label} query failed: ${result.error.message}`);
+  }
+  return result.data ?? [];
+}
+
+function readMaybe<T>(label: string, result: { data: T | null; error: { message: string } | null }) {
+  if (result.error) {
+    throw new Error(`Supabase ${label} query failed: ${result.error.message}`);
+  }
+  return result.data;
 }
 
 function mapOrganization(row: OrganizationRow): Organization {
@@ -302,10 +323,7 @@ export class SupabaseCasRepository implements CasRepository {
   mode = "supabase" as const;
 
   async loadBootstrapData(organizationId?: string): Promise<CasBootstrapData> {
-    const client = createSupabaseBrowserClient();
-    if (!client) {
-      return demoCasRepository.loadBootstrapData();
-    }
+    const client = requireSupabaseClient();
 
     const orgId = organizationId ?? (await this.resolveActiveOrganizationId());
     if (!orgId) {
@@ -381,21 +399,21 @@ export class SupabaseCasRepository implements CasRepository {
       client.from("role_permissions").select("*")
     ]);
 
-    const organizationRows = organizationsResult.data ?? [];
-    const clientRows = clientsResult.data ?? [];
-    const contactRows = contactsResult.data ?? [];
-    const feeRows = feesResult.data ?? [];
-    const appraiserRows = appraisersResult.data ?? [];
-    const vendorRows = vendorsResult.data ?? [];
-    const orderRows = ordersResult.data ?? [];
-    const accountingRows = accountingResult.data ?? [];
-    const invoiceRows = invoicesResult.data ?? [];
-    const templateRows = formTemplateResult.data ?? [];
-    const calendarRows = calendarResult.data ?? [];
-    const memberRows = membersResult.data ?? [];
-    const profileRows = profilesResult.data ?? [];
-    const roleRows = rolesResult.data ?? [];
-    const rolePermissionRows = rolePermissionsResult.data ?? [];
+    const organizationRows = readRows("organizations", organizationsResult);
+    const clientRows = readRows("clients", clientsResult);
+    const contactRows = readRows("client contacts", contactsResult);
+    const feeRows = readRows("client fee defaults", feesResult);
+    const appraiserRows = readRows("appraisers", appraisersResult);
+    const vendorRows = readRows("vendors", vendorsResult);
+    const orderRows = readRows("orders", ordersResult);
+    const accountingRows = readRows("accounting entries", accountingResult);
+    const invoiceRows = readRows("invoices", invoicesResult);
+    const templateRows = readRows("order form templates", formTemplateResult);
+    const calendarRows = readRows("calendar preferences", calendarResult);
+    const memberRows = readRows("organization members", membersResult);
+    const profileRows = readRows("user profiles", profilesResult);
+    const roleRows = readRows("roles", rolesResult);
+    const rolePermissionRows = readRows("role permissions", rolePermissionsResult);
 
     const clientsById = new Map(clientRows.map((row) => [row.id, row]));
     const appraisersById = new Map(appraiserRows.map((row) => [row.id, row]));
@@ -470,10 +488,7 @@ export class SupabaseCasRepository implements CasRepository {
   }
 
   async loadAuthContext(): Promise<CasAuthContext> {
-    const client = createSupabaseBrowserClient();
-    if (!client) {
-      return demoCasRepository.loadAuthContext();
-    }
+    const client = requireSupabaseClient();
 
     const {
       data: { session }
@@ -495,20 +510,20 @@ export class SupabaseCasRepository implements CasRepository {
       client.from("organization_members").select("*").eq("user_id", session.user.id)
     ]);
 
-    const profile = profileResult.data;
-    const members = membersResult.data ?? [];
+    const profile = readMaybe("current user profile", profileResult);
+    const members = readRows("current organization memberships", membersResult);
     const roleIds = members.map((member) => member.role_id).filter(Boolean) as string[];
     const organizationIds = members.map((member) => member.organization_id);
 
     const [rolesResult, rolePermissionsResult, organizationsResult] = await Promise.all([
-      roleIds.length ? client.from("roles").select("*").in("id", roleIds) : Promise.resolve({ data: [] as RoleRow[] }),
-      roleIds.length ? client.from("role_permissions").select("*").in("role_id", roleIds) : Promise.resolve({ data: [] as RolePermissionRow[] }),
-      organizationIds.length ? client.from("organizations").select("*").in("id", organizationIds) : Promise.resolve({ data: [] as OrganizationRow[] })
+      roleIds.length ? client.from("roles").select("*").in("id", roleIds) : Promise.resolve({ data: [] as RoleRow[], error: null }),
+      roleIds.length ? client.from("role_permissions").select("*").in("role_id", roleIds) : Promise.resolve({ data: [] as RolePermissionRow[], error: null }),
+      organizationIds.length ? client.from("organizations").select("*").in("id", organizationIds) : Promise.resolve({ data: [] as OrganizationRow[], error: null })
     ]);
 
-    const rolesById = new Map((rolesResult.data ?? []).map((role) => [role.id, role]));
-    const organizationsById = new Map((organizationsResult.data ?? []).map((organization) => [organization.id, mapOrganization(organization)]));
-    const permissionRows = rolePermissionsResult.data ?? [];
+    const rolesById = new Map(readRows("membership roles", rolesResult).map((role) => [role.id, role]));
+    const organizationsById = new Map(readRows("membership organizations", organizationsResult).map((organization) => [organization.id, mapOrganization(organization)]));
+    const permissionRows = readRows("membership permissions", rolePermissionsResult);
     const memberships = members.flatMap((member) => {
       const role = member.role_id ? rolesById.get(member.role_id) : undefined;
       const organization = organizationsById.get(member.organization_id);
@@ -546,8 +561,7 @@ export class SupabaseCasRepository implements CasRepository {
   }
 
   private async resolveActiveOrganizationId() {
-    const client = createSupabaseBrowserClient();
-    if (!client) return null;
+    const client = requireSupabaseClient();
 
     const {
       data: { session }
@@ -555,7 +569,7 @@ export class SupabaseCasRepository implements CasRepository {
 
     if (!session?.user) return null;
 
-    const { data } = await client.from("organization_members").select("organization_id").eq("user_id", session.user.id).eq("status", "active").limit(1);
-    return data?.[0]?.organization_id ?? null;
+    const result = await client.from("organization_members").select("organization_id").eq("user_id", session.user.id).eq("status", "active").limit(1);
+    return readRows("active organization", result)[0]?.organization_id ?? null;
   }
 }

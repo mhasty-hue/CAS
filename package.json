@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
+    "supabase:provision-auth": "node scripts/supabase/phase10-provision-auth-users.mjs",
     "supabase:smoke": "node scripts/supabase/phase10-smoke.mjs",
+    "supabase:smoke:auth": "node scripts/supabase/phase10-auth-smoke.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

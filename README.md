@@ -32,7 +32,7 @@ CAS now has a Supabase foundation while still keeping demo mode as the default f
 
 - Leave `NEXT_PUBLIC_CAS_DATA_SOURCE=demo` to use the current local demo state.
 - Leave `NEXT_PUBLIC_CAS_DEMO_MODE=true` to keep the demo role switcher available.
-- Set `NEXT_PUBLIC_CAS_DATA_SOURCE=supabase` and `NEXT_PUBLIC_CAS_DEMO_MODE=false`, then provide `NEXT_PUBLIC_SUPABASE_URL` plus `NEXT_PUBLIC_SUPABASE_ANON_KEY`, when testing authenticated production mode.
+- Set `NEXT_PUBLIC_CAS_DATA_SOURCE=supabase` and `NEXT_PUBLIC_CAS_DEMO_MODE=false`, then provide `NEXT_PUBLIC_SUPABASE_URL` plus `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, when testing authenticated production mode. `NEXT_PUBLIC_SUPABASE_ANON_KEY` is kept as a compatibility fallback.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` server-side only. It is for seed/admin scripts, not browser code.
 - Email notifications use a development-log provider by default. Configure a real provider later through `CAS_EMAIL_PROVIDER` plus the relevant provider token.
 
@@ -41,6 +41,17 @@ The schema starts in `supabase/migrations/202606290001_initial_schema.sql`; Phas
 The schema is intentionally automation-ready and AI-ready: workflow steps, required fields/documents, automation rules, review state, audit logs, and notification records are first-class tables instead of hard-coded UI-only state.
 
 The app data-access layer lives in `src/lib/repositories`. It returns demo data by default and can load from Supabase once auth, tenant membership, and project environment variables are configured.
+
+Phase 10 authenticated staging validation uses ignored `.env.local` credentials for development-only users:
+
+- Company Admin: `CAS_STAGE_COMPANY_ADMIN_EMAIL` plus either `CAS_STAGE_COMPANY_ADMIN_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+- Office Staff: `CAS_STAGE_OFFICE_STAFF_EMAIL` plus either `CAS_STAGE_OFFICE_STAFF_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+- Appraiser: `CAS_STAGE_APPRAISER_EMAIL` plus either `CAS_STAGE_APPRAISER_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+- Reviewer: `CAS_STAGE_REVIEWER_EMAIL` plus either `CAS_STAGE_REVIEWER_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+- AMC Admin: `CAS_STAGE_AMC_ADMIN_EMAIL` plus either `CAS_STAGE_AMC_ADMIN_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+- Lender/Client User: `CAS_STAGE_CLIENT_USER_EMAIL` plus either `CAS_STAGE_CLIENT_USER_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+
+Run `pnpm supabase:provision-auth` to create the development Auth users from ignored local credentials. Then link them to roles/memberships in the development database and run `pnpm supabase:smoke` plus `pnpm supabase:smoke:auth`.
 
 Phase 7 adds:
 
@@ -59,6 +70,9 @@ pnpm install
 pnpm typecheck
 pnpm lint
 pnpm build
+pnpm supabase:provision-auth
+pnpm supabase:smoke
+pnpm supabase:smoke:auth
 ```
 
 The build compiles the app as static content and generates the typed route references used by Next.js.

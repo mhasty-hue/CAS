@@ -172,14 +172,14 @@ export function CasApp() {
         const bootstrap = await getCasRepository("supabase").loadBootstrapData(context.organization.id);
         if (canceled) return;
 
-        setOrderList(bootstrap.orders.length ? bootstrap.orders : orders);
-        setClientList(bootstrap.clients.length ? bootstrap.clients : clientProfiles);
-        setCompanyUserList(bootstrap.companyUsers.length ? bootstrap.companyUsers : companyUsers);
-        setAppraiserList(bootstrap.appraisers.length ? bootstrap.appraisers : appraisers);
-        setVendorList(bootstrap.vendors.length ? bootstrap.vendors : vendors);
+        setOrderList(bootstrap.orders);
+        setClientList(bootstrap.clients);
+        setCompanyUserList(bootstrap.companyUsers);
+        setAppraiserList(bootstrap.appraisers);
+        setVendorList(bootstrap.vendors);
         setVendorDocumentList(bootstrap.vendorDocuments);
-        setAccountingList(bootstrap.accountingEntries.length ? bootstrap.accountingEntries : accountingEntries);
-        setInvoiceList(bootstrap.invoices.length ? bootstrap.invoices : invoices);
+        setAccountingList(bootstrap.accountingEntries);
+        setInvoiceList(bootstrap.invoices);
         setInvoiceSettingsList(bootstrap.invoiceSettings);
         setInvitationList(bootstrap.invitations);
         setPublicOrderSettingsList(bootstrap.publicOrderSettings);
@@ -197,13 +197,13 @@ export function CasApp() {
         setDeliveryRecordList(bootstrap.deliveryRecords);
         setDocumentAuditEventList(bootstrap.documentAuditEvents);
         setOrderFormTemplate(bootstrap.orderFormTemplate);
-        setCalendarPreferenceList(bootstrap.calendarPreferences.length ? bootstrap.calendarPreferences : calendarPreferences);
-        setAutomationRuleList(bootstrap.automationRules.length ? bootstrap.automationRules : automationRules);
-        setAutomationRunList(bootstrap.automationRuns.length ? bootstrap.automationRuns : automationRuns);
-        setTaskList(bootstrap.workflowTasks.length ? bootstrap.workflowTasks : workflowTasks);
-        setNotificationQueueList(bootstrap.notificationQueue.length ? bootstrap.notificationQueue : notificationQueue);
-        setScheduledJobList(bootstrap.scheduledJobs.length ? bootstrap.scheduledJobs : scheduledJobs);
-        setWebhookEventList(bootstrap.webhookEvents.length ? bootstrap.webhookEvents : webhookEvents);
+        setCalendarPreferenceList(bootstrap.calendarPreferences);
+        setAutomationRuleList(bootstrap.automationRules);
+        setAutomationRunList(bootstrap.automationRuns);
+        setTaskList(bootstrap.workflowTasks);
+        setNotificationQueueList(bootstrap.notificationQueue);
+        setScheduledJobList(bootstrap.scheduledJobs);
+        setWebhookEventList(bootstrap.webhookEvents);
         setAuthState("ready");
       } catch (error) {
         if (canceled) return;
