@@ -17,7 +17,7 @@ import {
   Users2
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { AccountingEntry, AppraiserProfile, Invoice, Order, Organization, PortalUser, VendorDocument, VendorProfile } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, Invoice, Order, Organization, PortalUser, VendorDocument, VendorProfile, WorkflowTask } from "@/types/domain";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { roleLabel } from "../config";
 import { DueChip, SectionHeader, StatusChip } from "../shared";
@@ -48,7 +48,9 @@ export function CommandCenterView({
   vendorDocuments,
   accountingEntries,
   invoices,
+  tasks,
   onOpenOrders,
+  onOpenTasks,
   onPlaceOrder,
   onInviteVendor,
   onOpenReview,
@@ -67,7 +69,9 @@ export function CommandCenterView({
   vendorDocuments: VendorDocument[];
   accountingEntries: AccountingEntry[];
   invoices: Invoice[];
+  tasks: WorkflowTask[];
   onOpenOrders: () => void;
+  onOpenTasks: () => void;
   onPlaceOrder: () => void;
   onInviteVendor: () => void;
   onOpenReview: () => void;
@@ -79,7 +83,7 @@ export function CommandCenterView({
   onOpenCalendar: () => void;
 }) {
   const capacityInsights = buildCapacityInsights(orderList, appraisers);
-  const missionItems = buildMissionItems({ orderList, accountingEntries, invoices, vendors, vendorDocuments, user });
+  const missionItems = buildMissionItems({ orderList, accountingEntries, invoices, vendors, vendorDocuments, tasks, user });
   const riskQueue = buildRiskQueue(orderList, capacityInsights);
   const snapshots = buildSnapshotItems(orderList, accountingEntries, invoices, user);
   const recommendation = recommendAppraiser(orderList, capacityInsights);
@@ -94,7 +98,8 @@ export function CommandCenterView({
     messages: onOpenMessages,
     documents: onOpenDocuments,
     pay: onOpenAccounting,
-    calendar: onOpenCalendar
+    calendar: onOpenCalendar,
+    tasks: onOpenTasks
   };
 
   return (

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, Archive, BarChart3, Bell, Building2, CalendarDays, ClipboardCheck, FileCheck2, FileText, LayoutDashboard, ListChecks, MessageSquare, Plus, ReceiptText, Settings, ShieldCheck, UserCheck, Users2, WalletCards } from "lucide-react";
+import { AlertTriangle, Archive, BarChart3, Bell, Bot, Building2, CalendarDays, ClipboardCheck, FileCheck2, FileText, LayoutDashboard, ListChecks, ListTodo, MessageSquare, Plus, ReceiptText, Settings, ShieldCheck, UserCheck, Users2, WalletCards } from "lucide-react";
 import { savedViews } from "@/data/demo";
 import type { OrderStatus, UserRole } from "@/types/domain";
 
@@ -10,6 +10,8 @@ export type NavId =
   | "cancelled-orders"
   | "all-orders"
   | "my-orders"
+  | "tasks"
+  | "automations"
   | "new-order"
   | "place-order"
   | "calendar"
@@ -39,6 +41,8 @@ export const navCatalog: Record<NavId, { label: string; icon: LucideIcon }> = {
   "cancelled-orders": { label: "Cancelled", icon: Archive },
   "all-orders": { label: "All Orders", icon: ListChecks },
   "my-orders": { label: "My Orders", icon: ListChecks },
+  tasks: { label: "Tasks", icon: ListTodo },
+  automations: { label: "Automations", icon: Bot },
   "new-order": { label: "New Order", icon: Plus },
   "place-order": { label: "Place Order", icon: Plus },
   calendar: { label: "Calendar", icon: CalendarDays },
@@ -63,15 +67,15 @@ export const navCatalog: Record<NavId, { label: string; icon: LucideIcon }> = {
 };
 
 export const roleNavigation: Record<UserRole, NavId[]> = {
-  super_admin: ["dashboard", "orders", "completed-orders", "cancelled-orders", "all-orders", "new-order", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "settings"],
-  company_admin: ["dashboard", "orders", "completed-orders", "cancelled-orders", "all-orders", "new-order", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "settings"],
-  office_staff: ["dashboard", "orders", "completed-orders", "cancelled-orders", "new-order", "calendar", "appraisers", "clients", "documents", "notifications"],
-  appraiser_manager: ["dashboard", "orders", "completed-orders", "calendar", "appraisers", "accounting", "analytics"],
-  appraiser: ["dashboard", "my-orders", "completed-orders", "calendar", "revisions", "documents", "pay"],
-  solo_appraiser: ["dashboard", "my-orders", "completed-orders", "place-order", "calendar", "revisions", "documents", "pay", "settings"],
-  reviewer: ["dashboard", "review-queue", "revisions", "completed-reviews", "documents", "templates"],
-  amc_admin: ["dashboard", "orders", "completed-orders", "cancelled-orders", "place-order", "vendors", "vendor-invites", "compliance", "reports", "settings"],
-  amc_staff: ["dashboard", "orders", "completed-orders", "place-order", "vendors", "vendor-invites", "reports"],
+  super_admin: ["dashboard", "tasks", "automations", "orders", "completed-orders", "cancelled-orders", "all-orders", "new-order", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "notifications", "settings"],
+  company_admin: ["dashboard", "tasks", "automations", "orders", "completed-orders", "cancelled-orders", "all-orders", "new-order", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "notifications", "settings"],
+  office_staff: ["dashboard", "tasks", "automations", "orders", "completed-orders", "cancelled-orders", "new-order", "calendar", "appraisers", "clients", "documents", "notifications"],
+  appraiser_manager: ["dashboard", "tasks", "orders", "completed-orders", "calendar", "appraisers", "accounting", "analytics", "notifications"],
+  appraiser: ["dashboard", "tasks", "my-orders", "completed-orders", "calendar", "revisions", "documents", "pay"],
+  solo_appraiser: ["dashboard", "tasks", "automations", "my-orders", "completed-orders", "place-order", "calendar", "revisions", "documents", "pay", "settings"],
+  reviewer: ["dashboard", "tasks", "review-queue", "revisions", "completed-reviews", "documents", "templates"],
+  amc_admin: ["dashboard", "tasks", "automations", "orders", "completed-orders", "cancelled-orders", "place-order", "vendors", "vendor-invites", "compliance", "reports", "notifications", "settings"],
+  amc_staff: ["dashboard", "tasks", "orders", "completed-orders", "place-order", "vendors", "vendor-invites", "reports", "notifications"],
   client_user: ["dashboard", "place-order", "my-orders", "completed-orders", "documents", "messages"]
 };
 

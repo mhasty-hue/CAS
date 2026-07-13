@@ -337,7 +337,13 @@ export class SupabaseCasRepository implements CasRepository {
         deliveryRecords: [],
         documentAuditEvents: [],
         orderFormTemplate: defaultOrderFormTemplate,
-        calendarPreferences: []
+        calendarPreferences: [],
+        automationRules: [],
+        automationRuns: [],
+        workflowTasks: [],
+        notificationQueue: [],
+        scheduledJobs: [],
+        webhookEvents: []
       };
     }
 
@@ -453,7 +459,13 @@ export class SupabaseCasRepository implements CasRepository {
       deliveryRecords: [],
       documentAuditEvents: [],
       orderFormTemplate: mapOrderFormTemplate(templateRows[0]),
-      calendarPreferences: calendarRows.map((row) => mapCalendarPreference(row, appraisersById))
+      calendarPreferences: calendarRows.map((row) => mapCalendarPreference(row, appraisersById)),
+      automationRules: [],
+      automationRuns: [],
+      workflowTasks: [],
+      notificationQueue: [],
+      scheduledJobs: [],
+      webhookEvents: []
     };
   }
 

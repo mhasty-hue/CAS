@@ -77,7 +77,16 @@ export const permissionCatalog: Array<{ key: PermissionKey; label: string; group
   { key: "deliver_final_report", label: "Deliver final report", group: "Documents" },
   { key: "view_vendor_compliance_documents", label: "View vendor compliance", group: "Documents" },
   { key: "download_xml", label: "Download XML", group: "Documents" },
-  { key: "view_workfile_documents", label: "View workfile documents", group: "Documents" }
+  { key: "view_workfile_documents", label: "View workfile documents", group: "Documents" },
+  { key: "view_automations", label: "canViewAutomations", group: "Automation" },
+  { key: "create_automations", label: "canCreateAutomations", group: "Automation" },
+  { key: "edit_automations", label: "canEditAutomations", group: "Automation" },
+  { key: "enable_automations", label: "canEnableAutomations", group: "Automation" },
+  { key: "view_automation_history", label: "canViewAutomationHistory", group: "Automation" },
+  { key: "manage_team_tasks", label: "canManageTeamTasks", group: "Tasks" },
+  { key: "assign_tasks", label: "canAssignTasks", group: "Tasks" },
+  { key: "view_notification_logs", label: "canViewNotificationLogs", group: "Notifications" },
+  { key: "retry_failed_notifications", label: "canRetryFailedNotifications", group: "Notifications" }
 ];
 
 const documents = (fileNumber: string, reportStatus: "Ready" | "Missing" | "Needs review" = "Ready") => [

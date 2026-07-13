@@ -1,6 +1,8 @@
 import type {
   AccountingEntry,
   AppraiserProfile,
+  AutomationRule,
+  AutomationRun,
   CalendarPreference,
   ClientProfile,
   CompanyUser,
@@ -26,8 +28,12 @@ import type {
   ReportSubmission,
   RequiredDocumentRule,
   RevisionRequest,
+  ScheduledJob,
   VendorDocument,
-  VendorProfile
+  VendorProfile,
+  NotificationQueueItem,
+  WebhookEvent,
+  WorkflowTask
 } from "@/types/domain";
 
 export type CasDataSourceMode = "demo" | "supabase";
@@ -61,6 +67,12 @@ export type CasBootstrapData = {
   documentAuditEvents: DocumentAuditEvent[];
   orderFormTemplate: OrderFormTemplate;
   calendarPreferences: CalendarPreference[];
+  automationRules: AutomationRule[];
+  automationRuns: AutomationRun[];
+  workflowTasks: WorkflowTask[];
+  notificationQueue: NotificationQueueItem[];
+  scheduledJobs: ScheduledJob[];
+  webhookEvents: WebhookEvent[];
 };
 
 export type CasAuthMembership = {

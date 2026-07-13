@@ -36,6 +36,16 @@ const documentManagerPermissions: PermissionKey[] = [
   "download_xml",
   "view_workfile_documents"
 ];
+const automationAdminPermissions: PermissionKey[] = [
+  "view_automations",
+  "create_automations",
+  "edit_automations",
+  "enable_automations",
+  "view_automation_history",
+  "view_notification_logs",
+  "retry_failed_notifications"
+];
+const taskManagerPermissions: PermissionKey[] = ["manage_team_tasks", "assign_tasks"];
 
 const rolePermissions: Record<UserRole, PermissionKey[]> = {
   super_admin: [
@@ -64,7 +74,9 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     ...fullAccountingPermissions,
     ...dashboardVisibilityPermissions,
     ...platformAdminPermissions,
-    ...documentManagerPermissions
+    ...documentManagerPermissions,
+    ...automationAdminPermissions,
+    ...taskManagerPermissions
   ],
   company_admin: [
     "view_all_orders",
@@ -90,7 +102,9 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     ...fullAccountingPermissions,
     ...dashboardVisibilityPermissions,
     ...platformAdminPermissions,
-    ...documentManagerPermissions
+    ...documentManagerPermissions,
+    ...automationAdminPermissions,
+    ...taskManagerPermissions
   ],
   office_staff: [
     "view_all_orders",
@@ -108,7 +122,12 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "manage_clients",
     "view_operational_dashboard",
     "edit_inspections",
-    "export_reports"
+    "export_reports",
+    "view_automations",
+    "view_automation_history",
+    "manage_team_tasks",
+    "assign_tasks",
+    "view_notification_logs"
   ],
   appraiser_manager: [
     "view_all_orders",
@@ -123,7 +142,10 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "view_own_pay",
     "view_operational_dashboard",
     "manage_users",
-    "export_reports"
+    "export_reports",
+    "manage_team_tasks",
+    "assign_tasks",
+    "view_notification_logs"
   ],
   appraiser: ["upload_documents", "upload_order_documents", "view_workfile_documents", "download_xml", "see_appraiser_payouts", "view_own_pay", "view_payroll_summary", "view_operational_dashboard", "edit_inspections", "view_own_orders_only"],
   solo_appraiser: [
@@ -143,7 +165,9 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "manage_public_ordering",
     "manage_notification_settings",
     "manage_integrations",
-    "view_own_orders_only"
+    "view_own_orders_only",
+    ...automationAdminPermissions,
+    ...taskManagerPermissions
   ],
   reviewer: ["view_all_orders", "upload_documents", "upload_order_documents", "view_internal_documents", "view_workfile_documents", "download_xml", "review_reports", "deliver_reports", "deliver_final_report", "view_operational_dashboard"],
   amc_admin: [
@@ -161,9 +185,11 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "generate_invoices",
     "edit_invoices",
     "manage_integrations",
-    "export_reports"
+    "export_reports",
+    ...automationAdminPermissions,
+    ...taskManagerPermissions
   ],
-  amc_staff: ["view_all_orders", "create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_vendor_compliance_documents", "invite_vendors", "export_reports", "view_operational_dashboard"],
+  amc_staff: ["view_all_orders", "create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_vendor_compliance_documents", "invite_vendors", "export_reports", "view_operational_dashboard", "manage_team_tasks", "assign_tasks", "view_notification_logs"],
   client_user: ["create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_operational_dashboard", "view_own_orders_only"]
 };
 
@@ -355,4 +381,40 @@ export function canDownloadXML(user: PortalUser) {
 
 export function canViewWorkfileDocuments(user: PortalUser) {
   return hasPermission(user, "view_workfile_documents") || canReviewReports(user);
+}
+
+export function canViewAutomations(user: PortalUser) {
+  return hasPermission(user, "view_automations") || canManageCompanyUsers(user) || canManagePublicOrdering(user);
+}
+
+export function canCreateAutomations(user: PortalUser) {
+  return hasPermission(user, "create_automations") || canManageCompanyUsers(user);
+}
+
+export function canEditAutomations(user: PortalUser) {
+  return hasPermission(user, "edit_automations") || canManageCompanyUsers(user);
+}
+
+export function canEnableAutomations(user: PortalUser) {
+  return hasPermission(user, "enable_automations") || canManageCompanyUsers(user);
+}
+
+export function canViewAutomationHistory(user: PortalUser) {
+  return hasPermission(user, "view_automation_history") || canViewAutomations(user);
+}
+
+export function canManageTeamTasks(user: PortalUser) {
+  return hasPermission(user, "manage_team_tasks") || canManageCompanyUsers(user);
+}
+
+export function canAssignTasks(user: PortalUser) {
+  return hasPermission(user, "assign_tasks") || canManageTeamTasks(user);
+}
+
+export function canViewNotificationLogs(user: PortalUser) {
+  return hasPermission(user, "view_notification_logs") || canManageNotificationSettings(user) || canManageCompanyUsers(user);
+}
+
+export function canRetryFailedNotifications(user: PortalUser) {
+  return hasPermission(user, "retry_failed_notifications") || canManageNotificationSettings(user) || canManageCompanyUsers(user);
 }

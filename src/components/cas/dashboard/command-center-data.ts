@@ -1,8 +1,8 @@
-import type { AccountingEntry, AppraiserProfile, Invoice, Order, PortalUser, VendorDocument, VendorProfile } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, Invoice, Order, PortalUser, VendorDocument, VendorProfile, WorkflowTask } from "@/types/domain";
 import { canViewAccounting, canViewPayrollSummary, canViewProfitabilitySummary, canViewReceivablesSummary } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/utils";
 
-export type CommandAction = "orders" | "new-order" | "review" | "accounting" | "clients" | "vendors" | "messages" | "documents" | "pay" | "calendar";
+export type CommandAction = "orders" | "new-order" | "review" | "accounting" | "clients" | "vendors" | "messages" | "documents" | "pay" | "calendar" | "tasks";
 export type MissionPriority = "Critical" | "High" | "Medium" | "Low";
 export type RiskLevel = "Low Risk" | "Medium Risk" | "High Risk" | "Critical";
 export type CapacityStatus = "Available" | "Balanced" | "Busy" | "Overloaded";
@@ -215,6 +215,7 @@ export function buildMissionItems({
   invoices,
   vendors,
   vendorDocuments,
+  tasks = [],
   user
 }: {
   orderList: Order[];
@@ -222,6 +223,7 @@ export function buildMissionItems({
   invoices: Invoice[];
   vendors: VendorProfile[];
   vendorDocuments: VendorDocument[];
+  tasks?: WorkflowTask[];
   user: PortalUser;
 }) {
   const items: MissionItem[] = [];
@@ -305,6 +307,31 @@ export function buildMissionItems({
       action: "vendors"
     });
   });
+
+  tasks
+    .filter((task) => task.status !== "Completed" && task.status !== "Cancelled")
+    .filter((task) => {
+      if (user.role === "appraiser" || user.role === "reviewer" || user.role === "solo_appraiser") {
+        return task.assignedTo === user.name || task.assignedRole === user.role;
+      }
+      return true;
+    })
+    .filter((task) => daysFromToday(task.dueDate) <= 7 || task.priority === "Rush" || task.source === "Automation")
+    .slice(0, 4)
+    .forEach((task) => {
+      const days = daysFromToday(task.dueDate);
+      const priority: MissionPriority = task.priority === "Rush" || days < 0 ? "Critical" : task.priority === "High" || days <= 1 ? "High" : "Medium";
+      items.push({
+        id: `task-${task.id}`,
+        priority,
+        category: task.source === "Automation" ? "Automated follow-up" : "Team task",
+        target: `${task.title} - ${task.assignedTo}`,
+        detail: `${task.relatedClient ?? task.relatedOrderId ?? task.relatedVendorId ?? task.relatedInvoiceId ?? "CAS workflow"} - due ${days < 0 ? `${Math.abs(days)}d late` : days === 0 ? "today" : `in ${days}d`}`,
+        nextAction: task.status === "Waiting" ? "Clear blocker or reassign owner" : "Open the task and move it forward",
+        actionLabel: "Open task",
+        action: "tasks"
+      });
+    });
 
   const payrollDue = accountingEntries.filter((entry) => entry.status === "Payout pending" || entry.status === "Unpaid");
   if (payrollDue.length && canViewPayrollSummary(user)) {
@@ -444,9 +471,9 @@ export function canSeeAccounting(user: PortalUser) {
 
 function roleAllowsItem(item: MissionItem, user: PortalUser) {
   if (user.role === "client_user") return ["Due today", "Past due order", "Review lane", "Revision waiting", "Client message"].includes(item.category);
-  if (user.role === "appraiser" || user.role === "solo_appraiser") return ["Past due order", "Due today", "Revision waiting", "Payroll"].includes(item.category);
-  if (user.role === "reviewer") return ["Past due order", "Due today", "Review lane", "Revision waiting"].includes(item.category);
-  if (user.role === "amc_admin" || user.role === "amc_staff") return ["Past due order", "Due today", "Review lane", "Revision waiting", "Vendor document", "Client message", "Unassigned order"].includes(item.category);
+  if (user.role === "appraiser" || user.role === "solo_appraiser") return ["Past due order", "Due today", "Revision waiting", "Payroll", "Automated follow-up", "Team task"].includes(item.category);
+  if (user.role === "reviewer") return ["Past due order", "Due today", "Review lane", "Revision waiting", "Automated follow-up", "Team task"].includes(item.category);
+  if (user.role === "amc_admin" || user.role === "amc_staff") return ["Past due order", "Due today", "Review lane", "Revision waiting", "Vendor document", "Client message", "Unassigned order", "Automated follow-up", "Team task"].includes(item.category);
   if (user.role === "office_staff") return item.category !== "Payroll" && item.category !== "Receivables";
   return true;
 }

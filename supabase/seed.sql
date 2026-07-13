@@ -415,3 +415,69 @@ insert into public.document_audit_events (id, organization_id, order_id, documen
   ('97000000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000002', null, null, 'Delivered', 'Nora Fields', 'Final report package delivered by secure link.', '2026-06-30 11:05:00-04'),
   ('97000000-0000-4000-8000-000000000003', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000005', '93000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000001', 'Revision created', 'Nora Fields', 'Structured FHA revision request created with attached PDF.', '2026-06-30 09:04:00-04')
 on conflict (id) do update set event = excluded.event, actor_name = excluded.actor_name, detail = excluded.detail, created_at = excluded.created_at;
+
+insert into public.role_permissions (role_id, permission_key, enabled) values
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'view_automations', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'view_automation_history', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'manage_team_tasks', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'assign_tasks', true),
+  ('aaaaaaaa-0000-4000-8000-000000000002', 'view_notification_logs', true),
+  ('aaaaaaaa-0000-4000-8000-000000000003', 'manage_team_tasks', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'view_automations', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'create_automations', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'edit_automations', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'enable_automations', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'view_automation_history', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'manage_team_tasks', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'assign_tasks', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'view_notification_logs', true),
+  ('bbbbbbbb-0000-4000-8000-000000000001', 'retry_failed_notifications', true)
+on conflict (role_id, permission_key) do update set enabled = excluded.enabled;
+
+insert into public.automation_rules (id, organization_id, name, trigger_event, conditions, actions, active, description, enabled, trigger_key, trigger_label, execution_order, last_run_at, run_count, failure_count, audit_metadata) values
+  ('a9000000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'New order triage and assignment prep', 'order_created', '{"status":"New"}', '["create_task","notify_order_desk"]', true, 'Creates intake review work when a new order arrives.', true, 'order_created', 'When an order is created', 10, '2026-07-09 13:08:00-04', 42, 0, '{"createdBy":"Nora Fields","updatedBy":"Mina Patel"}'),
+  ('a9000000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'Due date risk watch', 'due_within', '{"dueWithinDays":1}', '["flag_risk","create_follow_up"]', true, 'Escalates orders due within 24 hours or past due.', true, 'due_within', 'When order is due within selected time', 70, '2026-07-09 12:00:00-04', 58, 2, '{"createdBy":"Mina Patel"}'),
+  ('a9000000-0000-4000-8000-000000000003', '11111111-1111-1111-1111-111111111111', 'Report submitted review routing', 'report_submitted', '{"reportStandard":"UAD"}', '["assign_reviewer","create_review_task"]', true, 'Routes submitted reports to review with a QC task.', true, 'report_submitted', 'When report is submitted', 40, '2026-07-09 15:02:00-04', 33, 0, '{"createdBy":"Nora Fields"}')
+on conflict (id) do update set name = excluded.name, description = excluded.description, enabled = excluded.enabled, trigger_key = excluded.trigger_key, trigger_label = excluded.trigger_label, execution_order = excluded.execution_order, last_run_at = excluded.last_run_at, run_count = excluded.run_count, failure_count = excluded.failure_count, audit_metadata = excluded.audit_metadata;
+
+insert into public.automation_conditions (id, organization_id, rule_id, field_key, operator, value, label, sort_order) values
+  ('a9100000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'a9000000-0000-4000-8000-000000000001', 'current_status', 'equals', 'New', 'Status is New', 1),
+  ('a9100000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'a9000000-0000-4000-8000-000000000002', 'due_proximity', 'within_days', '1', 'Due within one day', 1),
+  ('a9100000-0000-4000-8000-000000000003', '11111111-1111-1111-1111-111111111111', 'a9000000-0000-4000-8000-000000000003', 'report_standard', 'contains', 'UAD', 'Report standard includes UAD', 1)
+on conflict (id) do update set field_key = excluded.field_key, operator = excluded.operator, value = excluded.value, label = excluded.label, sort_order = excluded.sort_order;
+
+insert into public.automation_actions (id, organization_id, rule_id, action_type, target, value, label, sort_order) values
+  ('a9200000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'a9000000-0000-4000-8000-000000000001', 'create_task', 'Order desk', 'Review order package and confirm due date', 'Create intake review task', 1),
+  ('a9200000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'a9000000-0000-4000-8000-000000000002', 'flag_risk', 'Order', 'High', 'Flag order risk', 1),
+  ('a9200000-0000-4000-8000-000000000003', '11111111-1111-1111-1111-111111111111', 'a9000000-0000-4000-8000-000000000003', 'create_task', 'Reviewer', 'Complete QC checklist', 'Create review task', 1)
+on conflict (id) do update set action_type = excluded.action_type, target = excluded.target, value = excluded.value, label = excluded.label, sort_order = excluded.sort_order;
+
+insert into public.tasks (id, organization_id, related_order_id, related_client_id, related_invoice_id, title, description, assigned_role, due_at, priority, status, source, automation_rule_id, audit_history) values
+  ('99000000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000006', 'c0000000-0000-4000-8000-000000000001', null, 'Review new order package', 'Confirm product type, due date, fee, and uploaded documents before assignment.', 'office_staff', '2026-07-09 12:00:00-04', 'High', 'Open', 'Automation', 'a9000000-0000-4000-8000-000000000001', '[{"action":"Task created by automation","actor":"CAS Automation","at":"Today, 9:08 AM"}]'),
+  ('99000000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000004', 'c0000000-0000-4000-8000-000000000003', null, 'Confirm delivery plan for past-due file', 'Call the appraiser, confirm completion ETA, and add a client-safe status comment.', 'office_staff', '2026-07-09 12:00:00-04', 'Rush', 'In Progress', 'Automation', 'a9000000-0000-4000-8000-000000000002', '[{"action":"Task created by automation","actor":"CAS Automation","at":"Today, 8:00 AM"}]'),
+  ('99000000-0000-4000-8000-000000000003', '11111111-1111-1111-1111-111111111111', 'e0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', null, 'Complete UAD readiness review', 'Run the review checklist and approve, return, or deliver the report.', 'reviewer', '2026-07-09 12:00:00-04', 'High', 'Open', 'Automation', 'a9000000-0000-4000-8000-000000000003', '[{"action":"Task created by automation","actor":"CAS Automation","at":"Today, 10:02 AM"}]')
+on conflict (id) do update set title = excluded.title, description = excluded.description, assigned_role = excluded.assigned_role, due_at = excluded.due_at, priority = excluded.priority, status = excluded.status, source = excluded.source, automation_rule_id = excluded.automation_rule_id, audit_history = excluded.audit_history;
+
+insert into public.automation_runs (id, organization_id, rule_id, status, started_at, finished_at, related_order_id, related_task_id, metadata) values
+  ('99400000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'a9000000-0000-4000-8000-000000000001', 'Success', '2026-07-09 13:08:00-04', '2026-07-09 13:08:02-04', 'e0000000-0000-4000-8000-000000000006', '99000000-0000-4000-8000-000000000001', '{"source":"seed"}')
+on conflict (id) do update set status = excluded.status, started_at = excluded.started_at, finished_at = excluded.finished_at, related_order_id = excluded.related_order_id, related_task_id = excluded.related_task_id, metadata = excluded.metadata;
+
+insert into public.automation_run_steps (id, organization_id, run_id, action_label, status, detail, step_order) values
+  ('99500000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', '99400000-0000-4000-8000-000000000001', 'Create intake review task', 'Success', 'Task assigned to the order desk.', 1),
+  ('99500000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', '99400000-0000-4000-8000-000000000001', 'Notify office staff', 'Success', 'Notification queued for staff.', 2)
+on conflict (id) do update set action_label = excluded.action_label, status = excluded.status, detail = excluded.detail, step_order = excluded.step_order;
+
+insert into public.notification_queue (id, organization_id, recipient_role, event_type, channel, status, attempt_count, failure_reason, related_order_id, related_task_id, digest_group, subject, preview, queued_at, sent_at) values
+  ('99100000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'office_staff', 'new_order_received', 'In-app', 'Pending', 0, null, 'e0000000-0000-4000-8000-000000000006', '99000000-0000-4000-8000-000000000001', 'order-desk', 'New order ready for triage', 'CAA-26-1053 needs order desk review before assignment.', '2026-07-09 13:08:02-04', null),
+  ('99100000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'appraiser', 'revisions_requested', 'Email', 'Failed', 2, 'Demo email provider rejected the sandbox address.', 'e0000000-0000-4000-8000-000000000002', null, 'appraiser-action', 'Revision request needs your response', 'CAA-26-1049 has two requested corrections.', '2026-07-09 17:44:00-04', null)
+on conflict (id) do update set recipient_role = excluded.recipient_role, event_type = excluded.event_type, channel = excluded.channel, status = excluded.status, attempt_count = excluded.attempt_count, failure_reason = excluded.failure_reason, related_order_id = excluded.related_order_id, related_task_id = excluded.related_task_id, digest_group = excluded.digest_group, subject = excluded.subject, preview = excluded.preview, queued_at = excluded.queued_at, sent_at = excluded.sent_at;
+
+insert into public.scheduled_jobs (id, organization_id, name, description, job_type, enabled, schedule, provider, last_run_at, next_run_at, status, run_count) values
+  ('99200000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'Due-date reminders', 'Scans open orders for due today, due tomorrow, and overdue risk.', 'Due-date reminders', true, '0 8 * * 1-6', 'Vercel Cron', '2026-07-09 12:00:00-04', '2026-07-10 12:00:00-04', 'Idle', 58),
+  ('99200000-0000-4000-8000-000000000002', '11111111-1111-1111-1111-111111111111', 'Compliance expiration sweep', 'Creates renewal tasks for expiring appraiser and vendor documents.', 'Compliance reminders', true, '30 9 * * 1', 'Supabase scheduled function', '2026-07-06 13:30:00-04', '2026-07-13 13:30:00-04', 'Idle', 21)
+on conflict (id) do update set name = excluded.name, description = excluded.description, job_type = excluded.job_type, enabled = excluded.enabled, schedule = excluded.schedule, provider = excluded.provider, last_run_at = excluded.last_run_at, next_run_at = excluded.next_run_at, status = excluded.status, run_count = excluded.run_count;
+
+insert into public.webhook_events (id, organization_id, provider, event_type, status, received_at, processed_at, related_order_id, payload, payload_summary) values
+  ('99300000-0000-4000-8000-000000000001', '11111111-1111-1111-1111-111111111111', 'Public order portal', 'public_request_submitted', 'Processed', '2026-07-09 16:20:00-04', '2026-07-09 16:20:04-04', null, '{"source":"seed"}', 'Estate appraisal request with two uploaded documents.'),
+  ('99300000-0000-4000-8000-000000000002', '33333333-3333-3333-3333-333333333333', 'LendingQB placeholder', 'order_status_changed', 'Received', '2026-07-09 18:06:00-04', null, null, '{"source":"seed"}', 'LOS status push received but sync is not connected in demo mode.')
+on conflict (id) do update set provider = excluded.provider, event_type = excluded.event_type, status = excluded.status, received_at = excluded.received_at, processed_at = excluded.processed_at, related_order_id = excluded.related_order_id, payload = excluded.payload, payload_summary = excluded.payload_summary;

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { appraisers, calendarPreferences, clientProfiles, companyUsers, defaultOrderFormTemplate, orders, vendors } from "@/data/demo";
 import {
   accountingEntries,
+  automationRules,
+  automationRuns,
   deliveryRecords,
   documentAuditEvents,
   emailDeliveryRecords,
@@ -13,6 +15,7 @@ import {
   invoices,
   managedDocuments,
   notificationPreferences,
+  notificationQueue,
   notificationTemplates,
   orderMessages,
   organizationInvitations,
@@ -23,9 +26,12 @@ import {
   reportSubmissions,
   requiredDocumentRules,
   revisionRequests,
-  vendorDocuments
+  scheduledJobs,
+  vendorDocuments,
+  webhookEvents,
+  workflowTasks
 } from "@/data/platform";
-import type { AccountingEntry, AppraiserProfile, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationTemplate, Order, OrderFormTemplate, OrderStatus, Organization, OrganizationInvitation, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, UserRole, VendorDocument, VendorProfile } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationTemplate, Order, OrderFormTemplate, OrderStatus, Organization, OrganizationInvitation, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
 import { loadCasAuthContext } from "@/lib/auth/context";
 import { createDeliveryRecord } from "@/lib/delivery/service";
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
@@ -37,6 +43,7 @@ import { applyPayrollSnapshot, calculatePayrollSnapshot } from "@/lib/accounting
 import { getCasRepository } from "@/lib/repositories";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { AccountingView, AnalyticsView } from "./cas/accounting";
+import { AutomationCenterView, NotificationQueueView, TaskCenterView } from "./cas/automation";
 import { ProductionAccessGate } from "./cas/auth";
 import { CalendarView } from "./cas/calendar";
 import { ClientsView } from "./cas/clients";
@@ -46,7 +53,7 @@ import { NewOrderView } from "./cas/forms";
 import { CommandPalette, Sidebar, Topbar } from "./cas/layout";
 import { OrdersView } from "./cas/orders";
 import { CompletedReviewsView, ReviewTemplatesView, ReviewView, RevisionsView } from "./cas/review";
-import { DocumentsView, MessagesView, NotificationsView, ReportsView } from "./cas/support";
+import { DocumentsView, MessagesView, ReportsView } from "./cas/support";
 import { SettingsView } from "./cas/users";
 import { ComplianceView, VendorInvitesView, VendorView } from "./cas/vendors";
 
@@ -92,6 +99,12 @@ export function CasApp() {
   const [documentAuditEventList, setDocumentAuditEventList] = useState<DocumentAuditEvent[]>(documentAuditEvents);
   const [orderFormTemplate, setOrderFormTemplate] = useState<OrderFormTemplate>(defaultOrderFormTemplate);
   const [calendarPreferenceList, setCalendarPreferenceList] = useState<CalendarPreference[]>(calendarPreferences);
+  const [automationRuleList, setAutomationRuleList] = useState<AutomationRule[]>(automationRules);
+  const [automationRunList, setAutomationRunList] = useState<AutomationRun[]>(automationRuns);
+  const [taskList, setTaskList] = useState<WorkflowTask[]>(workflowTasks);
+  const [notificationQueueList, setNotificationQueueList] = useState<NotificationQueueItem[]>(notificationQueue);
+  const [scheduledJobList, setScheduledJobList] = useState<ScheduledJob[]>(scheduledJobs);
+  const [webhookEventList, setWebhookEventList] = useState<WebhookEvent[]>(webhookEvents);
   const [activeUserId, setActiveUserId] = useState(portalUsers[0].id);
   const [selectedOrderId, setSelectedOrderId] = useState(orders[0].id);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -185,6 +198,12 @@ export function CasApp() {
         setDocumentAuditEventList(bootstrap.documentAuditEvents);
         setOrderFormTemplate(bootstrap.orderFormTemplate);
         setCalendarPreferenceList(bootstrap.calendarPreferences.length ? bootstrap.calendarPreferences : calendarPreferences);
+        setAutomationRuleList(bootstrap.automationRules.length ? bootstrap.automationRules : automationRules);
+        setAutomationRunList(bootstrap.automationRuns.length ? bootstrap.automationRuns : automationRuns);
+        setTaskList(bootstrap.workflowTasks.length ? bootstrap.workflowTasks : workflowTasks);
+        setNotificationQueueList(bootstrap.notificationQueue.length ? bootstrap.notificationQueue : notificationQueue);
+        setScheduledJobList(bootstrap.scheduledJobs.length ? bootstrap.scheduledJobs : scheduledJobs);
+        setWebhookEventList(bootstrap.webhookEvents.length ? bootstrap.webhookEvents : webhookEvents);
         setAuthState("ready");
       } catch (error) {
         if (canceled) return;
@@ -212,7 +231,147 @@ export function CasApp() {
     setOrderList((currentOrders) => currentOrders.map((order) => (order.id === orderId ? updater(order) : order)));
   }
 
+  function addWorkflowTask(task: WorkflowTask) {
+    setTaskList((current) => [task, ...current]);
+  }
+
+  function queueNotification(item: NotificationQueueItem) {
+    setNotificationQueueList((current) => [item, ...current]);
+  }
+
+  function handleUpdateTaskStatus(taskId: string, status: WorkflowTaskStatus) {
+    setTaskList((current) =>
+      current.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              status,
+              completedAt: status === "Completed" ? "Just now" : task.completedAt,
+              auditHistory: [
+                { id: `${task.id}-audit-${Date.now()}`, action: `Status changed to ${status}`, actor: activeUser.name, at: "Just now" },
+                ...task.auditHistory
+              ]
+            }
+          : task
+      )
+    );
+  }
+
+  function handleToggleAutomationRule(ruleId: string) {
+    setAutomationRuleList((current) =>
+      current.map((rule) =>
+        rule.id === ruleId
+          ? {
+              ...rule,
+              enabled: !rule.enabled,
+              auditMetadata: { ...rule.auditMetadata, updatedBy: activeUser.name, updatedAt: "Just now" }
+            }
+          : rule
+      )
+    );
+  }
+
+  function handleDuplicateAutomationRule(ruleId: string) {
+    const source = automationRuleList.find((rule) => rule.id === ruleId);
+    if (!source) return;
+    setAutomationRuleList((current) => [
+      {
+        ...source,
+        id: `${source.id}-copy-${Date.now()}`,
+        name: `${source.name} copy`,
+        enabled: false,
+        executionOrder: source.executionOrder + 1,
+        lastRunAt: undefined,
+        runCount: 0,
+        failureCount: 0,
+        createdBy: activeUser.name,
+        createdAt: "Just now",
+        auditMetadata: { createdBy: activeUser.name, updatedAt: "Just now" }
+      },
+      ...current
+    ]);
+  }
+
+  function handleArchiveAutomationRule(ruleId: string) {
+    setAutomationRuleList((current) =>
+      current.map((rule) =>
+        rule.id === ruleId
+          ? {
+              ...rule,
+              enabled: false,
+              auditMetadata: { ...rule.auditMetadata, archived: true, updatedBy: activeUser.name, updatedAt: "Just now" }
+            }
+          : rule
+      )
+    );
+  }
+
+  function handleTestAutomationRule(ruleId: string) {
+    const rule = automationRuleList.find((item) => item.id === ruleId);
+    const sampleOrder = visibleOrders[0] ?? orderList[0];
+    if (!rule) return;
+    const runId = `auto-run-${Date.now()}`;
+    const taskId = `task-auto-test-${Date.now()}`;
+    setAutomationRunList((current) => [
+      {
+        id: runId,
+        ruleId,
+        organizationId: activeOrganization.id,
+        status: "Success",
+        startedAt: "Just now",
+        finishedAt: "Just now",
+        relatedOrderId: sampleOrder?.id,
+        relatedTaskId: taskId,
+        steps: rule.actions.map((action, index) => ({
+          id: `${runId}-step-${index}`,
+          actionLabel: action.label,
+          status: "Success",
+          detail: `Demo test completed for ${sampleOrder?.fileNumber ?? "sample order"}.`,
+          at: "Just now"
+        }))
+      },
+      ...current
+    ]);
+    setAutomationRuleList((current) =>
+      current.map((item) => item.id === ruleId ? { ...item, lastRunAt: "Just now", runCount: item.runCount + 1 } : item)
+    );
+    addWorkflowTask({
+      id: taskId,
+      organizationId: activeOrganization.id,
+      relatedOrderId: sampleOrder?.id,
+      relatedClient: sampleOrder?.client,
+      title: `Review automation test: ${rule.name}`,
+      description: "Demo test created this task so admins can verify the rule action path without changing production data.",
+      assignedTo: activeUser.name,
+      assignedRole: activeUser.role,
+      createdBy: "CAS Automation Test",
+      dueDate: "2026-07-09",
+      priority: "Watch",
+      status: "Open",
+      source: "Automation",
+      automationRuleId: ruleId,
+      auditHistory: [{ id: `${taskId}-audit`, action: "Task created by automation test", actor: activeUser.name, at: "Just now" }]
+    });
+  }
+
+  function handleRetryNotification(notificationId: string) {
+    setNotificationQueueList((current) =>
+      current.map((notification) =>
+        notification.id === notificationId
+          ? {
+              ...notification,
+              status: "Sent",
+              attemptCount: notification.attemptCount + 1,
+              failureReason: undefined,
+              sentAt: "Just now"
+            }
+          : notification
+      )
+    );
+  }
+
   function handleAssignOrder(orderId: string, appraiserName: string, note: string) {
+    const assignedOrder = orderList.find((order) => order.id === orderId);
     updateOrder(orderId, (order) => {
       const noteBody = note.trim();
       const assignmentNote: Note | null = noteBody
@@ -263,6 +422,42 @@ export function CasApp() {
         ]
       };
     });
+    if (assignedOrder) {
+      const taskId = `task-assignment-${Date.now()}`;
+      addWorkflowTask({
+        id: taskId,
+        organizationId: activeOrganization.id,
+        relatedOrderId: assignedOrder.id,
+        relatedClient: assignedOrder.client,
+        title: `Accept and schedule ${assignedOrder.fileNumber}`,
+        description: "Review the assignment package, accept or flag conflicts, and schedule the inspection window.",
+        assignedTo: appraiserName,
+        assignedRole: "appraiser",
+        createdBy: activeUser.name,
+        dueDate: "2026-07-10",
+        priority: assignedOrder.priority,
+        status: "Open",
+        source: "Automation",
+        automationRuleId: "auto-assignment-accepted",
+        auditHistory: [{ id: `${taskId}-audit`, action: "Assignment follow-up created", actor: "CAS Automation", at: "Just now" }]
+      });
+      queueNotification({
+        id: `notifq-assignment-${Date.now()}`,
+        organizationId: activeOrganization.id,
+        recipient: appraiserName,
+        recipientRole: "appraiser",
+        eventType: "order_assigned",
+        channel: "In-app",
+        status: "Pending",
+        attemptCount: 0,
+        relatedOrderId: assignedOrder.id,
+        relatedTaskId: taskId,
+        digestGroup: "appraiser-action",
+        queuedAt: "Just now",
+        subject: "New appraisal assignment",
+        preview: `${assignedOrder.fileNumber} is ready for acceptance and inspection scheduling.`
+      });
+    }
   }
 
   function handleStatusChange(orderId: string, status: OrderStatus) {
@@ -395,6 +590,40 @@ export function CasApp() {
     };
 
     setOrderList((currentOrders) => [newOrder, ...currentOrders]);
+    const taskId = `task-new-order-${Date.now()}`;
+    addWorkflowTask({
+      id: taskId,
+      organizationId: activeOrganization.id,
+      relatedOrderId: newOrder.id,
+      relatedClient: newOrder.client,
+      title: `Triage ${newOrder.fileNumber}`,
+      description: "Confirm client instructions, fee, due date, uploaded documents, and assignment preference before dispatch.",
+      assignedTo: "Mina Patel",
+      assignedRole: "office_staff",
+      createdBy: "New order triage and assignment prep",
+      dueDate: "2026-07-09",
+      priority: newOrder.priority,
+      status: "Open",
+      source: "Automation",
+      automationRuleId: "auto-new-order-triage",
+      auditHistory: [{ id: `${taskId}-audit`, action: "Task created by new-order automation", actor: "CAS Automation", at: "Just now" }]
+    });
+    queueNotification({
+      id: `notifq-new-order-${Date.now()}`,
+      organizationId: activeOrganization.id,
+      recipient: "Mina Patel",
+      recipientRole: "office_staff",
+      eventType: "new_order_received",
+      channel: "In-app",
+      status: "Pending",
+      attemptCount: 0,
+      relatedOrderId: newOrder.id,
+      relatedTaskId: taskId,
+      digestGroup: "order-desk",
+      queuedAt: "Just now",
+      subject: "New order ready for triage",
+      preview: `${newOrder.fileNumber} was created from ${templateName} and needs assignment prep.`
+    });
     setSelectedOrderId(newOrder.id);
     setActiveView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders");
   }
@@ -441,6 +670,7 @@ export function CasApp() {
 
   function handleReviewAction(orderId: string, action: "return" | "approve" | "deliver") {
     const status: OrderStatus = action === "return" ? "Revisions Needed" : action === "approve" ? "Ready for Delivery" : "Delivered";
+    const reviewOrder = orderList.find((order) => order.id === orderId);
     updateOrder(orderId, (order) => ({
       ...order,
       status,
@@ -468,6 +698,42 @@ export function CasApp() {
           ]
         : order.revisionLog
     }));
+    if (action === "return" && reviewOrder) {
+      const taskId = `task-revision-${Date.now()}`;
+      addWorkflowTask({
+        id: taskId,
+        organizationId: activeOrganization.id,
+        relatedOrderId: reviewOrder.id,
+        relatedClient: reviewOrder.client,
+        title: `Respond to revisions for ${reviewOrder.fileNumber}`,
+        description: "Open the structured revision log, respond to each reviewer item, and upload the corrected report package.",
+        assignedTo: reviewOrder.appraiser,
+        assignedRole: "appraiser",
+        createdBy: activeUser.name,
+        dueDate: "2026-07-10",
+        priority: "High",
+        status: "Open",
+        source: "Automation",
+        automationRuleId: "auto-revision-requested",
+        auditHistory: [{ id: `${taskId}-audit`, action: "Revision response task created", actor: "CAS Automation", at: "Just now" }]
+      });
+      queueNotification({
+        id: `notifq-revision-${Date.now()}`,
+        organizationId: activeOrganization.id,
+        recipient: reviewOrder.appraiser,
+        recipientRole: "appraiser",
+        eventType: "revisions_requested",
+        channel: "In-app",
+        status: "Pending",
+        attemptCount: 0,
+        relatedOrderId: reviewOrder.id,
+        relatedTaskId: taskId,
+        digestGroup: "appraiser-action",
+        queuedAt: "Just now",
+        subject: "Revision request needs your response",
+        preview: `${reviewOrder.fileNumber} was returned from review and needs appraiser action.`
+      });
+    }
   }
 
   function handleCompleteReviewItem(orderId: string, label: string) {
@@ -1063,6 +1329,7 @@ export function CasApp() {
   }
 
   function handleSubmitReport(orderId: string) {
+    const submittedOrder = orderList.find((order) => order.id === orderId);
     const orderDocuments = managedDocumentList.filter((document) => document.orderId === orderId);
     const submission: ReportSubmission = {
       id: `submission-${Date.now()}`,
@@ -1081,6 +1348,42 @@ export function CasApp() {
     setReportSubmissionList((current) => [submission, ...current]);
     handleStatusChange(orderId, "Submitted");
     setOrderMessageList((current) => [createOrderMessage(orderList.find((order) => order.id === orderId) ?? orderList[0], activeUser, "System activity", "Final report package submitted for review."), ...current]);
+    if (submittedOrder) {
+      const taskId = `task-review-${Date.now()}`;
+      addWorkflowTask({
+        id: taskId,
+        organizationId: activeOrganization.id,
+        relatedOrderId: submittedOrder.id,
+        relatedClient: submittedOrder.client,
+        title: `Review submitted report ${submittedOrder.fileNumber}`,
+        description: "Complete the report review checklist, request revisions if needed, or approve for delivery.",
+        assignedTo: submittedOrder.reviewer,
+        assignedRole: "reviewer",
+        createdBy: "Report submitted review routing",
+        dueDate: "2026-07-09",
+        priority: submittedOrder.priority === "Rush" ? "Rush" : "High",
+        status: "Open",
+        source: "Automation",
+        automationRuleId: "auto-report-submitted",
+        auditHistory: [{ id: `${taskId}-audit`, action: "Review task created from submitted report", actor: "CAS Automation", at: "Just now" }]
+      });
+      queueNotification({
+        id: `notifq-review-${Date.now()}`,
+        organizationId: activeOrganization.id,
+        recipient: submittedOrder.reviewer,
+        recipientRole: "reviewer",
+        eventType: "report_submitted",
+        channel: "In-app",
+        status: "Pending",
+        attemptCount: 0,
+        relatedOrderId: submittedOrder.id,
+        relatedTaskId: taskId,
+        digestGroup: "review-desk",
+        queuedAt: "Just now",
+        subject: "Report ready for review",
+        preview: `${submittedOrder.fileNumber} was submitted and needs review routing.`
+      });
+    }
   }
 
   function handleDeliverReport(orderId: string) {
@@ -1182,7 +1485,9 @@ export function CasApp() {
               vendorDocuments={vendorDocumentList}
               accountingEntries={accountingList}
               invoices={invoiceList}
+              tasks={taskList}
               onOpenOrders={() => setActiveView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders")}
+              onOpenTasks={() => openView("tasks", "dashboard")}
               onPlaceOrder={() => setActiveView(["amc_admin", "amc_staff", "client_user", "solo_appraiser"].includes(activeUser.role) ? "place-order" : canCreateOrders(activeUser) ? "new-order" : "orders")}
               onInviteVendor={handleInviteVendor}
               onOpenReview={() => openView(activeUser.role === "reviewer" ? "review-queue" : "review", "orders")}
@@ -1227,6 +1532,28 @@ export function CasApp() {
               onToggleMessageRead={handleToggleMessageRead}
               onUpdateRevisionStatus={handleUpdateRevisionStatus}
               onRespondToRevisionItem={handleRespondToRevisionItem}
+            />
+          )}
+          {activeView === "tasks" && (
+            <TaskCenterView
+              tasks={taskList}
+              orderList={visibleOrders.length ? visibleOrders : orderList}
+              user={activeUser}
+              onUpdateTaskStatus={handleUpdateTaskStatus}
+            />
+          )}
+          {activeView === "automations" && (
+            <AutomationCenterView
+              rules={automationRuleList}
+              runs={automationRunList}
+              tasks={taskList}
+              scheduledJobs={scheduledJobList}
+              webhookEvents={webhookEventList}
+              user={activeUser}
+              onToggleRule={handleToggleAutomationRule}
+              onDuplicateRule={handleDuplicateAutomationRule}
+              onArchiveRule={handleArchiveAutomationRule}
+              onTestRule={handleTestAutomationRule}
             />
           )}
           {(activeView === "new-order" || activeView === "place-order") && (
@@ -1319,7 +1646,14 @@ export function CasApp() {
             />
           )}
           {activeView === "revisions" && <RevisionsView orderList={visibleOrders} onSelectOrder={(order) => { setSelectedOrderId(order.id); openView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders", "review-queue"); }} />}
-          {activeView === "notifications" && <NotificationsView />}
+          {activeView === "notifications" && (
+            <NotificationQueueView
+              queue={notificationQueueList}
+              orderList={visibleOrders.length ? visibleOrders : orderList}
+              user={activeUser}
+              onRetry={handleRetryNotification}
+            />
+          )}
           {activeView === "settings" && (
             <SettingsView
               user={activeUser}

@@ -589,6 +589,153 @@ export type DocumentAuditEventRow = {
   created_at: string;
 };
 
+export type AutomationRuleRow = {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  trigger_key: string;
+  trigger_label: string;
+  execution_order: number;
+  last_run_at: string | null;
+  run_count: number;
+  failure_count: number;
+  created_by: string | null;
+  audit_metadata: Json;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AutomationConditionRow = {
+  id: string;
+  organization_id: string;
+  rule_id: string;
+  field_key: string;
+  operator: string;
+  value: string;
+  label: string;
+  sort_order: number;
+  created_at: string;
+};
+
+export type AutomationActionRow = {
+  id: string;
+  organization_id: string;
+  rule_id: string;
+  action_type: string;
+  target: string;
+  value: string;
+  label: string;
+  sort_order: number;
+  created_at: string;
+};
+
+export type AutomationRunRow = {
+  id: string;
+  organization_id: string;
+  rule_id: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  related_order_id: string | null;
+  related_task_id: string | null;
+  related_invoice_id: string | null;
+  error_message: string | null;
+  metadata: Json;
+};
+
+export type AutomationRunStepRow = {
+  id: string;
+  organization_id: string;
+  run_id: string;
+  action_label: string;
+  status: string;
+  detail: string | null;
+  step_order: number;
+  created_at: string;
+};
+
+export type TaskRow = {
+  id: string;
+  organization_id: string;
+  related_order_id: string | null;
+  related_client_id: string | null;
+  related_vendor_id: string | null;
+  related_invoice_id: string | null;
+  title: string;
+  description: string | null;
+  assigned_user_id: string | null;
+  assigned_role: string | null;
+  created_by: string | null;
+  due_at: string | null;
+  priority: string;
+  status: string;
+  source: string;
+  automation_rule_id: string | null;
+  completed_at: string | null;
+  audit_history: Json;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NotificationQueueRow = {
+  id: string;
+  organization_id: string;
+  recipient_user_id: string | null;
+  recipient_role: string | null;
+  recipient_email: string | null;
+  event_type: string;
+  channel: string;
+  status: string;
+  attempt_count: number;
+  failure_reason: string | null;
+  related_order_id: string | null;
+  related_task_id: string | null;
+  related_invoice_id: string | null;
+  related_vendor_id: string | null;
+  digest_group: string | null;
+  subject: string;
+  preview: string | null;
+  payload: Json;
+  queued_at: string;
+  sent_at: string | null;
+  read_at: string | null;
+};
+
+export type ScheduledJobRow = {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string | null;
+  job_type: string;
+  enabled: boolean;
+  schedule: string;
+  provider: string;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  status: string;
+  run_count: number;
+  metadata: Json;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WebhookEventRow = {
+  id: string;
+  organization_id: string;
+  provider: string;
+  event_type: string;
+  status: string;
+  received_at: string;
+  processed_at: string | null;
+  related_order_id: string | null;
+  payload: Json;
+  payload_summary: string | null;
+  error_message: string | null;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -596,7 +743,11 @@ export type Database = {
       appraiser_profiles: TableDefinition<AppraiserProfileRow>;
       appraiser_payouts: TableDefinition<Record<string, Json>>;
       audit_logs: TableDefinition<Record<string, Json>>;
-      automation_rules: TableDefinition<Record<string, Json>>;
+      automation_actions: TableDefinition<AutomationActionRow>;
+      automation_conditions: TableDefinition<AutomationConditionRow>;
+      automation_run_steps: TableDefinition<AutomationRunStepRow>;
+      automation_runs: TableDefinition<AutomationRunRow>;
+      automation_rules: TableDefinition<AutomationRuleRow>;
       calendar_events: TableDefinition<Record<string, Json>>;
       calendar_preferences: TableDefinition<CalendarPreferenceRow>;
       client_contacts: TableDefinition<ClientContactRow>;
@@ -618,6 +769,7 @@ export type Database = {
       invoice_settings: TableDefinition<InvoiceSettingsRow>;
       invoices: TableDefinition<InvoiceRow>;
       message_read_receipts: TableDefinition<MessageReadReceiptRow>;
+      notification_queue: TableDefinition<NotificationQueueRow>;
       notifications: TableDefinition<Record<string, Json>>;
       notification_preferences: TableDefinition<NotificationPreferenceRow>;
       notification_templates: TableDefinition<Record<string, Json>>;
@@ -648,13 +800,16 @@ export type Database = {
       review_checklists: TableDefinition<Record<string, Json>>;
       role_permissions: TableDefinition<RolePermissionRow>;
       roles: TableDefinition<RoleRow>;
+      scheduled_jobs: TableDefinition<ScheduledJobRow>;
       structured_revision_items: TableDefinition<StructuredRevisionItemRow>;
       structured_revision_requests: TableDefinition<StructuredRevisionRequestRow>;
+      tasks: TableDefinition<TaskRow>;
       user_profiles: TableDefinition<UserProfileRow>;
       vendor_documents: TableDefinition<Record<string, Json>>;
       vendor_profiles: TableDefinition<VendorProfileRow>;
       workflow_steps: TableDefinition<Record<string, Json>>;
       workflow_templates: TableDefinition<Record<string, Json>>;
+      webhook_events: TableDefinition<WebhookEventRow>;
     };
     Views: Record<string, never>;
     Functions: {

@@ -61,7 +61,16 @@ export type PermissionKey =
   | "deliver_final_report"
   | "view_vendor_compliance_documents"
   | "download_xml"
-  | "view_workfile_documents";
+  | "view_workfile_documents"
+  | "view_automations"
+  | "create_automations"
+  | "edit_automations"
+  | "enable_automations"
+  | "view_automation_history"
+  | "manage_team_tasks"
+  | "assign_tasks"
+  | "view_notification_logs"
+  | "retry_failed_notifications";
 
 export type Organization = {
   id: string;
@@ -908,4 +917,231 @@ export type IntegrationLog = {
   status: "Success" | "Warning" | "Error";
   detail: string;
   createdAt: string;
+};
+
+export type AutomationTrigger =
+  | "order_created"
+  | "public_request_submitted"
+  | "order_assigned"
+  | "assignment_accepted"
+  | "assignment_declined"
+  | "inspection_scheduled"
+  | "inspection_completed"
+  | "status_changed"
+  | "due_within"
+  | "past_due"
+  | "report_submitted"
+  | "review_assigned"
+  | "revision_requested"
+  | "revision_response_submitted"
+  | "report_approved"
+  | "report_delivered"
+  | "order_completed"
+  | "invoice_generated"
+  | "invoice_due_soon"
+  | "invoice_overdue"
+  | "invoice_paid"
+  | "required_document_missing"
+  | "vendor_compliance_expiring"
+  | "vendor_compliance_expired"
+  | "external_message_received"
+  | "follow_up_due";
+
+export type AutomationConditionField =
+  | "product_type"
+  | "client"
+  | "appraiser"
+  | "reviewer"
+  | "loan_type"
+  | "purpose"
+  | "county"
+  | "state"
+  | "priority"
+  | "current_status"
+  | "report_standard"
+  | "due_proximity"
+  | "missing_documents"
+  | "workload"
+  | "vendor_compliance"
+  | "invoice_status";
+
+export type AutomationOperator = "equals" | "not_equals" | "contains" | "within_days" | "greater_than" | "less_than" | "is" | "is_missing";
+
+export type AutomationActionType =
+  | "change_status"
+  | "assign_appraiser"
+  | "assign_reviewer"
+  | "create_task"
+  | "create_follow_up"
+  | "send_in_app_notification"
+  | "queue_email"
+  | "add_internal_note"
+  | "add_client_message"
+  | "request_documents"
+  | "create_calendar_event"
+  | "create_accounting_entry"
+  | "create_invoice_draft"
+  | "escalate_priority"
+  | "flag_risk"
+  | "notify_roles"
+  | "write_audit_log"
+  | "call_webhook";
+
+export type AutomationCondition = {
+  id: string;
+  field: AutomationConditionField;
+  operator: AutomationOperator;
+  value: string;
+  label: string;
+};
+
+export type AutomationAction = {
+  id: string;
+  type: AutomationActionType;
+  target: string;
+  value: string;
+  label: string;
+};
+
+export type AutomationRunStep = {
+  id: string;
+  actionLabel: string;
+  status: "Success" | "Skipped" | "Failed";
+  detail: string;
+  at: string;
+};
+
+export type AutomationRun = {
+  id: string;
+  ruleId: string;
+  organizationId: string;
+  status: "Success" | "Partial" | "Failed";
+  startedAt: string;
+  finishedAt?: string;
+  relatedOrderId?: string;
+  relatedTaskId?: string;
+  relatedInvoiceId?: string;
+  steps: AutomationRunStep[];
+};
+
+export type AutomationRule = {
+  id: string;
+  organizationId: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  trigger: AutomationTrigger;
+  triggerLabel: string;
+  conditions: AutomationCondition[];
+  actions: AutomationAction[];
+  executionOrder: number;
+  lastRunAt?: string;
+  runCount: number;
+  failureCount: number;
+  createdBy: string;
+  createdAt: string;
+  auditMetadata: {
+    createdBy: string;
+    updatedBy?: string;
+    updatedAt?: string;
+    archived?: boolean;
+  };
+};
+
+export type WorkflowTaskStatus = "Open" | "In Progress" | "Waiting" | "Completed" | "Cancelled";
+export type WorkflowTaskSource = "Manual" | "Automation";
+
+export type WorkflowTask = {
+  id: string;
+  organizationId: string;
+  relatedOrderId?: string;
+  relatedClient?: string;
+  relatedVendorId?: string;
+  relatedInvoiceId?: string;
+  title: string;
+  description: string;
+  assignedTo: string;
+  assignedRole?: UserRole;
+  createdBy: string;
+  dueDate: string;
+  priority: Priority;
+  status: WorkflowTaskStatus;
+  source: WorkflowTaskSource;
+  automationRuleId?: string;
+  completedAt?: string;
+  auditHistory: AuditTrailItem[];
+};
+
+export type NotificationQueueStatus = "Pending" | "Sent" | "Failed" | "Read";
+export type NotificationQueueChannel = "In-app" | "Email" | "Digest";
+
+export type NotificationQueueItem = {
+  id: string;
+  organizationId: string;
+  recipient: string;
+  recipientRole?: UserRole;
+  eventType: NotificationEventKey | string;
+  channel: NotificationQueueChannel;
+  status: NotificationQueueStatus;
+  attemptCount: number;
+  failureReason?: string;
+  relatedOrderId?: string;
+  relatedTaskId?: string;
+  relatedInvoiceId?: string;
+  relatedVendorId?: string;
+  digestGroup?: string;
+  queuedAt: string;
+  sentAt?: string;
+  readAt?: string;
+  subject: string;
+  preview: string;
+};
+
+export type ScheduledJob = {
+  id: string;
+  organizationId: string;
+  name: string;
+  description: string;
+  jobType:
+    | "Due-date reminders"
+    | "Past-due escalation"
+    | "Invoice reminders"
+    | "Compliance reminders"
+    | "Digest sender"
+    | "Follow-up escalation"
+    | "Payroll readiness"
+    | "Stale review sweep";
+  enabled: boolean;
+  schedule: string;
+  provider: "CAS demo scheduler" | "Vercel Cron" | "Supabase scheduled function";
+  lastRunAt?: string;
+  nextRunAt?: string;
+  status: "Idle" | "Queued" | "Running" | "Failed";
+  runCount: number;
+};
+
+export type WebhookEvent = {
+  id: string;
+  organizationId: string;
+  provider: string;
+  eventType: string;
+  status: "Received" | "Processed" | "Failed" | "Ignored";
+  receivedAt: string;
+  processedAt?: string;
+  payloadSummary: string;
+  relatedOrderId?: string;
+};
+
+export type OrderIntakePrefill = {
+  sourceName: string;
+  sourceType: "PDF" | "CSV";
+  confidence: number;
+  fields: Array<{
+    key: string;
+    label: string;
+    value: string;
+    confidence: number;
+  }>;
+  warnings: string[];
+  appliedAt: string;
 };

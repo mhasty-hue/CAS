@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import { CalendarDays, ClipboardCheck, Clock3, Search, ShieldCheck, UserCheck, Users2 } from "lucide-react";
 import { appraisers as demoAppraisers } from "@/data/demo";
 import { reviewQueue } from "@/data/platform";
-import type { AccountingEntry, AppraiserProfile, Invoice, Order, Organization, PortalUser, VendorDocument, VendorProfile } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, Invoice, Order, Organization, PortalUser, VendorDocument, VendorProfile, WorkflowTask } from "@/types/domain";
 import { cn, daysUntil, formatCurrency, formatDate } from "@/lib/utils";
 import { CommandCenterView } from "./dashboard/command-center";
 import { MetricTile, SectionHeader, StatusChip, TableHeader } from "./shared";
@@ -16,7 +16,9 @@ export function DashboardView({
   vendorDocuments,
   accountingEntries,
   invoices,
+  tasks,
   onOpenOrders,
+  onOpenTasks,
   onPlaceOrder,
   onInviteVendor,
   onOpenReview,
@@ -35,7 +37,9 @@ export function DashboardView({
   vendorDocuments: VendorDocument[];
   accountingEntries: AccountingEntry[];
   invoices: Invoice[];
+  tasks: WorkflowTask[];
   onOpenOrders: () => void;
+  onOpenTasks: () => void;
   onPlaceOrder: () => void;
   onInviteVendor: () => void;
   onOpenReview: () => void;
@@ -56,7 +60,9 @@ export function DashboardView({
       vendorDocuments={vendorDocuments}
       accountingEntries={accountingEntries}
       invoices={invoices}
+      tasks={tasks}
       onOpenOrders={onOpenOrders}
+      onOpenTasks={onOpenTasks}
       onPlaceOrder={onPlaceOrder}
       onInviteVendor={onInviteVendor}
       onOpenReview={onOpenReview}

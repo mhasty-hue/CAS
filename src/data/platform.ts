@@ -1,5 +1,7 @@
 import type {
   AccountingEntry,
+  AutomationRule,
+  AutomationRun,
   DeliveryRecord,
   DocumentAuditEvent,
   EmailDeliveryRecord,
@@ -8,6 +10,7 @@ import type {
   Invoice,
   InvoiceSettings,
   ManagedDocument,
+  NotificationQueueItem,
   NotificationPreference,
   NotificationTemplate,
   OrderMessage,
@@ -20,7 +23,10 @@ import type {
   RequiredDocumentRule,
   RevisionRequest,
   ReviewQueueItem,
-  VendorDocument
+  ScheduledJob,
+  VendorDocument,
+  WebhookEvent,
+  WorkflowTask
 } from "@/types/domain";
 
 export const organizations: Organization[] = [
@@ -858,6 +864,559 @@ export const integrationLogs: IntegrationLog[] = [
     status: "Success",
     detail: "Mock LendingQB adapter is available for demo import and status-push flows.",
     createdAt: "2026-07-09T18:00:00Z"
+  }
+];
+
+export const automationRules: AutomationRule[] = [
+  {
+    id: "auto-new-order-triage",
+    organizationId: "org-firm-1",
+    name: "New order triage and assignment prep",
+    description: "Creates an intake task, notifies the order desk, and flags documents when a new order arrives.",
+    enabled: true,
+    trigger: "order_created",
+    triggerLabel: "When an order is created",
+    conditions: [
+      { id: "auto-cond-1", field: "current_status", operator: "equals", value: "New", label: "Status is New" },
+      { id: "auto-cond-2", field: "missing_documents", operator: "is", value: "true", label: "Documents may need review" }
+    ],
+    actions: [
+      { id: "auto-act-1", type: "create_task", target: "Order desk", value: "Review order package and confirm due date", label: "Create intake review task" },
+      { id: "auto-act-2", type: "send_in_app_notification", target: "office_staff", value: "New order ready for triage", label: "Notify office staff" },
+      { id: "auto-act-3", type: "write_audit_log", target: "Order", value: "Automation evaluated new order", label: "Write audit log" }
+    ],
+    executionOrder: 10,
+    lastRunAt: "2026-07-09T13:08:00Z",
+    runCount: 42,
+    failureCount: 0,
+    createdBy: "Nora Fields",
+    createdAt: "2026-07-01T09:00:00Z",
+    auditMetadata: { createdBy: "Nora Fields", updatedBy: "Mina Patel", updatedAt: "2026-07-08T16:30:00Z" }
+  },
+  {
+    id: "auto-assignment-accepted",
+    organizationId: "org-firm-1",
+    name: "Assignment accepted follow-up",
+    description: "Moves accepted work toward inspection scheduling and reminds the appraiser if access is incomplete.",
+    enabled: true,
+    trigger: "assignment_accepted",
+    triggerLabel: "When appraiser accepts assignment",
+    conditions: [
+      { id: "auto-cond-3", field: "current_status", operator: "equals", value: "Accepted", label: "Status is Accepted" }
+    ],
+    actions: [
+      { id: "auto-act-4", type: "change_status", target: "Order", value: "Accepted", label: "Confirm accepted status" },
+      { id: "auto-act-5", type: "create_follow_up", target: "Assigned appraiser", value: "Schedule inspection or add access issue", label: "Create inspection follow-up" }
+    ],
+    executionOrder: 20,
+    lastRunAt: "2026-07-08T20:18:00Z",
+    runCount: 18,
+    failureCount: 1,
+    createdBy: "Nora Fields",
+    createdAt: "2026-07-01T09:10:00Z",
+    auditMetadata: { createdBy: "Nora Fields", updatedAt: "2026-07-08T20:18:00Z" }
+  },
+  {
+    id: "auto-inspection-scheduled",
+    organizationId: "org-firm-1",
+    name: "Inspection scheduled client update",
+    description: "Logs the inspection date, queues a client-facing status note, and prepares calendar sync.",
+    enabled: true,
+    trigger: "inspection_scheduled",
+    triggerLabel: "When inspection is scheduled",
+    conditions: [
+      { id: "auto-cond-4", field: "current_status", operator: "equals", value: "Inspection Scheduled", label: "Inspection status is scheduled" }
+    ],
+    actions: [
+      { id: "auto-act-6", type: "create_calendar_event", target: "Assigned appraiser", value: "Inspection appointment", label: "Prepare calendar event" },
+      { id: "auto-act-7", type: "add_client_message", target: "Client portal", value: "Inspection has been scheduled", label: "Add client-facing status comment" }
+    ],
+    executionOrder: 30,
+    lastRunAt: "2026-07-09T14:12:00Z",
+    runCount: 27,
+    failureCount: 0,
+    createdBy: "Mina Patel",
+    createdAt: "2026-07-01T09:20:00Z",
+    auditMetadata: { createdBy: "Mina Patel" }
+  },
+  {
+    id: "auto-report-submitted",
+    organizationId: "org-firm-1",
+    name: "Report submitted review routing",
+    description: "Assigns the report to review, notifies the reviewer, and creates a same-day quality-control task.",
+    enabled: true,
+    trigger: "report_submitted",
+    triggerLabel: "When report is submitted",
+    conditions: [
+      { id: "auto-cond-5", field: "report_standard", operator: "contains", value: "UAD", label: "Report standard includes UAD" }
+    ],
+    actions: [
+      { id: "auto-act-8", type: "assign_reviewer", target: "Review desk", value: "Best available reviewer", label: "Route to reviewer" },
+      { id: "auto-act-9", type: "create_task", target: "Reviewer", value: "Complete QC checklist", label: "Create review task" },
+      { id: "auto-act-10", type: "send_in_app_notification", target: "reviewer", value: "New report ready for review", label: "Notify reviewer" }
+    ],
+    executionOrder: 40,
+    lastRunAt: "2026-07-09T15:02:00Z",
+    runCount: 33,
+    failureCount: 0,
+    createdBy: "Nora Fields",
+    createdAt: "2026-07-01T09:30:00Z",
+    auditMetadata: { createdBy: "Nora Fields" }
+  },
+  {
+    id: "auto-revision-requested",
+    organizationId: "org-firm-1",
+    name: "Revision requested response loop",
+    description: "Creates an appraiser follow-up, alerts staff, and keeps the client-facing wording controlled.",
+    enabled: true,
+    trigger: "revision_requested",
+    triggerLabel: "When a revision is requested",
+    conditions: [
+      { id: "auto-cond-6", field: "current_status", operator: "contains", value: "Revision", label: "Revision status is active" }
+    ],
+    actions: [
+      { id: "auto-act-11", type: "create_task", target: "Assigned appraiser", value: "Respond to revision request", label: "Create appraiser revision task" },
+      { id: "auto-act-12", type: "notify_roles", target: "office_staff,reviewer", value: "Revision loop is active", label: "Notify office and reviewer" }
+    ],
+    executionOrder: 50,
+    lastRunAt: "2026-07-09T17:44:00Z",
+    runCount: 16,
+    failureCount: 0,
+    createdBy: "Maya Chen",
+    createdAt: "2026-07-01T09:40:00Z",
+    auditMetadata: { createdBy: "Maya Chen" }
+  },
+  {
+    id: "auto-report-delivered",
+    organizationId: "org-firm-1",
+    name: "Delivery and completion accounting",
+    description: "Queues delivery receipt, creates accounting entry, and drafts the invoice after delivery.",
+    enabled: true,
+    trigger: "report_delivered",
+    triggerLabel: "When report is delivered",
+    conditions: [
+      { id: "auto-cond-7", field: "current_status", operator: "equals", value: "Delivered", label: "Status is Delivered" }
+    ],
+    actions: [
+      { id: "auto-act-13", type: "create_accounting_entry", target: "Accounting", value: "Post fee and payout", label: "Create accounting entry" },
+      { id: "auto-act-14", type: "create_invoice_draft", target: "Accounting", value: "Draft client invoice", label: "Draft invoice" }
+    ],
+    executionOrder: 60,
+    lastRunAt: "2026-07-08T19:25:00Z",
+    runCount: 24,
+    failureCount: 0,
+    createdBy: "Nora Fields",
+    createdAt: "2026-07-01T09:50:00Z",
+    auditMetadata: { createdBy: "Nora Fields" }
+  },
+  {
+    id: "auto-due-date-watch",
+    organizationId: "org-firm-1",
+    name: "Due date risk watch",
+    description: "Escalates orders due within 24 hours or already past due, with a clear staff task.",
+    enabled: true,
+    trigger: "due_within",
+    triggerLabel: "When order is due within selected time",
+    conditions: [
+      { id: "auto-cond-8", field: "due_proximity", operator: "within_days", value: "1", label: "Due within one day" },
+      { id: "auto-cond-9", field: "current_status", operator: "not_equals", value: "Completed", label: "Order is not complete" }
+    ],
+    actions: [
+      { id: "auto-act-15", type: "flag_risk", target: "Order", value: "High", label: "Flag order risk" },
+      { id: "auto-act-16", type: "create_task", target: "Office staff", value: "Confirm delivery plan", label: "Create due-date follow-up" }
+    ],
+    executionOrder: 70,
+    lastRunAt: "2026-07-09T12:00:00Z",
+    runCount: 58,
+    failureCount: 2,
+    createdBy: "Mina Patel",
+    createdAt: "2026-07-01T10:00:00Z",
+    auditMetadata: { createdBy: "Mina Patel", updatedAt: "2026-07-07T15:45:00Z" }
+  },
+  {
+    id: "auto-invoice-overdue",
+    organizationId: "org-firm-1",
+    name: "Overdue invoice follow-up",
+    description: "Creates accounting follow-ups for overdue invoices without exposing payroll details to non-accounting users.",
+    enabled: true,
+    trigger: "invoice_overdue",
+    triggerLabel: "When invoice is overdue",
+    conditions: [
+      { id: "auto-cond-10", field: "invoice_status", operator: "equals", value: "Overdue", label: "Invoice is overdue" }
+    ],
+    actions: [
+      { id: "auto-act-17", type: "create_follow_up", target: "Accounting", value: "Contact client AR", label: "Create invoice follow-up" },
+      { id: "auto-act-18", type: "queue_email", target: "Client billing contact", value: "Payment reminder", label: "Queue payment reminder" }
+    ],
+    executionOrder: 80,
+    lastRunAt: "2026-07-09T11:15:00Z",
+    runCount: 12,
+    failureCount: 1,
+    createdBy: "Nora Fields",
+    createdAt: "2026-07-01T10:10:00Z",
+    auditMetadata: { createdBy: "Nora Fields" }
+  },
+  {
+    id: "auto-compliance-expiring",
+    organizationId: "org-firm-1",
+    name: "Vendor compliance renewal reminder",
+    description: "Watches appraiser and vendor documents and creates renewal requests before coverage is at risk.",
+    enabled: true,
+    trigger: "vendor_compliance_expiring",
+    triggerLabel: "When vendor compliance is expiring",
+    conditions: [
+      { id: "auto-cond-11", field: "vendor_compliance", operator: "within_days", value: "30", label: "Compliance expires within 30 days" }
+    ],
+    actions: [
+      { id: "auto-act-19", type: "request_documents", target: "Vendor", value: "Request updated license/E&O/W-9", label: "Request updated document" },
+      { id: "auto-act-20", type: "create_task", target: "Vendor desk", value: "Review renewal once uploaded", label: "Create compliance review task" }
+    ],
+    executionOrder: 90,
+    lastRunAt: "2026-07-09T09:30:00Z",
+    runCount: 21,
+    failureCount: 0,
+    createdBy: "Derek Sloan",
+    createdAt: "2026-07-01T10:20:00Z",
+    auditMetadata: { createdBy: "Derek Sloan" }
+  },
+  {
+    id: "auto-public-request",
+    organizationId: "org-firm-1",
+    name: "Public order request intake",
+    description: "Creates a staff review task and notification when a non-LOS customer submits an appraisal request.",
+    enabled: true,
+    trigger: "public_request_submitted",
+    triggerLabel: "When public request is submitted",
+    conditions: [
+      { id: "auto-cond-12", field: "purpose", operator: "contains", value: "appraisal", label: "Request appears to be an appraisal order" }
+    ],
+    actions: [
+      { id: "auto-act-21", type: "create_task", target: "Order desk", value: "Review public request and convert to order", label: "Create public request task" },
+      { id: "auto-act-22", type: "send_in_app_notification", target: "company_admin", value: "Public request submitted", label: "Notify admin" }
+    ],
+    executionOrder: 100,
+    lastRunAt: "2026-07-09T16:21:00Z",
+    runCount: 7,
+    failureCount: 0,
+    createdBy: "Nora Fields",
+    createdAt: "2026-07-01T10:30:00Z",
+    auditMetadata: { createdBy: "Nora Fields" }
+  }
+];
+
+export const automationRuns: AutomationRun[] = [
+  {
+    id: "auto-run-1",
+    ruleId: "auto-new-order-triage",
+    organizationId: "org-firm-1",
+    status: "Success",
+    startedAt: "2026-07-09T13:08:00Z",
+    finishedAt: "2026-07-09T13:08:02Z",
+    relatedOrderId: "ord-1011",
+    relatedTaskId: "task-intake-1",
+    steps: [
+      { id: "auto-run-1-step-1", actionLabel: "Create intake review task", status: "Success", detail: "Task assigned to Mina Patel.", at: "2026-07-09T13:08:01Z" },
+      { id: "auto-run-1-step-2", actionLabel: "Notify office staff", status: "Success", detail: "In-app notification queued.", at: "2026-07-09T13:08:02Z" }
+    ]
+  },
+  {
+    id: "auto-run-2",
+    ruleId: "auto-due-date-watch",
+    organizationId: "org-firm-1",
+    status: "Partial",
+    startedAt: "2026-07-09T12:00:00Z",
+    finishedAt: "2026-07-09T12:00:04Z",
+    relatedOrderId: "ord-1003",
+    relatedTaskId: "task-due-1",
+    steps: [
+      { id: "auto-run-2-step-1", actionLabel: "Flag order risk", status: "Success", detail: "Order marked high risk.", at: "2026-07-09T12:00:02Z" },
+      { id: "auto-run-2-step-2", actionLabel: "Create due-date follow-up", status: "Success", detail: "Follow-up assigned to office staff.", at: "2026-07-09T12:00:03Z" },
+      { id: "auto-run-2-step-3", actionLabel: "Queue email", status: "Skipped", detail: "Email disabled by digest preference.", at: "2026-07-09T12:00:04Z" }
+    ]
+  },
+  {
+    id: "auto-run-3",
+    ruleId: "auto-invoice-overdue",
+    organizationId: "org-firm-1",
+    status: "Failed",
+    startedAt: "2026-07-09T11:15:00Z",
+    finishedAt: "2026-07-09T11:15:03Z",
+    relatedInvoiceId: "inv-1002",
+    steps: [
+      { id: "auto-run-3-step-1", actionLabel: "Create invoice follow-up", status: "Success", detail: "Task assigned to accounting.", at: "2026-07-09T11:15:01Z" },
+      { id: "auto-run-3-step-2", actionLabel: "Queue payment reminder", status: "Failed", detail: "Client billing email missing confirmation preference.", at: "2026-07-09T11:15:03Z" }
+    ]
+  }
+];
+
+export const workflowTasks: WorkflowTask[] = [
+  {
+    id: "task-intake-1",
+    organizationId: "org-firm-1",
+    relatedOrderId: "ord-1011",
+    relatedClient: "HarborPoint Lending",
+    title: "Review new order package",
+    description: "Confirm product type, due date, fee, and whether the engagement letter has the complete lender instruction set.",
+    assignedTo: "Mina Patel",
+    assignedRole: "office_staff",
+    createdBy: "CAS Automation",
+    dueDate: "2026-07-09",
+    priority: "High",
+    status: "Open",
+    source: "Automation",
+    automationRuleId: "auto-new-order-triage",
+    auditHistory: [{ id: "task-intake-1-audit", action: "Task created by automation", actor: "CAS Automation", at: "Today, 9:08 AM" }]
+  },
+  {
+    id: "task-due-1",
+    organizationId: "org-firm-1",
+    relatedOrderId: "ord-1003",
+    relatedClient: "Pioneer AMC",
+    title: "Confirm delivery plan for past-due file",
+    description: "Call the appraiser, confirm completion ETA, and add a client-safe status comment before noon.",
+    assignedTo: "Mina Patel",
+    assignedRole: "office_staff",
+    createdBy: "Due date risk watch",
+    dueDate: "2026-07-09",
+    priority: "Rush",
+    status: "In Progress",
+    source: "Automation",
+    automationRuleId: "auto-due-date-watch",
+    auditHistory: [
+      { id: "task-due-1-audit-1", action: "Task created by automation", actor: "CAS Automation", at: "Today, 8:00 AM" },
+      { id: "task-due-1-audit-2", action: "Task started", actor: "Mina Patel", at: "Today, 8:17 AM" }
+    ]
+  },
+  {
+    id: "task-review-1",
+    organizationId: "org-firm-1",
+    relatedOrderId: "ord-1008",
+    title: "Complete UAD 3.6 readiness review",
+    description: "Run the UAD 3.6 review template and send appraiser questions in the structured revision panel.",
+    assignedTo: "Maya Chen",
+    assignedRole: "reviewer",
+    createdBy: "Report submitted review routing",
+    dueDate: "2026-07-09",
+    priority: "High",
+    status: "Open",
+    source: "Automation",
+    automationRuleId: "auto-report-submitted",
+    auditHistory: [{ id: "task-review-1-audit", action: "Task created by automation", actor: "CAS Automation", at: "Today, 10:02 AM" }]
+  },
+  {
+    id: "task-revision-1",
+    organizationId: "org-firm-1",
+    relatedOrderId: "ord-1002",
+    relatedClient: "Seaside Bank",
+    title: "Respond to reviewer revision request",
+    description: "Update comparable rationale, attach the revised PDF/XML, and mark each revision item complete.",
+    assignedTo: "Jordan Lee",
+    assignedRole: "appraiser",
+    createdBy: "Revision requested response loop",
+    dueDate: "2026-07-10",
+    priority: "High",
+    status: "Waiting",
+    source: "Automation",
+    automationRuleId: "auto-revision-requested",
+    auditHistory: [{ id: "task-revision-1-audit", action: "Task created by automation", actor: "CAS Automation", at: "Yesterday, 4:44 PM" }]
+  },
+  {
+    id: "task-invoice-1",
+    organizationId: "org-firm-1",
+    relatedInvoiceId: "inv-1002",
+    relatedClient: "Pioneer AMC",
+    title: "Follow up on overdue AMC invoice",
+    description: "Confirm payment date with Pioneer AMC and mark invoice status once funds are received.",
+    assignedTo: "Nora Fields",
+    assignedRole: "company_admin",
+    createdBy: "Overdue invoice follow-up",
+    dueDate: "2026-07-09",
+    priority: "Watch",
+    status: "Open",
+    source: "Automation",
+    automationRuleId: "auto-invoice-overdue",
+    auditHistory: [{ id: "task-invoice-1-audit", action: "Task created by automation", actor: "CAS Automation", at: "Today, 7:15 AM" }]
+  },
+  {
+    id: "task-compliance-1",
+    organizationId: "org-firm-1",
+    relatedVendorId: "ven-3",
+    title: "Request updated E&O certificate",
+    description: "Vendor coverage expires soon. Request updated proof, review upload, and avoid assigning new work until current.",
+    assignedTo: "Mina Patel",
+    assignedRole: "office_staff",
+    createdBy: "Vendor compliance renewal reminder",
+    dueDate: "2026-07-12",
+    priority: "Standard",
+    status: "Open",
+    source: "Automation",
+    automationRuleId: "auto-compliance-expiring",
+    auditHistory: [{ id: "task-compliance-1-audit", action: "Task created by automation", actor: "CAS Automation", at: "Today, 9:30 AM" }]
+  },
+  {
+    id: "task-manual-1",
+    organizationId: "org-firm-1",
+    relatedOrderId: "ord-1005",
+    title: "Call listing agent about access window",
+    description: "Borrower prefers afternoon access. Confirm whether Friday inspection still works before reassigning.",
+    assignedTo: "Mina Patel",
+    assignedRole: "office_staff",
+    createdBy: "Nora Fields",
+    dueDate: "2026-07-11",
+    priority: "Standard",
+    status: "Open",
+    source: "Manual",
+    auditHistory: [{ id: "task-manual-1-audit", action: "Manual task created", actor: "Nora Fields", at: "Yesterday, 2:22 PM" }]
+  }
+];
+
+export const notificationQueue: NotificationQueueItem[] = [
+  {
+    id: "notifq-1",
+    organizationId: "org-firm-1",
+    recipient: "Mina Patel",
+    recipientRole: "office_staff",
+    eventType: "new_order_received",
+    channel: "In-app",
+    status: "Pending",
+    attemptCount: 0,
+    relatedOrderId: "ord-1011",
+    relatedTaskId: "task-intake-1",
+    digestGroup: "order-desk",
+    queuedAt: "2026-07-09T13:08:02Z",
+    subject: "New order ready for triage",
+    preview: "CAA-26-1058 needs order desk review before assignment."
+  },
+  {
+    id: "notifq-2",
+    organizationId: "org-firm-1",
+    recipient: "Maya Chen",
+    recipientRole: "reviewer",
+    eventType: "report_submitted",
+    channel: "In-app",
+    status: "Sent",
+    attemptCount: 1,
+    relatedOrderId: "ord-1008",
+    relatedTaskId: "task-review-1",
+    queuedAt: "2026-07-09T15:02:00Z",
+    sentAt: "2026-07-09T15:02:04Z",
+    subject: "Report ready for review",
+    preview: "UAD 3.6 readiness review is waiting in the review queue."
+  },
+  {
+    id: "notifq-3",
+    organizationId: "org-firm-1",
+    recipient: "Jordan Lee",
+    recipientRole: "appraiser",
+    eventType: "revisions_requested",
+    channel: "Email",
+    status: "Failed",
+    attemptCount: 2,
+    failureReason: "Demo email provider rejected the appraiser sandbox address.",
+    relatedOrderId: "ord-1002",
+    relatedTaskId: "task-revision-1",
+    digestGroup: "appraiser-action",
+    queuedAt: "2026-07-09T17:44:00Z",
+    subject: "Revision request needs your response",
+    preview: "The reviewer returned CAA-26-1049 with two requested corrections."
+  },
+  {
+    id: "notifq-4",
+    organizationId: "org-firm-1",
+    recipient: "Nora Fields",
+    recipientRole: "company_admin",
+    eventType: "invoice_generated",
+    channel: "Digest",
+    status: "Read",
+    attemptCount: 1,
+    relatedInvoiceId: "inv-1004",
+    digestGroup: "accounting-digest",
+    queuedAt: "2026-07-08T18:00:00Z",
+    sentAt: "2026-07-09T08:00:00Z",
+    readAt: "2026-07-09T08:21:00Z",
+    subject: "Accounting digest: invoices and payroll",
+    preview: "One draft invoice and four payout items need review."
+  }
+];
+
+export const scheduledJobs: ScheduledJob[] = [
+  {
+    id: "job-due-reminders",
+    organizationId: "org-firm-1",
+    name: "Due-date reminders",
+    description: "Scans open orders for due today, due tomorrow, and overdue risk.",
+    jobType: "Due-date reminders",
+    enabled: true,
+    schedule: "0 8 * * 1-6",
+    provider: "Vercel Cron",
+    lastRunAt: "2026-07-09T12:00:00Z",
+    nextRunAt: "2026-07-10T12:00:00Z",
+    status: "Idle",
+    runCount: 58
+  },
+  {
+    id: "job-invoice-reminders",
+    organizationId: "org-firm-1",
+    name: "Invoice reminders",
+    description: "Finds overdue invoices and queues client follow-up tasks respecting notification preferences.",
+    jobType: "Invoice reminders",
+    enabled: true,
+    schedule: "15 9 * * 1,3,5",
+    provider: "Supabase scheduled function",
+    lastRunAt: "2026-07-09T13:15:00Z",
+    nextRunAt: "2026-07-10T13:15:00Z",
+    status: "Idle",
+    runCount: 12
+  },
+  {
+    id: "job-compliance",
+    organizationId: "org-firm-1",
+    name: "Compliance expiration sweep",
+    description: "Creates renewal tasks for expiring appraiser licenses, E&O, W-9, and vendor documents.",
+    jobType: "Compliance reminders",
+    enabled: true,
+    schedule: "30 9 * * 1",
+    provider: "Vercel Cron",
+    lastRunAt: "2026-07-06T13:30:00Z",
+    nextRunAt: "2026-07-13T13:30:00Z",
+    status: "Idle",
+    runCount: 21
+  },
+  {
+    id: "job-stale-review",
+    organizationId: "org-firm-1",
+    name: "Stale review sweep",
+    description: "Finds submitted reports without reviewer movement and escalates the review lane.",
+    jobType: "Stale review sweep",
+    enabled: false,
+    schedule: "0 10 * * 1-5",
+    provider: "CAS demo scheduler",
+    nextRunAt: "Not scheduled",
+    status: "Idle",
+    runCount: 0
+  }
+];
+
+export const webhookEvents: WebhookEvent[] = [
+  {
+    id: "webhook-1",
+    organizationId: "org-firm-1",
+    provider: "Public order portal",
+    eventType: "public_request_submitted",
+    status: "Processed",
+    receivedAt: "2026-07-09T16:20:00Z",
+    processedAt: "2026-07-09T16:20:04Z",
+    payloadSummary: "Estate appraisal request from Elaine Porter with two uploaded documents."
+  },
+  {
+    id: "webhook-2",
+    organizationId: "org-client-1",
+    provider: "LendingQB placeholder",
+    eventType: "order_status_changed",
+    status: "Received",
+    receivedAt: "2026-07-09T18:06:00Z",
+    payloadSummary: "LOS status push received but sync is not connected in demo mode.",
+    relatedOrderId: "ord-1001"
   }
 ];
 
