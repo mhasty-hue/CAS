@@ -12,13 +12,17 @@ export type SupabaseRuntimeConfig = {
 
 let browserClient: CasSupabaseClient | null | undefined;
 
+function getSupabasePublishableKey() {
+  return process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+}
+
 export function getSupabaseRuntimeConfig(): SupabaseRuntimeConfig {
   const requestedDataSource = process.env.NEXT_PUBLIC_CAS_DATA_SOURCE === "supabase" ? "supabase" : "demo";
 
   return {
     dataSource: requestedDataSource,
     supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    supabaseAnonKey: getSupabasePublishableKey()
   };
 }
 
@@ -38,7 +42,7 @@ export function createSupabaseBrowserClient(): CasSupabaseClient | null {
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseAnonKey = getSupabasePublishableKey();
 
   if (!supabaseUrl || !supabaseAnonKey) {
     browserClient = null;
