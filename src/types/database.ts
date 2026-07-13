@@ -420,6 +420,45 @@ export type OrderFormTemplateRow = {
   updated_at: string;
 };
 
+export type OrderImportTemplateRow = {
+  id: string;
+  organization_id: string;
+  client_id: string | null;
+  name: string;
+  source_type: string;
+  column_mappings: Json;
+  field_rules: Json;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrderImportSessionRow = {
+  id: string;
+  organization_id: string;
+  order_id: string | null;
+  import_template_id: string | null;
+  source_file_name: string;
+  source_content_type: string | null;
+  source_size_bytes: number | null;
+  source_document_id: string | null;
+  source_type: string;
+  provider: string;
+  extracted_fields: Json;
+  mapping_decisions: Json;
+  duplicate_candidates: Json;
+  validation_errors: Json;
+  validation_warnings: Json;
+  confidence: number;
+  status: string;
+  error_message: string | null;
+  created_by: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+  updated_at: string;
+};
+
 export type CalendarPreferenceRow = {
   id: string;
   organization_id: string;
@@ -778,6 +817,8 @@ export type Database = {
       order_form_template_fields: TableDefinition<Record<string, Json>>;
       order_form_template_sections: TableDefinition<Record<string, Json>>;
       order_form_templates: TableDefinition<OrderFormTemplateRow>;
+      order_import_sessions: TableDefinition<OrderImportSessionRow>;
+      order_import_templates: TableDefinition<OrderImportTemplateRow>;
       order_notes: TableDefinition<OrderNoteRow>;
       order_messages: TableDefinition<OrderMessageRow>;
       order_review_items: TableDefinition<Record<string, Json>>;

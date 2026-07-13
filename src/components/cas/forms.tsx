@@ -1,137 +1,18 @@
-import { useState } from "react";
-import { Building2, CheckCircle2, FileText, Home, Plus, ReceiptText, SlidersHorizontal, Sparkles, TableProperties, UploadCloud, UserCheck } from "lucide-react";
+import { useRef, useState } from "react";
+import { AlertTriangle, Building2, CheckCircle2, ClipboardCheck, FileText, Home, Plus, ReceiptText, RotateCcw, Save, SlidersHorizontal, Sparkles, TableProperties, UploadCloud, UserCheck } from "lucide-react";
 import { appraisers, clients, productTypes, reviewers } from "@/data/demo";
-import type { OrderFormTemplate, OrderIntakePrefill, Organization, PortalUser } from "@/types/domain";
+import type { Order, OrderFormTemplate, OrderImportDecision, OrderImportField, OrderImportFieldKey, OrderImportTemplate, OrderIntakePrefill, Organization, PortalUser } from "@/types/domain";
 import { canCustomizeOrderForms } from "@/lib/permissions";
+import { demoOrderImportProvider, orderImportFieldDefinitions } from "@/lib/order-import/service";
 import { roleLabel } from "./config";
 import { Field, InfoRow, SectionHeader, TemplateFieldPreview } from "./shared";
 import { workloadPercent } from "./orders";
-
-const prefillHeaderMap: Record<string, string> = {
-  client: "client",
-  lender: "client",
-  lender_contact: "lender_contact",
-  lendercontact: "lender_contact",
-  product: "product_type",
-  product_type: "product_type",
-  report_type: "product_type",
-  loan_type: "loan_type",
-  loantype: "loan_type",
-  due_date: "due_date",
-  duedate: "due_date",
-  priority: "priority",
-  borrower: "borrower",
-  borrower_name: "borrower",
-  contact: "contact_name",
-  contact_name: "contact_name",
-  address: "property_address",
-  property_address: "property_address",
-  city: "city",
-  state_zip: "state_zip",
-  zip: "state_zip",
-  county: "county",
-  phone: "phone",
-  access: "access_info",
-  access_info: "access_info",
-  fee: "fee",
-  tech_fee: "tech_fee",
-  notes: "notes"
-};
-
-const prefillLabels: Record<string, string> = {
-  client: "Client",
-  lender_contact: "Lender contact",
-  product_type: "Product type",
-  loan_type: "Loan type",
-  due_date: "Due date",
-  priority: "Priority",
-  borrower: "Borrower",
-  contact_name: "Contact name",
-  property_address: "Property address",
-  city: "City",
-  state_zip: "State / ZIP",
-  county: "County",
-  phone: "Phone",
-  access_info: "Contact / access info",
-  fee: "Fee",
-  tech_fee: "Tech fee",
-  notes: "Internal notes"
-};
-
-function normalizeHeader(header: string) {
-  return header.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-}
-
-function parseCsvLine(line: string) {
-  const values: string[] = [];
-  let current = "";
-  let inQuotes = false;
-  for (const char of line) {
-    if (char === "\"") {
-      inQuotes = !inQuotes;
-      continue;
-    }
-    if (char === "," && !inQuotes) {
-      values.push(current.trim());
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-  values.push(current.trim());
-  return values;
-}
-
-function buildCsvPrefill(fileName: string, text: string): OrderIntakePrefill {
-  const rows = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const headers = rows[0] ? parseCsvLine(rows[0]) : [];
-  const values = rows[1] ? parseCsvLine(rows[1]) : [];
-  const fields = headers.flatMap((header, index) => {
-    const key = prefillHeaderMap[normalizeHeader(header)];
-    const value = values[index]?.trim();
-    if (!key || !value) return [];
-    return [{ key, label: prefillLabels[key] ?? header, value, confidence: 0.86 }];
-  });
-
-  return {
-    sourceName: fileName,
-    sourceType: "CSV",
-    confidence: fields.length ? 0.86 : 0.34,
-    fields,
-    warnings: fields.length ? ["CSV mapped by header names. Review fee, due date, and access details before creating the order."] : ["No recognizable order headers were found. Try borrower, address, client, county, product, fee, and due_date columns."],
-    appliedAt: new Date().toISOString()
-  };
-}
-
-function buildPdfPrefill(fileName: string): OrderIntakePrefill {
-  return {
-    sourceName: fileName,
-    sourceType: "PDF",
-    confidence: 0.72,
-    fields: [
-      { key: "client", label: "Client", value: "HarborPoint Lending", confidence: 0.79 },
-      { key: "lender_contact", label: "Lender contact", value: "Direct Lender - Mallory Chen", confidence: 0.74 },
-      { key: "product_type", label: "Product type", value: "1004 URAR", confidence: 0.82 },
-      { key: "loan_type", label: "Loan type", value: "Conventional", confidence: 0.77 },
-      { key: "due_date", label: "Due date", value: "2026-07-11", confidence: 0.7 },
-      { key: "borrower", label: "Borrower", value: "Morgan Ellis", confidence: 0.76 },
-      { key: "property_address", label: "Property address", value: "2218 Briarwood Crossing", confidence: 0.8 },
-      { key: "city", label: "City", value: "Marietta", confidence: 0.74 },
-      { key: "state_zip", label: "State / ZIP", value: "GA 30064", confidence: 0.68 },
-      { key: "county", label: "County", value: "Cobb", confidence: 0.71 },
-      { key: "fee", label: "Fee", value: "650", confidence: 0.7 },
-      { key: "tech_fee", label: "Tech fee", value: "35", confidence: 0.64 },
-      { key: "notes", label: "Internal notes", value: `Prefilled from ${fileName}. Verify parsed PDF fields before creating the order.`, confidence: 0.72 }
-    ],
-    warnings: ["PDF extraction is a demo placeholder. CAS captures likely fields now and can later connect OCR/document AI for production parsing."],
-    appliedAt: new Date().toISOString()
-  };
-}
 
 export function NewOrderView({
   user,
   organization,
   template,
+  existingOrders,
   onTemplateChange,
   onRestoreTemplate,
   onCreateOrder
@@ -139,23 +20,138 @@ export function NewOrderView({
   user: PortalUser;
   organization: Organization;
   template: OrderFormTemplate;
+  existingOrders: Order[];
   onTemplateChange: (template: OrderFormTemplate) => void;
   onRestoreTemplate: () => void;
-  onCreateOrder: (kind: "internal" | "client" | "amc", templateName?: string) => void;
+  onCreateOrder: (kind: "internal" | "client" | "amc", templateName?: string, appliedImport?: OrderIntakePrefill | null, formValues?: Record<string, string>) => void;
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
   const orderKind = organization.type === "amc" ? "amc" : user.role === "client_user" ? "client" : "internal";
   const visibleSections = template.sections.filter((section) => !section.hidden);
   const canCustomize = canCustomizeOrderForms(user);
-  const [prefill, setPrefill] = useState<OrderIntakePrefill | null>(null);
-  const prefillValue = (key: string, fallback = "") => prefill?.fields.find((field) => field.key === key)?.value ?? fallback;
+  const [importAnalysis, setImportAnalysis] = useState<OrderIntakePrefill | null>(null);
+  const [appliedImport, setAppliedImport] = useState<OrderIntakePrefill | null>(null);
+  const [mappingDraft, setMappingDraft] = useState<Record<string, { decision: OrderImportDecision; mappedTo: string; value: string }>>({});
+  const [importTemplates, setImportTemplates] = useState<OrderImportTemplate[]>([
+    {
+      id: "template-harborpoint-csv",
+      organizationId: organization.id,
+      name: "HarborPoint CSV export",
+      client: "HarborPoint Lending",
+      sourceType: "CSV",
+      columns: [
+        { sourceLabel: "Borrower Full Name", targetKey: "borrower" },
+        { sourceLabel: "Subject Address", targetKey: "property_address" },
+        { sourceLabel: "Appraisal Form", targetKey: "product_type" }
+      ],
+      updatedAt: "Saved demo template"
+    }
+  ]);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const prefillValue = (key: string, fallback = "") => appliedImport?.fields.find((field) => field.key === key || field.mappedTo === key)?.value ?? fallback;
   const clientOptions = Array.from(new Set([prefillValue("client", clients[0]), ...clients].filter(Boolean)));
   const productOptions = Array.from(new Set([prefillValue("product_type", productTypes[0]), ...productTypes].filter(Boolean)));
   const loanTypeOptions = Array.from(new Set([prefillValue("loan_type", "Conventional"), "Conventional", "FHA", "VA", "USDA", "Jumbo", "HELOC", "Portfolio"].filter(Boolean)));
+  const stateZipValue = [prefillValue("state"), prefillValue("zip")].filter(Boolean).join(" ") || "GA 30064";
 
   async function handlePrefillUpload(file: File | null) {
     if (!file) return;
-    const isCsv = file.name.toLowerCase().endsWith(".csv") || file.type.includes("csv");
-    setPrefill(isCsv ? buildCsvPrefill(file.name, await file.text()) : buildPdfPrefill(file.name));
+    setImportError("");
+    setIsImporting(true);
+    try {
+      const analysis = await demoOrderImportProvider.analyze(file, existingOrders, importTemplates);
+      setImportAnalysis(analysis);
+      setMappingDraft(Object.fromEntries(analysis.fields.map((field) => [field.id, {
+        decision: field.decision ?? (field.confidence >= 0.58 ? "accept" : "correct"),
+        mappedTo: String(field.mappedTo ?? field.key),
+        value: field.value
+      }])));
+    } catch {
+      setImportError("CAS could not read that file. Try a PDF, CSV, or spreadsheet export with one order per row.");
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  function updateMappingDraft(fieldId: string, patch: Partial<{ decision: OrderImportDecision; mappedTo: string; value: string }>) {
+    setMappingDraft((current) => ({
+      ...current,
+      [fieldId]: { ...current[fieldId], ...patch }
+    }));
+  }
+
+  function applyImportToForm() {
+    if (!importAnalysis) return;
+    const correctedCount = Object.values(mappingDraft).filter((draft) => draft.decision === "correct" || draft.decision === "remap").length;
+    const ignoredCount = Object.values(mappingDraft).filter((draft) => draft.decision === "ignore").length;
+    const fields = importAnalysis.fields.flatMap<OrderImportField>((field) => {
+      const draft = mappingDraft[field.id];
+      if (!draft || draft.decision === "ignore") return [];
+      return [{
+        ...field,
+        key: draft.mappedTo,
+        mappedTo: draft.mappedTo,
+        value: draft.value,
+        decision: draft.decision,
+        status: field.confidence < 0.58 ? "low_confidence" : "mapped"
+      }];
+    });
+
+    setAppliedImport({
+      ...importAnalysis,
+      fields,
+      mappingHistory: [
+        {
+          id: `mapping-${Date.now()}`,
+          at: "Just now",
+          actor: user.name,
+          sourceName: importAnalysis.sourceName,
+          acceptedCount: fields.length,
+          correctedCount,
+          ignoredCount,
+          templateName: importAnalysis.templateName
+        },
+        ...importAnalysis.mappingHistory
+      ],
+      appliedAt: new Date().toISOString()
+    });
+  }
+
+  function saveCurrentMappingTemplate() {
+    if (!importAnalysis) return;
+    const columns = importAnalysis.fields
+      .map((field) => ({ sourceLabel: field.sourceLabel ?? field.label, targetKey: (mappingDraft[field.id]?.mappedTo ?? field.key) as OrderImportFieldKey | string }))
+      .filter((column) => column.sourceLabel);
+    setImportTemplates((current) => [
+      {
+        id: `import-template-${Date.now()}`,
+        organizationId: organization.id,
+        name: `${importAnalysis.sourceName} mapping`,
+        client: mappingDraft[importAnalysis.fields.find((field) => field.key === "client")?.id ?? ""]?.value,
+        sourceType: importAnalysis.sourceType,
+        columns,
+        updatedAt: "Just now"
+      },
+      ...current
+    ]);
+  }
+
+  function resetImport() {
+    setImportAnalysis(null);
+    setAppliedImport(null);
+    setMappingDraft({});
+    setImportError("");
+  }
+
+  const primaryImportFields = importAnalysis?.fields.filter((field) => field.required || field.confidence < 0.72).slice(0, 10) ?? [];
+  const additionalImportFields = importAnalysis?.fields.filter((field) => !primaryImportFields.some((primary) => primary.id === field.id)) ?? [];
+  const acceptedImportCount = Object.values(mappingDraft).filter((draft) => draft.decision !== "ignore").length;
+
+  function createOrder(kind: "internal" | "client" | "amc") {
+    const formData = formRef.current ? new FormData(formRef.current) : new FormData();
+    const formValues = Object.fromEntries(Array.from(formData.entries()).map(([key, value]) => [key, String(value)]));
+    onCreateOrder(kind, template.name, appliedImport, formValues);
   }
 
   function updateTemplate(sections: OrderFormTemplate["sections"]) {
@@ -222,7 +218,7 @@ export function NewOrderView({
 
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <form key={prefill?.appliedAt ?? "manual"} className="panel p-5">
+      <form ref={formRef} key={appliedImport?.appliedAt ?? "manual"} className="panel p-5">
         <SectionHeader icon={Plus} title="New Order Intake" />
         <div className="mt-3 rounded-md border border-brand-100 bg-brand-50 px-3 py-2 text-sm text-brand-800">
           Creating as {organization.name} ({roleLabel(user.role)}) with {template.name}.
@@ -240,21 +236,99 @@ export function NewOrderView({
             </div>
           </div>
         </div>
+        <section className="mt-4 rounded-md border border-line bg-white p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Sparkles className="h-4 w-4 text-brand-600" /> Import Order</div>
+              <p className="mt-1 text-sm text-slate-500">Upload a PDF, CSV, or spreadsheet export, then review mapped values before they touch the form.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <label className="primary-button cursor-pointer">
+                <UploadCloud className="h-4 w-4" />
+                Select file
+                <input className="hidden" type="file" accept=".pdf,.csv,.xlsx,.xls,application/pdf,text/csv" onChange={(event) => void handlePrefillUpload(event.target.files?.[0] ?? null)} />
+              </label>
+              {(importAnalysis || appliedImport) && <button type="button" className="secondary-button" onClick={resetImport}><RotateCcw className="h-4 w-4" /> Reset</button>}
+            </div>
+          </div>
+
+          {isImporting && <div className="mt-4 rounded-md border border-brand-100 bg-brand-50 px-3 py-2 text-sm text-brand-800">Analyzing order file...</div>}
+          {importError && <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{importError}</div>}
+          {appliedImport && (
+            <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {appliedImport.fields.length} mapped values applied from {appliedImport.sourceName}. The original file will be attached when the order is created.
+            </div>
+          )}
+
+          {importAnalysis && (
+            <div className="mt-4 grid gap-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <InfoRow label="Source" value={`${importAnalysis.sourceType} - ${importAnalysis.sourceName}`} />
+                <InfoRow label="Confidence" value={`${Math.round(importAnalysis.confidence * 100)}%`} />
+                <InfoRow label="Mapped" value={`${acceptedImportCount}/${importAnalysis.fields.length}`} />
+                <InfoRow label="Duplicates" value={importAnalysis.duplicates.length ? `${importAnalysis.duplicates.length} possible` : "None found"} />
+              </div>
+
+              {(importAnalysis.errors.length > 0 || importAnalysis.warnings.length > 0 || importAnalysis.duplicates.length > 0) && (
+                <div className="grid gap-2">
+                  {importAnalysis.errors.map((error) => <div key={error} className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>)}
+                  {importAnalysis.warnings.map((warning) => <div key={warning} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{warning}</div>)}
+                  {importAnalysis.duplicates.map((duplicate) => (
+                    <div key={duplicate.orderId} className="rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-amber-800">
+                      Possible duplicate: {duplicate.fileNumber} - {duplicate.borrower} - {duplicate.matchReason} match
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="rounded-md border border-line">
+                <div className="flex items-center justify-between border-b border-line px-3 py-2">
+                  <div className="text-sm font-semibold text-slate-950">Review mapped values</div>
+                  <span className="text-xs text-slate-500">Accept, correct, ignore, or remap</span>
+                </div>
+                <ImportMappingRows fields={primaryImportFields} draft={mappingDraft} onChange={updateMappingDraft} />
+                {additionalImportFields.length > 0 && (
+                  <details className="border-t border-line">
+                    <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-slate-700">Advanced mappings ({additionalImportFields.length})</summary>
+                    <ImportMappingRows fields={additionalImportFields} draft={mappingDraft} onChange={updateMappingDraft} />
+                  </details>
+                )}
+              </div>
+
+              <details className="rounded-md border border-line bg-slate-50 p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-900">Saved mapping templates</summary>
+                <div className="mt-3 grid gap-2 text-sm">
+                  {importTemplates.map((savedTemplate) => (
+                    <div key={savedTemplate.id} className="rounded-md border border-line bg-white px-3 py-2">
+                      <div className="font-medium text-slate-900">{savedTemplate.name}</div>
+                      <div className="mt-1 text-xs text-slate-500">{savedTemplate.sourceType} - {savedTemplate.columns.length} column mappings - {savedTemplate.updatedAt}</div>
+                    </div>
+                  ))}
+                </div>
+              </details>
+
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="primary-button" disabled={importAnalysis.errors.length > 0} onClick={applyImportToForm}><ClipboardCheck className="h-4 w-4" /> Apply to form</button>
+                <button type="button" className="secondary-button" onClick={saveCurrentMappingTemplate}><Save className="h-4 w-4" /> Save mapping template</button>
+              </div>
+            </div>
+          )}
+        </section>
         <div className="mt-5 grid gap-5">
           <section className="rounded-md border border-line p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Building2 className="h-4 w-4 text-brand-600" /> Client and Product</div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <Field label="Client"><select className="control w-full" defaultValue={prefillValue("client", clients[0])}>{clientOptions.map((client) => <option key={client}>{client}</option>)}</select></Field>
-              <Field label="Lender contact"><input className="control w-full" defaultValue={prefillValue("lender_contact", "Direct Lender - Mallory Chen")} /></Field>
-              <Field label="Product type"><select className="control w-full" defaultValue={prefillValue("product_type", productTypes[0])}>{productOptions.map((product) => <option key={product}>{product}</option>)}</select></Field>
+              <Field label="Client"><select name="client" className="control w-full" defaultValue={prefillValue("client", clients[0])}>{clientOptions.map((client) => <option key={client}>{client}</option>)}</select></Field>
+              <Field label="Lender contact"><input name="lender_contact" className="control w-full" defaultValue={prefillValue("lender_contact", "Direct Lender - Mallory Chen")} /></Field>
+              <Field label="Product type"><select name="product_type" className="control w-full" defaultValue={prefillValue("product_type", productTypes[0])}>{productOptions.map((product) => <option key={product}>{product}</option>)}</select></Field>
               <Field label="Loan type">
-                <select className="control w-full" defaultValue={prefillValue("loan_type", "Conventional")}>
+                <select name="loan_type" className="control w-full" defaultValue={prefillValue("loan_type", "Conventional")}>
                   {loanTypeOptions.map((loanType) => <option key={loanType}>{loanType}</option>)}
                 </select>
               </Field>
-              <Field label="Due date"><input className="control w-full" type="date" defaultValue={prefillValue("due_date", "2026-07-07")} /></Field>
+              <Field label="Due date"><input name="due_date" className="control w-full" type="date" defaultValue={prefillValue("due_date", "2026-07-07")} /></Field>
               <Field label="Priority">
-                <select className="control w-full" defaultValue={prefillValue("priority", "Standard")}>
+                <select name="priority" className="control w-full" defaultValue={prefillValue("priority", "Standard")}>
                   <option>Standard</option>
                   <option>Watch</option>
                   <option>High</option>
@@ -267,24 +341,24 @@ export function NewOrderView({
           <section className="rounded-md border border-line p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Home className="h-4 w-4 text-brand-600" /> Borrower and Property</div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <Field label="Borrower"><input className="control w-full" defaultValue={prefillValue("borrower")} placeholder="Borrower name" /></Field>
-              <Field label="Contact name"><input className="control w-full" defaultValue={prefillValue("contact_name")} placeholder="Listing agent, borrower, or tenant" /></Field>
-              <Field label="Property address" span><input className="control w-full" defaultValue={prefillValue("property_address")} placeholder="Street address" /></Field>
-              <Field label="City"><input className="control w-full" defaultValue={prefillValue("city")} placeholder="City" /></Field>
-              <Field label="State / ZIP"><input className="control w-full" defaultValue={prefillValue("state_zip")} placeholder="GA 30064" /></Field>
-              <Field label="County"><input className="control w-full" defaultValue={prefillValue("county")} placeholder="County" /></Field>
-              <Field label="Phone"><input className="control w-full" defaultValue={prefillValue("phone")} placeholder="(555) 010-0123" /></Field>
-              <Field label="Contact / access info" span><textarea className="control min-h-24 w-full py-3" defaultValue={prefillValue("access_info")} placeholder="Gate codes, lockbox, inspection windows, occupant instructions" /></Field>
+              <Field label="Borrower"><input name="borrower" className="control w-full" defaultValue={prefillValue("borrower")} placeholder="Borrower name" /></Field>
+              <Field label="Contact name"><input name="contact_name" className="control w-full" defaultValue={prefillValue("contact_name")} placeholder="Listing agent, borrower, or tenant" /></Field>
+              <Field label="Property address" span><input name="property_address" className="control w-full" defaultValue={prefillValue("property_address")} placeholder="Street address" /></Field>
+              <Field label="City"><input name="city" className="control w-full" defaultValue={prefillValue("city")} placeholder="City" /></Field>
+              <Field label="State / ZIP"><input name="state_zip" className="control w-full" defaultValue={stateZipValue} placeholder="GA 30064" /></Field>
+              <Field label="County"><input name="county" className="control w-full" defaultValue={prefillValue("county")} placeholder="County" /></Field>
+              <Field label="Phone"><input name="phone" className="control w-full" defaultValue={prefillValue("phone")} placeholder="(555) 010-0123" /></Field>
+              <Field label="Contact / access info" span><textarea name="access_info" className="control min-h-24 w-full py-3" defaultValue={prefillValue("access_info")} placeholder="Gate codes, lockbox, inspection windows, occupant instructions" /></Field>
             </div>
           </section>
 
           <section className="rounded-md border border-line p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><ReceiptText className="h-4 w-4 text-brand-600" /> Fees and Assignment</div>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <Field label="Fee"><input className="control w-full" defaultValue={prefillValue("fee", "650")} inputMode="numeric" /></Field>
-              <Field label="Tech fee"><input className="control w-full" defaultValue={prefillValue("tech_fee", "35")} inputMode="numeric" /></Field>
+              <Field label="Fee"><input name="fee" className="control w-full" defaultValue={prefillValue("fee", "650")} inputMode="numeric" /></Field>
+              <Field label="Tech fee"><input name="tech_fee" className="control w-full" defaultValue={prefillValue("tech_fee", "35")} inputMode="numeric" /></Field>
               <Field label="Assignment preference">
-                <select className="control w-full">
+                <select name="assignment_preference" className="control w-full">
                   <option>Best workload fit</option>
                   <option>Preferred appraiser</option>
                   <option>County specialist</option>
@@ -292,45 +366,46 @@ export function NewOrderView({
                 </select>
               </Field>
               <Field label="Preferred appraiser">
-                <select className="control w-full">
+                <select name="preferred_appraiser" className="control w-full">
                   <option>CAS recommendation</option>
                   {appraisers.map((appraiser) => <option key={appraiser.id}>{appraiser.name}</option>)}
                 </select>
               </Field>
-              <Field label="Internal notes" span><textarea className="control min-h-24 w-full py-3" defaultValue={prefillValue("notes")} placeholder="Client rules, fee exception, underwriting sensitivity, risk flags" /></Field>
+              <Field label="Internal notes" span><textarea name="notes" className="control min-h-24 w-full py-3" defaultValue={prefillValue("notes", prefillValue("special_instructions"))} placeholder="Client rules, fee exception, underwriting sensitivity, risk flags" /></Field>
             </div>
           </section>
 
           <section className="rounded-md border border-dashed border-brand-200 bg-brand-50/40 p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><UploadCloud className="h-4 w-4 text-brand-600" /> Upload PDF or CSV to prefill</div>
-                <p className="mt-1 text-sm text-slate-500">For clients without LOS sync, upload an order PDF or CSV and CAS will fill the fields it can identify.</p>
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><UploadCloud className="h-4 w-4 text-brand-600" /> Import source and order documents</div>
+                <p className="mt-1 text-sm text-slate-500">The confirmed import file is preserved with the order. Supporting documents can still be uploaded after creation.</p>
               </div>
-              <label className="secondary-button cursor-pointer">
-                <UploadCloud className="h-4 w-4" />
-                Select file
-                <input className="hidden" type="file" accept=".pdf,.csv,application/pdf,text/csv" onChange={(event) => void handlePrefillUpload(event.target.files?.[0] ?? null)} />
-              </label>
             </div>
-            {prefill && (
+            {appliedImport ? (
               <div className="mt-4 grid gap-3 rounded-md border border-line bg-white p-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 font-semibold text-slate-950">
-                    {prefill.sourceType === "CSV" ? <TableProperties className="h-4 w-4 text-brand-600" /> : <FileText className="h-4 w-4 text-brand-600" />}
-                    {prefill.sourceName}
+                    {appliedImport.sourceType === "CSV" ? <TableProperties className="h-4 w-4 text-brand-600" /> : <FileText className="h-4 w-4 text-brand-600" />}
+                    {appliedImport.sourceName}
                   </div>
-                  <span className="chip border-emerald-200 bg-emerald-50 text-emerald-700">{Math.round(prefill.confidence * 100)}% confidence</span>
+                  <span className="chip border-emerald-200 bg-emerald-50 text-emerald-700">{Math.round(appliedImport.confidence * 100)}% confidence</span>
                 </div>
                 <div className="grid gap-2 md:grid-cols-2">
-                  {prefill.fields.slice(0, 8).map((field) => (
+                  {appliedImport.fields.slice(0, 8).map((field) => (
                     <div key={`${field.key}-${field.value}`} className="rounded-md border border-line px-3 py-2">
                       <div className="text-xs text-slate-500">{field.label}</div>
                       <div className="mt-1 truncate font-medium text-slate-900">{field.value}</div>
                     </div>
                   ))}
                 </div>
-                {prefill.warnings.map((warning) => <div key={warning} className="text-xs text-amber-800">{warning}</div>)}
+                <div className="text-xs text-slate-500">
+                  Mapping history will be written to the audit trail. Duplicate candidates: {appliedImport.duplicates.length || "none"}.
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-md border border-line bg-white p-3 text-sm text-slate-500">
+                No import has been applied. Use Import Order above when a lender or client sends a PDF, engagement letter, CSV, or spreadsheet export.
               </div>
             )}
           </section>
@@ -354,9 +429,9 @@ export function NewOrderView({
           </section>
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-5">
-          <button type="button" className="primary-button" onClick={() => onCreateOrder(orderKind, template.name)}><CheckCircle2 className="h-4 w-4" /> Create order</button>
-          <label className="secondary-button cursor-pointer"><Sparkles className="h-4 w-4" /> Parse order file<input className="hidden" type="file" accept=".pdf,.csv,application/pdf,text/csv" onChange={(event) => void handlePrefillUpload(event.target.files?.[0] ?? null)} /></label>
-          <button type="button" className="secondary-button" onClick={() => onCreateOrder("internal", template.name)}><UserCheck className="h-4 w-4" /> Save and assign</button>
+          <button type="button" className="primary-button" onClick={() => createOrder(orderKind)}><CheckCircle2 className="h-4 w-4" /> Create order</button>
+          <button type="button" className="secondary-button" onClick={() => createOrder("internal")}><UserCheck className="h-4 w-4" /> Save and assign</button>
+          {appliedImport && <span className="text-sm text-slate-500">Using reviewed values from {appliedImport.sourceName}.</span>}
         </div>
       </form>
       <aside className="grid content-start gap-5">
@@ -395,7 +470,7 @@ export function NewOrderView({
           <SectionHeader icon={Sparkles} title="Intake Intelligence" />
           <div className="mt-4 space-y-3 text-sm">
             {[
-              ["Auto-fill", prefill ? `${prefill.fields.length} fields filled from ${prefill.sourceType}` : "Borrower, address, client, product, and fee fields"],
+              ["Auto-fill", appliedImport ? `${appliedImport.fields.length} fields filled from ${appliedImport.sourceType}` : "Borrower, address, client, product, and fee fields"],
               ["Complexity", "Flag rural, luxury, acreage, FHA, VA, and repair risk"],
               ["Assignment", "Recommend appraiser by coverage, workload, and revision rate"],
               ["Documents", "Detect missing engagement letter, contract, W-9, or E&O"]
@@ -425,5 +500,79 @@ export function NewOrderView({
         </div>
       </aside>
     </section>
+  );
+}
+
+type OrderImportDraft = Record<string, { decision: OrderImportDecision; mappedTo: string; value: string }>;
+
+function ImportMappingRows({
+  fields,
+  draft,
+  onChange
+}: {
+  fields: OrderImportField[];
+  draft: OrderImportDraft;
+  onChange: (fieldId: string, patch: Partial<OrderImportDraft[string]>) => void;
+}) {
+  if (!fields.length) {
+    return <div className="px-3 py-4 text-sm text-slate-500">No extracted values in this group.</div>;
+  }
+
+  return (
+    <div className="divide-y divide-line">
+      {fields.map((field) => {
+        const current = draft[field.id] ?? {
+          decision: field.decision ?? "accept",
+          mappedTo: String(field.mappedTo ?? field.key),
+          value: field.value
+        };
+        const lowConfidence = field.confidence < 0.72 || field.status === "low_confidence";
+        const isIgnored = current.decision === "ignore";
+
+        return (
+          <div key={field.id} className="grid gap-3 p-3 lg:grid-cols-[minmax(150px,1fr)_minmax(200px,1.4fr)_170px_140px] lg:items-center">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="truncate text-sm font-semibold text-slate-950">{field.sourceLabel ?? field.label}</div>
+                <span className={`chip ${lowConfidence ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                  {lowConfidence && <AlertTriangle className="h-3 w-3" />}
+                  {Math.round(field.confidence * 100)}%
+                </span>
+              </div>
+              <div className="mt-1 truncate text-xs text-slate-500">Proposed CAS field: {field.label}</div>
+            </div>
+
+            <input
+              className="control w-full"
+              disabled={isIgnored}
+              value={current.value}
+              onChange={(event) => onChange(field.id, { value: event.target.value, decision: current.decision === "accept" ? "correct" : current.decision })}
+            />
+
+            <select
+              className="control w-full"
+              disabled={isIgnored}
+              value={current.mappedTo}
+              onChange={(event) => onChange(field.id, { mappedTo: event.target.value, decision: "remap" })}
+            >
+              {orderImportFieldDefinitions.map((definition) => (
+                <option key={definition.key} value={definition.key}>{definition.label}</option>
+              ))}
+            </select>
+
+            <select
+              className="control w-full"
+              value={current.decision}
+              onChange={(event) => onChange(field.id, { decision: event.target.value as OrderImportDecision })}
+            >
+              <option value="accept">Accept</option>
+              <option value="correct">Correct</option>
+              <option value="remap">Remap</option>
+              <option value="ignore">Ignore</option>
+            </select>
+          </div>
+        );
+      })}
+    </div>
   );
 }

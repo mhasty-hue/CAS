@@ -31,7 +31,7 @@ import {
   webhookEvents,
   workflowTasks
 } from "@/data/platform";
-import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationTemplate, Order, OrderFormTemplate, OrderStatus, Organization, OrganizationInvitation, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationTemplate, Order, OrderFormTemplate, OrderIntakePrefill, OrderStatus, Organization, OrganizationInvitation, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
 import { loadCasAuthContext } from "@/lib/auth/context";
 import { createDeliveryRecord } from "@/lib/delivery/service";
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
@@ -513,42 +513,99 @@ export function CasApp() {
     }));
   }
 
-  function handleCreateOrder(kind: "internal" | "client" | "amc", templateName = orderFormTemplate.name) {
+  function handleCreateOrder(kind: "internal" | "client" | "amc", templateName = orderFormTemplate.name, appliedImport: OrderIntakePrefill | null = null, formValues: Record<string, string> = {}) {
     const nextNumber = `CAA-26-${1060 + orderList.length}`;
+    const importValue = (key: string) => appliedImport?.fields.find((field) => field.key === key || field.mappedTo === key)?.value.trim() ?? "";
+    const value = (key: string, fallback = "") => formValues[key]?.trim() || importValue(key) || fallback;
+    const numberValue = (key: string, fallback: number) => {
+      const parsed = Number(value(key, String(fallback)).replace(/[$,]/g, ""));
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+    const defaultPriority: Order["priority"] = kind === "amc" ? "High" : "Standard";
+    const priorityValue = value("priority", defaultPriority);
+    const priorityOptions: Order["priority"][] = ["Rush", "High", "Standard", "Watch"];
+    const priority = priorityOptions.includes(priorityValue as Order["priority"]) ? priorityValue as Order["priority"] : defaultPriority;
+    const stateZipParts = value("state_zip", [importValue("state"), importValue("zip")].filter(Boolean).join(" ") || "GA 30339").split(/\s+/);
+    const state = importValue("state") || stateZipParts[0] || "GA";
+    const zip = importValue("zip") || stateZipParts.slice(1).join(" ") || "30339";
+    const importHistory = appliedImport?.mappingHistory[0];
+    const importIdentifiers = [
+      importValue("amc_file_number") && `Client file ${importValue("amc_file_number")}`,
+      importValue("loan_number") && `Loan ${importValue("loan_number")}`,
+      importValue("loan_officer") && `LO ${importValue("loan_officer")}`,
+      importValue("processor") && `Processor ${importValue("processor")}`
+    ].filter(Boolean).join(" | ");
+    const importDocument: Order["documentsList"][number] | null = appliedImport
+      ? {
+          id: `${nextNumber}-import-source`,
+          name: appliedImport.originalFile.name,
+          type: `${appliedImport.sourceType} order import source`,
+          status: appliedImport.errors.length ? "Needs review" : "Ready",
+          uploadedBy: activeUser.name,
+          uploadedAt: "Just now"
+        }
+      : null;
+    const documentsList: Order["documentsList"] = [
+      {
+        id: `${nextNumber}-engagement`,
+        name: "Engagement letter placeholder.pdf",
+        type: "Engagement",
+        status: "Needs review",
+        uploadedBy: activeUser.name,
+        uploadedAt: "Just now"
+      },
+      ...(importDocument ? [importDocument] : [])
+    ];
+    const importNote: Note | null = appliedImport
+      ? {
+          id: `${Date.now()}-import-note`,
+          author: activeUser.name,
+          body: `Smart import reviewed from ${appliedImport.sourceName}. Accepted ${importHistory?.acceptedCount ?? appliedImport.fields.length}, corrected ${importHistory?.correctedCount ?? 0}, ignored ${importHistory?.ignoredCount ?? 0}. ${appliedImport.duplicates.length ? `${appliedImport.duplicates.length} possible duplicate match(es) were flagged.` : "No possible duplicate matches were flagged."}`,
+          visibility: "internal",
+          createdAt: "Just now"
+        }
+      : null;
+    const staffNote = value("notes");
     const newOrder: Order = {
       id: `ord-${Date.now()}`,
       fileNumber: nextNumber,
-      productType: kind === "amc" ? "FHA 1004" : "1004 URAR",
-      client: activeUser.clientName ?? activeOrganization.name,
+      productType: value("product_type", kind === "amc" ? "FHA 1004" : "1004 URAR"),
+      client: value("client", activeUser.clientName ?? activeOrganization.name),
       amc: activeOrganization.type === "amc" ? activeOrganization.name : "Direct Lender",
-      borrower: kind === "client" ? "New Client Borrower" : "New Intake Borrower",
-      address: "1220 Portal Created Drive",
-      city: "Atlanta",
-      state: "GA",
-      zip: "30339",
-      county: "Cobb",
+      borrower: value("borrower", kind === "client" ? "New Client Borrower" : "New Intake Borrower"),
+      address: value("property_address", "1220 Portal Created Drive"),
+      city: value("city", "Atlanta"),
+      state,
+      zip,
+      county: value("county", "Cobb"),
       appraiser: "Unassigned",
       reviewer: "Maya Chen",
       orderedDate: "2026-07-06",
-      dueDate: "2026-07-11",
+      dueDate: value("due_date", "2026-07-11"),
       status: "New",
-      priority: kind === "amc" ? "High" : "Standard",
-      fee: kind === "amc" ? 625 : 575,
-      techFee: 35,
+      priority,
+      fee: numberValue("fee", kind === "amc" ? 625 : 575),
+      techFee: numberValue("tech_fee", 35),
       appraiserPayout: 0,
-      documents: 2,
+      documents: documentsList.length,
       lastUpdate: `Created by ${activeUser.name}`,
       nextAction: "Review intake and assign",
-      loanType: "Conventional",
-      occupancy: "Primary residence",
-      propertyType: "Single family",
-      contactName: activeUser.name,
-      contactPhone: activeOrganization.phone,
-      accessInfo: "Portal order placeholder. Confirm access before assignment.",
-      assignmentPreference: "Best workload fit",
-      lenderContact: activeUser.name,
+      loanType: value("loan_type", "Conventional"),
+      occupancy: value("occupancy", "Primary residence"),
+      propertyType: value("property_type", "Single family"),
+      contactName: value("contact_name", activeUser.name),
+      contactPhone: value("phone", activeOrganization.phone),
+      accessInfo: value("access_info", "Portal order placeholder. Confirm access before assignment."),
+      assignmentPreference: value("assignment_preference", "Best workload fit"),
+      lenderContact: value("lender_contact", activeUser.name),
       parcelNumber: "Pending",
       timeline: [
+        ...(appliedImport ? [{
+          label: "Smart import reviewed",
+          detail: `${appliedImport.sourceName} mapped into intake before order creation`,
+          at: "Just now",
+          actor: activeUser.name
+        }] : []),
         {
           label: "Order placed",
           detail: `${activeOrganization.name} submitted the order through the portal`,
@@ -560,22 +617,21 @@ export function CasApp() {
         {
           id: `${Date.now()}-note`,
           author: activeUser.name,
-          body: `Created from ${templateName} intake template.`,
+          body: `Created from ${templateName} intake template.${importIdentifiers ? ` ${importIdentifiers}.` : ""}`,
           visibility: kind === "client" ? "client" : "internal",
           createdAt: "Just now"
-        }
+        },
+        ...(staffNote ? [{
+          id: `${Date.now()}-staff-note`,
+          author: activeUser.name,
+          body: staffNote,
+          visibility: "internal" as const,
+          createdAt: "Just now"
+        }] : []),
+        ...(importNote ? [importNote] : [])
       ],
       clientComments: [],
-      documentsList: [
-        {
-          id: `${nextNumber}-engagement`,
-          name: "Engagement letter placeholder.pdf",
-          type: "Engagement",
-          status: "Needs review",
-          uploadedBy: activeUser.name,
-          uploadedAt: "Just now"
-        }
-      ],
+      documentsList,
       assignmentHistory: [],
       revisionLog: [],
       auditTrail: [
@@ -584,7 +640,27 @@ export function CasApp() {
           action: "Portal order created",
           actor: activeUser.name,
           at: "Just now"
-        }
+        },
+        ...(appliedImport ? [
+          {
+            id: `${nextNumber}-import-audit`,
+            action: `Smart import source preserved: ${appliedImport.sourceName}`,
+            actor: activeUser.name,
+            at: "Just now"
+          },
+          {
+            id: `${nextNumber}-mapping-audit`,
+            action: `Import mapping confirmed: ${importHistory?.acceptedCount ?? appliedImport.fields.length} accepted, ${importHistory?.correctedCount ?? 0} corrected, ${importHistory?.ignoredCount ?? 0} ignored`,
+            actor: activeUser.name,
+            at: "Just now"
+          },
+          {
+            id: `${nextNumber}-duplicate-audit`,
+            action: `Duplicate check completed: ${appliedImport.duplicates.length} possible match${appliedImport.duplicates.length === 1 ? "" : "es"}`,
+            actor: activeUser.name,
+            at: "Just now"
+          }
+        ] : [])
       ],
       reviewItems: []
     };
@@ -1561,6 +1637,7 @@ export function CasApp() {
               user={activeUser}
               organization={activeOrganization}
               template={orderFormTemplate}
+              existingOrders={orderList}
               onTemplateChange={setOrderFormTemplate}
               onRestoreTemplate={() => setOrderFormTemplate(defaultOrderFormTemplate)}
               onCreateOrder={handleCreateOrder}

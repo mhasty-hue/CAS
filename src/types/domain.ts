@@ -1132,16 +1132,105 @@ export type WebhookEvent = {
   relatedOrderId?: string;
 };
 
+export type OrderImportSourceType = "PDF" | "CSV" | "Spreadsheet";
+export type OrderImportFieldStatus = "mapped" | "low_confidence" | "missing" | "ignored";
+export type OrderImportDecision = "accept" | "correct" | "ignore" | "remap";
+
+export type OrderImportFieldKey =
+  | "client"
+  | "borrower"
+  | "co_borrower"
+  | "property_address"
+  | "city"
+  | "state"
+  | "zip"
+  | "county"
+  | "loan_number"
+  | "loan_officer"
+  | "processor"
+  | "product_type"
+  | "loan_type"
+  | "loan_purpose"
+  | "occupancy"
+  | "property_type"
+  | "estimated_value"
+  | "purchase_price"
+  | "due_date"
+  | "requested_turn_time"
+  | "fee"
+  | "tech_fee"
+  | "contact_name"
+  | "phone"
+  | "contact_email"
+  | "access_info"
+  | "special_instructions"
+  | "amc_file_number"
+  | "lender_contact"
+  | "notes"
+  | "priority";
+
+export type OrderImportField = {
+  id: string;
+  key: OrderImportFieldKey | string;
+  label: string;
+  value: string;
+  confidence: number;
+  sourceLabel?: string;
+  sourceValue?: string;
+  mappedTo?: OrderImportFieldKey | string;
+  templateName?: string;
+  required?: boolean;
+  status?: OrderImportFieldStatus;
+  decision?: OrderImportDecision;
+};
+
+export type OrderImportDuplicateCandidate = {
+  orderId: string;
+  fileNumber: string;
+  borrower: string;
+  address: string;
+  matchReason: string;
+  confidence: number;
+};
+
+export type OrderImportTemplate = {
+  id: string;
+  organizationId: string;
+  name: string;
+  client?: string;
+  sourceType: OrderImportSourceType;
+  columns: Array<{ sourceLabel: string; targetKey: OrderImportFieldKey | string }>;
+  updatedAt: string;
+};
+
+export type OrderImportMappingHistory = {
+  id: string;
+  at: string;
+  actor: string;
+  sourceName: string;
+  acceptedCount: number;
+  correctedCount: number;
+  ignoredCount: number;
+  templateName?: string;
+};
+
 export type OrderIntakePrefill = {
   sourceName: string;
-  sourceType: "PDF" | "CSV";
+  sourceType: OrderImportSourceType;
   confidence: number;
-  fields: Array<{
-    key: string;
-    label: string;
-    value: string;
-    confidence: number;
-  }>;
+  provider: "demo" | "csv" | "pdf" | "spreadsheet" | "external";
+  originalFile: {
+    name: string;
+    type: string;
+    size: number;
+    preserved: boolean;
+    receivedAt: string;
+  };
+  fields: OrderImportField[];
   warnings: string[];
+  errors: string[];
+  duplicates: OrderImportDuplicateCandidate[];
+  mappingHistory: OrderImportMappingHistory[];
+  templateName?: string;
   appliedAt: string;
 };
