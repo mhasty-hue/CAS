@@ -10,6 +10,7 @@
     "supabase:provision-auth": "node scripts/supabase/phase10-provision-auth-users.mjs",
     "supabase:smoke": "node scripts/supabase/phase10-smoke.mjs",
     "supabase:smoke:auth": "node scripts/supabase/phase10-auth-smoke.mjs",
+    "supabase:smoke:security": "node scripts/supabase/phase10-security-smoke.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

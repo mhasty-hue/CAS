@@ -35,7 +35,7 @@ The CLI requires a Supabase access token for `link`. If a direct database connec
 
 3. Apply migrations only with `supabase db push`. Do not run `supabase db reset` against the remote development database unless the team explicitly approves a destructive reset.
 4. Seed development data with `supabase db push --include-seed` or `supabase seed` after migrations have been verified.
-5. Run `pnpm supabase:smoke` after migrations and seed data are in place. Optional authenticated checks require `CAS_TEST_USER_EMAIL` and `CAS_TEST_USER_PASSWORD` in the local environment.
+5. Run `pnpm supabase:smoke` after migrations and seed data are in place. Authenticated staging checks require the development-only `CAS_STAGE_*` test-user credentials in the ignored local environment. Run `pnpm supabase:smoke:auth` and `pnpm supabase:smoke:security` before treating the backend as release-ready.
 
 ## Schema
 
@@ -52,6 +52,24 @@ The Phase 5 migration extends that foundation with:
 - indexes, updated-at triggers, and tenant-aware RLS policies
 
 Later migrations add invite/public ordering infrastructure, production document management, workflow automation, smart order imports, hosted Supabase grants, auth profile creation, and storage bucket policies.
+
+Phase 10.1 hardens the staging foundation by:
+
+- Revoking direct client execution for privileged `SECURITY DEFINER` helpers while preserving their use inside RLS and triggers.
+- Setting fixed `search_path` values on CAS functions.
+- Moving `citext` into the `extensions` schema.
+- Replacing blanket public-order upload checks with enabled-intake, metadata-backed, MIME/size-limited, path-scoped policies.
+- Adding an `expires_at` cleanup marker for abandoned public-order upload metadata.
+
+## Auth and Security Release Checklist
+
+Some Supabase Auth protections are project settings rather than SQL migrations:
+
+- Enable leaked-password protection in Supabase Dashboard > Authentication > Password Security when the project plan supports it.
+- Set production password length to at least 12 characters and require mixed character classes.
+- Confirm email confirmation, password reset redirects, invite redirects, session duration, inactivity timeout, and abuse/rate-limit settings before production launch.
+- Keep service-role keys out of browser code and out of git; use only the publishable key in `NEXT_PUBLIC_*` variables.
+- Rerun Security Advisor and Performance Advisor after every migration.
 
 ## Local Seed
 

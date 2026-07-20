@@ -16,6 +16,7 @@ This branch establishes the first commercial-demo foundation for CAS:
 - RLS helpers and policies for tenant membership, admin access, permissions, vendor panel visibility, and sensitive accounting access
 - Seed data for a demo appraisal firm and AMC workspace
 - Phase 7 production foundation with Supabase Auth screens, invite acceptance, protected production shell behavior, public order-request links, notification preferences, assignment-level invoicing, invoice settings, and vendor-neutral LOS integration scaffolding
+- Phase 10.1 security hardening for exposed database helpers, fixed function search paths, private extension placement, and stricter public-order upload policies
 
 ## Local setup
 
@@ -51,7 +52,18 @@ Phase 10 authenticated staging validation uses ignored `.env.local` credentials 
 - AMC Admin: `CAS_STAGE_AMC_ADMIN_EMAIL` plus either `CAS_STAGE_AMC_ADMIN_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
 - Lender/Client User: `CAS_STAGE_CLIENT_USER_EMAIL` plus either `CAS_STAGE_CLIENT_USER_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
 
-Run `pnpm supabase:provision-auth` to create the development Auth users from ignored local credentials. Then link them to roles/memberships in the development database and run `pnpm supabase:smoke` plus `pnpm supabase:smoke:auth`.
+Run `pnpm supabase:provision-auth` to create the development Auth users from ignored local credentials. Then link them to roles/memberships in the development database and run `pnpm supabase:smoke`, `pnpm supabase:smoke:auth`, and `pnpm supabase:smoke:security`.
+
+Phase 10.1 release-readiness checklist:
+
+- Supabase Dashboard > Authentication > Password Security: enable leaked-password protection when the project plan supports it.
+- Supabase Dashboard > Authentication > Password Security: set production minimum password length to at least 12 characters and require mixed character classes.
+- Supabase Dashboard > Authentication > Providers > Email: confirm email confirmation is enabled before production launch.
+- Supabase Dashboard > Authentication > URL Configuration: confirm reset, invite, and callback URLs point to the deployed CAS domain.
+- Supabase Dashboard > Authentication > Sessions: configure production session duration, inactivity timeout, and single-session policy if required by the customer.
+- Supabase Dashboard > Authentication > Rate Limits and Bot Protection: review email, OTP, and public-intake abuse controls before enabling public ordering broadly.
+- Supabase Dashboard > Authentication > Multi-Factor: keep the MFA architecture enabled-ready for company admins and accounting users.
+- Supabase Dashboard > Database > Security Advisor and Performance Advisor: rerun advisors after every migration before release.
 
 Phase 7 adds:
 
@@ -73,6 +85,7 @@ pnpm build
 pnpm supabase:provision-auth
 pnpm supabase:smoke
 pnpm supabase:smoke:auth
+pnpm supabase:smoke:security
 ```
 
 The build compiles the app as static content and generates the typed route references used by Next.js.
