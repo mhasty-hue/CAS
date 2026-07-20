@@ -53,6 +53,12 @@ export type PermissionKey =
   | "manage_public_ordering"
   | "manage_notification_settings"
   | "manage_integrations"
+  | "view_connected_orders"
+  | "manage_connected_orders"
+  | "manage_bids"
+  | "respond_to_bids"
+  | "manage_subscriptions"
+  | "view_entitlements"
   | "upload_order_documents"
   | "view_internal_documents"
   | "view_client_documents"
@@ -1233,4 +1239,237 @@ export type OrderIntakePrefill = {
   mappingHistory: OrderImportMappingHistory[];
   templateName?: string;
   appliedAt: string;
+};
+
+export type EntitlementKey =
+  | "connected_order_participation"
+  | "connected_bid_response"
+  | "connected_document_exchange"
+  | "connected_messaging"
+  | "connected_assignment_updates"
+  | "full_order_management"
+  | "incoming_connected_orders"
+  | "client_management"
+  | "vendor_management"
+  | "bid_management"
+  | "county_coverage"
+  | "company_users"
+  | "review_management"
+  | "documents_communication"
+  | "accounting"
+  | "payroll"
+  | "invoicing"
+  | "calendar"
+  | "analytics"
+  | "imports"
+  | "custom_templates"
+  | "automations"
+  | "integrations"
+  | "public_order_page";
+
+export type SubscriptionPlan = {
+  id: string;
+  key: string;
+  name: string;
+  audience: "connected" | "workspace" | "enterprise";
+  description: string;
+  monthlyPriceCents: number;
+  entitlements: EntitlementKey[];
+};
+
+export type OrganizationSubscription = {
+  id: string;
+  organizationId: string;
+  planKey: string;
+  planName: string;
+  status: "connected_free" | "trial" | "active" | "past_due" | "grace_period" | "cancelled" | "expired";
+  startedAt?: string;
+  endsAt?: string;
+  gracePeriodEndsAt?: string;
+  entitlements: EntitlementKey[];
+};
+
+export type ConnectedParticipantRole =
+  | "primary_owner"
+  | "ordering_client"
+  | "lender"
+  | "amc"
+  | "appraisal_company"
+  | "assigned_appraiser"
+  | "reviewer"
+  | "delivery_recipient"
+  | "billing_party"
+  | "vendor"
+  | "public_requester";
+
+export type ConnectedParticipant = {
+  id: string;
+  orderId: string;
+  participantOrganizationId?: string;
+  participantUserId?: string;
+  participantEmail?: string;
+  participantName: string;
+  participantType: string;
+  role: ConnectedParticipantRole;
+  accessStatus: "invited" | "pending_acceptance" | "active" | "accepted" | "declined" | "expired" | "revoked";
+  permissions: string[];
+  documentVisibility: DocumentVisibility[];
+  messageChannels: string[];
+  statusVisibility: "full" | "assignment" | "client_summary" | "review" | "delivery";
+  accountingVisibility: "none" | "own_fee" | "invoice_only" | "full";
+  startsAt: string;
+  endsAt?: string;
+  revokedAt?: string;
+};
+
+export type ConnectedOrderSummary = {
+  orderId: string;
+  owningOrganizationId: string;
+  clientOrganizationId?: string;
+  fileNumber: string;
+  borrowerName: string;
+  propertyAddress: string;
+  city: string;
+  state: string;
+  zip: string;
+  county: string;
+  productType: string;
+  orderedAt: string;
+  dueAt?: string;
+  inspectionAt?: string;
+  status: OrderStatus;
+  simplifiedStatus: string;
+  assignedSummary: string;
+  nextAction: string;
+  visibleTo: ConnectedParticipantRole[];
+  documentsShared: number;
+  messagesOpen: number;
+};
+
+export type ConnectedInvitation = {
+  id: string;
+  organizationId: string;
+  invitedEmail: string;
+  invitationType: "order_participation" | "assignment" | "bid" | "document_request" | "workspace_upgrade";
+  status: "pending" | "sent" | "accepted" | "expired" | "revoked" | "failed";
+  orderId?: string;
+  bidRequestId?: string;
+  expiresAt: string;
+};
+
+export type ConnectedUpgradeRecord = {
+  id: string;
+  userId: string;
+  workspaceOrganizationId: string;
+  status: "started" | "completed" | "failed" | "reverted";
+  preservedOrderCount: number;
+  preservedDocumentCount: number;
+  preservedMessageCount: number;
+  createdAt: string;
+};
+
+export type CoverageEligibilityStatus = "eligible" | "nearby" | "excluded";
+
+export type VendorCountyCoverage = {
+  id: string;
+  displayName: string;
+  managingOrganizationId?: string;
+  vendorProfileId?: string;
+  appraiserProfileId?: string;
+  vendorOrganizationId?: string;
+  vendorUserId?: string;
+  state: string;
+  county: string;
+  coverageType: "direct" | "nearby" | "assignment_only";
+  productTypes: string[];
+  specialties: string[];
+  complexPropertyCapable: boolean;
+  ruralCapable: boolean;
+  approvalStatus: "approved" | "pending" | "blocked" | "not_approved";
+  licenseStatus: "current" | "expires_soon" | "expired" | "missing";
+  eoStatus: "current" | "expires_soon" | "expired" | "missing";
+  w9Status: "on_file" | "missing" | "expired";
+  activeStatus: "active" | "suspended" | "inactive";
+  acceptingWork: boolean;
+  blocked: boolean;
+  currentWorkload: number;
+  capacityLimit?: number;
+  capacityStatus: "available" | "balanced" | "busy" | "overloaded";
+  avgTurnDays?: number;
+  revisionRate?: number;
+  distanceMiles?: number;
+  eligibilityStatus: CoverageEligibilityStatus;
+  reason: string;
+  exclusionReasons: string[];
+};
+
+export type BidRequestStatus = "draft" | "open" | "closed" | "awarded" | "cancelled" | "reopened" | "expired";
+export type BidInvitationStatus = "pending" | "sent" | "delivered" | "failed" | "viewed" | "responded" | "declined" | "expired" | "awarded" | "not_selected" | "withdrawn";
+export type BidResponseStatus = "submitted" | "declined" | "unavailable" | "revised" | "withdrawn";
+
+export type BidRequest = {
+  id: string;
+  orderId: string;
+  sendingOrganizationId: string;
+  sendingOrganizationName: string;
+  subjectAddress: string;
+  city: string;
+  state: string;
+  county: string;
+  productType: string;
+  assignmentSummary: string;
+  requiredCredentials: string[];
+  requiredSpecialties: string[];
+  bidDeadlineAt: string;
+  requestedDueAt?: string;
+  status: BidRequestStatus;
+  lockResponses: boolean;
+  nearbyCandidateMode: boolean;
+  recipientIds: string[];
+};
+
+export type BidRecipient = {
+  id: string;
+  bidRequestId: string;
+  recipientName: string;
+  recipientOrganizationId?: string;
+  recipientUserId?: string;
+  recipientEmail?: string;
+  vendorProfileId?: string;
+  appraiserProfileId?: string;
+  coverageCounty?: string;
+  coverageMatch: "direct" | "nearby" | "manual_assignment_only";
+  invitationStatus: BidInvitationStatus;
+  emailStatus: "queued" | "sent" | "delivered" | "failed" | "viewed" | "responded";
+  eligibilitySnapshot: VendorCountyCoverage;
+};
+
+export type BidResponse = {
+  id: string;
+  bidRequestId: string;
+  recipientId: string;
+  responderName: string;
+  proposedFee?: number;
+  turnTimeDays?: number;
+  inspectionAvailability?: string;
+  notes?: string;
+  alternateTerms?: string;
+  acceptedConditions: boolean;
+  responseStatus: BidResponseStatus;
+  declineReason?: string;
+  declineExplanation?: string;
+  revisionNumber: number;
+  submittedAt: string;
+};
+
+export type BidAward = {
+  id: string;
+  bidRequestId: string;
+  orderId: string;
+  recipientId: string;
+  responseId: string;
+  winnerName: string;
+  status: "pending_acceptance" | "accepted" | "declined" | "withdrawn" | "reawarded";
+  assignmentStatus: "pending_acceptance" | "assigned" | "declined" | "reopened";
+  awardedAt: string;
 };

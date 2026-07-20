@@ -11,6 +11,7 @@
     "supabase:smoke": "node scripts/supabase/phase10-smoke.mjs",
     "supabase:smoke:auth": "node scripts/supabase/phase10-auth-smoke.mjs",
     "supabase:smoke:security": "node scripts/supabase/phase10-security-smoke.mjs",
+    "supabase:smoke:connected": "node scripts/supabase/phase10-connected-smoke.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

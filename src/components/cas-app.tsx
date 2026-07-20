@@ -47,6 +47,7 @@ import { AutomationCenterView, NotificationQueueView, TaskCenterView } from "./c
 import { ProductionAccessGate } from "./cas/auth";
 import { CalendarView } from "./cas/calendar";
 import { ClientsView } from "./cas/clients";
+import { BidManagementView, ConnectedOverviewView, IncomingOrdersView } from "./cas/connected";
 import { demoMode, navCatalog, roleNavigation, type NavId } from "./cas/config";
 import { AppraiserPortalView, DashboardView } from "./cas/dashboard";
 import { NewOrderView } from "./cas/forms";
@@ -1573,6 +1574,29 @@ export function CasApp() {
               onOpenMessages={() => openView("messages", "notifications")}
               onOpenDocuments={() => openView("documents", "orders")}
               onOpenCalendar={() => openView("calendar", "orders")}
+            />
+          )}
+          {activeView === "connected" && (
+            <ConnectedOverviewView
+              user={activeUser}
+              organization={activeOrganization}
+              onOpenIncoming={() => openView("incoming-orders", "connected")}
+              onOpenBids={() => openView("bids", "connected")}
+              onPlaceOrder={() => setActiveView(["amc_admin", "amc_staff", "client_user", "solo_appraiser"].includes(activeUser.role) ? "place-order" : canCreateOrders(activeUser) ? "new-order" : "orders")}
+            />
+          )}
+          {activeView === "incoming-orders" && (
+            <IncomingOrdersView
+              user={activeUser}
+              organization={activeOrganization}
+              onOpenBids={() => openView("bids", "incoming-orders")}
+              onOpenOrders={() => openView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders", "connected")}
+            />
+          )}
+          {activeView === "bids" && (
+            <BidManagementView
+              user={activeUser}
+              organization={activeOrganization}
             />
           )}
           {(activeView === "orders" || activeView === "my-orders" || activeView === "completed-orders" || activeView === "cancelled-orders" || activeView === "all-orders") && (
