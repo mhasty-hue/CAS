@@ -4,6 +4,7 @@ import {
   BadgeCheck,
   CalendarClock,
   CheckCircle2,
+  Clock3,
   ClipboardCheck,
   CreditCard,
   FileCheck2,
@@ -29,6 +30,7 @@ import type {
   OrderMessage,
   OrderStatus,
   Organization,
+  OrganizationOrderStatus,
   PortalUser,
   RequiredDocumentRule,
   RevisionRequest,
@@ -58,6 +60,8 @@ import {
   type OrderBidWorkflowDraft
 } from "@/lib/orders/detail";
 import { statusDefinitions } from "@/lib/orders/workflow";
+import { getAuthorizedOrderFees, getOrderFinancials } from "@/lib/orders/fees";
+import { canUseCustomerTrackingView, clientTrackingStages, getClientTrackingStage, getOrganizationStatusLabel } from "@/lib/orders/status-config";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { DetailSection, DueChip, InfoRow, ListOrEmpty, MetricTile, PriorityChip, StatusChip, SummaryItem } from "./shared";
 import { OrderDocumentWorkspace, RequiredDocumentSummary } from "./documents/workspace";
@@ -71,9 +75,10 @@ type OrderDetailPageProps = {
   order: Order;
   user: PortalUser;
   organization: Organization;
+  statusConfigs: OrganizationOrderStatus[];
   onBack: () => void;
-  onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
-  onStatusChange: (orderId: string, status: OrderStatus, reason?: string) => void;
+  onAssignOrder: (orderId: string, appraiserName: string, note: string, vendorFee?: number) => void;
+  onStatusChange: (orderId: string, status: OrderStatus, reason?: string, organizationStatusId?: string) => void;
   onUpdateInspection: (orderId: string, inspection: InspectionInfo, action: InspectionAction, note: string) => void;
   onAddNote: (orderId: string) => void;
   onGenerateInvoice: (orderId: string) => void;
@@ -117,9 +122,10 @@ function statusChipTone(value: string) {
   return "neutral";
 }
 
-function StatusLabelChip({ order, user }: { order: Order; user: PortalUser }) {
-  if (user.role === "client_user") {
-    return <SoftChip tone="brand">{statusDefinitions[order.status].clientLabel}</SoftChip>;
+function StatusLabelChip({ order, user, organization, statusConfigs }: { order: Order; user: PortalUser; organization: Organization; statusConfigs: OrganizationOrderStatus[] }) {
+  const label = getOrganizationStatusLabel(order, statusConfigs, organization, user);
+  if (user.role === "client_user" || label !== order.status) {
+    return <SoftChip tone="brand">{label}</SoftChip>;
   }
   return <StatusChip status={order.status} />;
 }
@@ -191,7 +197,7 @@ function BidComparisonTable({
   user: PortalUser;
   organization: Organization;
   bids: OrderBidContext;
-  onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
+  onAssignOrder: (orderId: string, appraiserName: string, note: string, vendorFee?: number) => void;
   onSuccess: (message: string) => void;
 }) {
   const bidState = getOrderBidState(order, bids);
@@ -209,9 +215,9 @@ function BidComparisonTable({
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Gavel className="h-4 w-4 text-brand-600" /> Bid Responses</div>
           <p className="mt-1 text-sm text-slate-600">
-            {canCompare ? "Compare fee, turn time, coverage, compliance, capacity, and notes. Lowest fee is not automatically selected." : "Only your own invitation and response are shown."}
+            {canCompare ? "Compare vendor fee, turn time, coverage, compliance, capacity, and notes. Lowest vendor fee is not automatically selected." : "Only your own invitation and response are shown."}
           </p>
-          {canCompare && <p className="mt-1 text-xs text-slate-500">Non-winners receive a professional not-selected notice without the winning fee or other bidder identities.</p>}
+          {canCompare && <p className="mt-1 text-xs text-slate-500">Non-winners receive a professional not-selected notice without the winning vendor fee or other bidder identities.</p>}
         </div>
         {bidState.openRequest && <SoftChip tone="brand">Deadline {formatDate(bidState.openRequest.bidDeadlineAt.slice(0, 10))}</SoftChip>}
       </div>
@@ -221,7 +227,7 @@ function BidComparisonTable({
             <tr>
               <th className="px-4 py-3">Vendor</th>
               <th className="px-4 py-3">Coverage</th>
-              <th className="px-4 py-3">Fee</th>
+              <th className="px-4 py-3">Proposed Vendor Fee</th>
               <th className="px-4 py-3">Turn</th>
               <th className="px-4 py-3">Compliance</th>
               <th className="px-4 py-3">Capacity</th>
@@ -252,7 +258,8 @@ function BidComparisonTable({
                         className="secondary-button h-8 px-2 text-xs"
                         disabled={!response || response.responseStatus === "declined"}
                         onClick={() => {
-                          onAssignOrder(order.id, recipient.recipientName, `Awarded bid response for ${formatCurrency(response?.proposedFee ?? order.fee)} with ${response?.turnTimeDays ?? "pending"} day turn time.`);
+                          const vendorFee = response?.proposedFee ?? getOrderFinancials(order).vendorFee;
+                          onAssignOrder(order.id, recipient.recipientName, `Awarded bid response for ${formatCurrency(vendorFee)} with ${response?.turnTimeDays ?? "pending"} day turn time.`, vendorFee);
                           onSuccess(`${recipient.recipientName} was selected. The same order is now awaiting acceptance; no duplicate order was created.`);
                         }}
                       >
@@ -305,7 +312,7 @@ function BidderResponsePanel({
                 <SoftChip tone={statusChipTone(response?.responseStatus ?? recipient.invitationStatus)}>{response?.responseStatus ?? recipient.invitationStatus}</SoftChip>
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                <input className="control" placeholder="Proposed fee" defaultValue={response?.proposedFee ? String(response.proposedFee) : ""} />
+                <input className="control" placeholder="Proposed vendor fee" defaultValue={response?.proposedFee ? String(response.proposedFee) : ""} />
                 <input className="control" placeholder="Turn time days" defaultValue={response?.turnTimeDays ? String(response.turnTimeDays) : ""} />
                 <input className="control" placeholder="Inspection availability" defaultValue={response?.inspectionAvailability ?? ""} />
               </div>
@@ -315,7 +322,7 @@ function BidderResponsePanel({
                   <option value="">Decline reason required if declining</option>
                   <option>Outside coverage area</option>
                   <option>Unable to meet due date</option>
-                  <option>Fee is insufficient</option>
+                  <option>Vendor fee is insufficient</option>
                   <option>Capacity/workload</option>
                   <option>Conflict of interest</option>
                   <option>Other</option>
@@ -353,18 +360,19 @@ function AssignmentWorkspace({
   organization: Organization;
   bids: OrderBidContext;
   vendorCoverage: VendorCountyCoverage[];
-  onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
-  onStatusChange: (orderId: string, status: OrderStatus, reason?: string) => void;
+  onAssignOrder: (orderId: string, appraiserName: string, note: string, vendorFee?: number) => void;
+  onStatusChange: (orderId: string, status: OrderStatus, reason?: string, organizationStatusId?: string) => void;
   onSuccess: (message: string) => void;
 }) {
   const eligibility = useMemo(() => getOrderBidEligibility(order, vendorCoverage), [order, vendorCoverage]);
   const bidState = getOrderBidState(order, bids);
   const canManage = canManageOrderAssignment(user, organization);
   const ownAppraiserOrder = isAssignedOrderAppraiser(order, user);
+  const financials = getOrderFinancials(order);
   const [method, setMethod] = useState<"direct" | "bid">("direct");
   const [selectedDirectId, setSelectedDirectId] = useState(eligibility.eligible[0]?.id ?? "");
   const [selectedBidIds, setSelectedBidIds] = useState<string[]>(eligibility.eligible.slice(0, 3).map((coverage) => coverage.id));
-  const [fee, setFee] = useState(String(order.fee));
+  const [fee, setFee] = useState(String(financials.vendorFee || Math.round(financials.clientFee * 0.6)));
   const [dueDate, setDueDate] = useState(order.dueDate);
   const [deadline, setDeadline] = useState(order.dueDate);
   const [instructions, setInstructions] = useState(`Please review ${order.productType} for ${order.address}. Access: ${order.accessInfo}`);
@@ -393,7 +401,8 @@ function AssignmentWorkspace({
       return;
     }
     const draft = buildDirectAssignmentDraft(order, selectedDirectCoverage);
-    onAssignOrder(order.id, selectedDirectCoverage.displayName, `Secure assignment invitation sent from order detail. Fee ${formatCurrency(Number(fee) || order.fee)}. Due ${formatDate(dueDate)}. ${instructions}`);
+    const vendorFee = Number(fee) || financials.vendorFee;
+    onAssignOrder(order.id, selectedDirectCoverage.displayName, `Secure assignment invitation sent from order detail. Vendor fee ${formatCurrency(vendorFee)}. Due ${formatDate(dueDate)}. ${instructions}`, vendorFee);
     onSuccess(`${draft.selectedVendorNames[0]} received the assignment invitation. The order is awaiting acceptance and no duplicate order was created.`);
   }
 
@@ -538,7 +547,7 @@ function AssignmentWorkspace({
               <div className="text-sm font-semibold text-slate-950">Confirm Terms</div>
               <div className="mt-3 grid gap-3">
                 <label className="grid gap-1 text-xs font-medium text-slate-600">
-                  Offered fee
+                  Vendor fee
                   <input className="control" value={fee} inputMode="decimal" onChange={(event) => setFee(event.target.value)} />
                 </label>
                 <label className="grid gap-1 text-xs font-medium text-slate-600">
@@ -556,7 +565,7 @@ function AssignmentWorkspace({
                   <textarea className="control min-h-28 py-3" value={instructions} onChange={(event) => setInstructions(event.target.value)} />
                 </label>
                 <div className="rounded-md border border-line bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-                  Review before sending: {order.fileNumber}, {order.address}, {order.county} County, {order.productType}, due {formatDate(dueDate)}, fee {formatCurrency(Number(fee) || order.fee)}.
+                  Review before sending: {order.fileNumber}, {order.address}, {order.county} County, {order.productType}, due {formatDate(dueDate)}, vendor fee {formatCurrency(Number(fee) || financials.vendorFee)}.
                 </div>
                 <button className="primary-button justify-center" onClick={method === "direct" ? sendDirectAssignment : sendBidRequest}>
                   <Send className="h-4 w-4" />
@@ -575,10 +584,126 @@ function AssignmentWorkspace({
   );
 }
 
+function CustomerOrderTracker({
+  order,
+  user,
+  organization,
+  statusConfigs,
+  onBack,
+  managedDocuments,
+  orderMessages,
+  revisionRequests,
+  deliveryRecords
+}: Pick<OrderDetailPageProps, "order" | "user" | "organization" | "statusConfigs" | "onBack" | "managedDocuments" | "orderMessages" | "revisionRequests" | "deliveryRecords">) {
+  const currentStage = getClientTrackingStage(order, statusConfigs, organization);
+  const currentIndex = clientTrackingStages.indexOf(currentStage);
+  const authorizedFees = getAuthorizedOrderFees(order, user, organization);
+  const visibleDocuments = managedDocuments.filter((document) =>
+    document.orderId === order.id &&
+    ["Lender/client", "Delivery recipient", "Public requester"].includes(document.visibility) &&
+    document.status !== "Archived"
+  );
+  const visibleMessages = orderMessages.filter((message) =>
+    message.orderId === order.id &&
+    (message.visibility === "Lender/client" || message.channel === "Lender/client message")
+  );
+  const clientVisibleRevisions = revisionRequests.filter((revision) => revision.orderId === order.id && revision.clientVisibleWording);
+  const completedDelivery = deliveryRecords.find((record) => record.orderId === order.id && ["Delivered", "Viewed"].includes(record.status));
+
+  return (
+    <div className="grid gap-5">
+      <section className="panel overflow-hidden">
+        <div className="border-b border-line bg-white p-5">
+          <button className="secondary-button h-9 px-3" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Back to orders</button>
+          <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_320px]">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-slate-950">{order.fileNumber}</span>
+                <SoftChip tone="brand">{currentStage}</SoftChip>
+                <PriorityChip priority={order.priority} />
+              </div>
+              <h1 className="mt-3 text-3xl font-semibold tracking-normal text-slate-950">{order.address}</h1>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                {order.productType} for {order.borrower}. CAS will show the next clear client action here as the report moves forward.
+              </p>
+            </div>
+            <aside className="rounded-md border border-line bg-slate-50 p-4">
+              <div className="text-xs font-semibold uppercase tracking-normal text-brand-700">Current client status</div>
+              <div className="mt-2 text-xl font-semibold text-slate-950">{currentStage}</div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{statusDefinitions[order.status].clientLabel}</p>
+              <div className="mt-3 rounded-md border border-line bg-white p-3 text-sm text-slate-700">{order.nextAction}</div>
+            </aside>
+          </div>
+        </div>
+        <div className="grid gap-3 bg-slate-50 p-4 lg:grid-cols-3">
+          <SummaryItem label="Due" value={formatDate(order.dueDate)} />
+          <SummaryItem label="Inspection" value={order.inspection?.scheduledDate ? formatDate(order.inspection.scheduledDate) : order.inspectionDate ? formatDate(order.inspectionDate) : "Not scheduled"} />
+          <SummaryItem label={authorizedFees[0]?.label ?? "Invoice"} value={authorizedFees[0] ? formatCurrency(authorizedFees[0].amount) : "Not available"} />
+        </div>
+      </section>
+
+      <section className="panel p-5">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Clock3 className="h-4 w-4 text-brand-600" /> Order Progress</div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-9">
+          {clientTrackingStages.map((stage, index) => {
+            const complete = index < currentIndex;
+            const current = index === currentIndex;
+            return (
+              <div key={stage} className={cn("rounded-md border p-3 text-sm", complete ? "border-emerald-200 bg-emerald-50 text-emerald-800" : current ? "border-brand-200 bg-brand-50 text-brand-700" : "border-line bg-white text-slate-500")}>
+                <div className="flex items-center gap-2">
+                  {complete ? <CheckCircle2 className="h-4 w-4" /> : <span className={cn("h-2.5 w-2.5 rounded-full", current ? "bg-brand-600" : "bg-slate-300")} />}
+                  <span className="font-medium">{stage}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
+        <section className="panel p-5">
+          <DetailSection icon={MapPin} title="Order Details">
+            <div className="grid gap-2 text-sm">
+              <InfoRow label="Property" value={`${order.address}, ${order.city}, ${order.state} ${order.zip}`} />
+              <InfoRow label="Borrower" value={order.borrower} />
+              <InfoRow label="Product" value={order.productType} />
+              <InfoRow label="Client contact" value={order.lenderContact} />
+              <InfoRow label="Access" value={order.inspection?.scheduledDate ? `Inspection scheduled for ${formatDate(order.inspection.scheduledDate)}` : "The inspection has not been scheduled yet."} />
+            </div>
+          </DetailSection>
+        </section>
+        <aside className="grid gap-5">
+          <section className="panel p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><FileCheck2 className="h-4 w-4 text-brand-600" /> Client Documents</div>
+            <div className="mt-3">
+              <ListOrEmpty empty="No client-visible documents are available yet." items={visibleDocuments.map((document) => `${document.displayName} - ${document.status}`)} />
+            </div>
+            {completedDelivery && <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Completed report delivery: {completedDelivery.status}</div>}
+          </section>
+          <section className="panel p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><MessageSquare className="h-4 w-4 text-brand-600" /> Client Updates</div>
+            <div className="mt-3 grid gap-2">
+              <ListOrEmpty
+                empty="No client-visible comments yet."
+                items={[
+                  ...order.clientComments.map((comment) => `${comment.createdAt} - ${comment.body}`),
+                  ...visibleMessages.map((message) => `${message.createdAt} - ${message.body}`),
+                  ...clientVisibleRevisions.map((revision) => `${formatDate(revision.receivedAt)} - ${revision.clientVisibleWording}`)
+                ]}
+              />
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 export function OrderDetailPage({
   order,
   user,
   organization,
+  statusConfigs,
   onBack,
   onAssignOrder,
   onStatusChange,
@@ -613,6 +738,9 @@ export function OrderDetailPage({
   const alert = getOrderDetailAlert(order, user, bids);
   const historyItems = buildPlainOrderHistory(order, user, relationships);
   const reviewComplete = order.reviewItems.filter((item) => item.complete).length;
+  const authorizedFees = getAuthorizedOrderFees(order, user, organization);
+  const financials = getOrderFinancials(order);
+  const canSeeInternalAccounting = authorizedFees.some((fee) => fee.key === "clientFee" || fee.key === "margin");
 
   useEffect(() => {
     if (!sections.includes(activeSection)) setActiveSection(sections[0] ?? "overview");
@@ -633,6 +761,22 @@ export function OrderDetailPage({
     setActiveSection(primaryAction.targetSection);
   }
 
+  if (canUseCustomerTrackingView(user, organization)) {
+    return (
+      <CustomerOrderTracker
+        order={order}
+        user={user}
+        organization={organization}
+        statusConfigs={statusConfigs}
+        onBack={onBack}
+        managedDocuments={managedDocuments}
+        orderMessages={orderMessages}
+        revisionRequests={revisionRequests}
+        deliveryRecords={deliveryRecords}
+      />
+    );
+  }
+
   return (
     <div className="grid gap-5">
       <section className="panel overflow-hidden">
@@ -642,7 +786,7 @@ export function OrderDetailPage({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-slate-950">{order.fileNumber}</span>
-                <StatusLabelChip order={order} user={user} />
+                <StatusLabelChip order={order} user={user} organization={organization} statusConfigs={statusConfigs} />
                 <PriorityChip priority={order.priority} />
                 <SoftChip tone="brand">{order.productType}</SoftChip>
               </div>
@@ -694,7 +838,7 @@ export function OrderDetailPage({
             <RelationshipSummary order={order} user={user} organization={organization} connected={connected} />
             <section className="panel p-5">
               <div className="grid gap-3 md:grid-cols-3">
-                <MetricTile label="Current stage" value={statusDefinitions[order.status].stage} />
+                <MetricTile label="Current stage" value={getOrganizationStatusLabel(order, statusConfigs, organization, user)} />
                 <MetricTile label="Next action" value={primaryAction.label} />
                 <MetricTile label="Assignment" value={order.appraiser === "Unassigned" ? "Needs appraiser" : order.appraiser} />
               </div>
@@ -840,16 +984,19 @@ export function OrderDetailPage({
         <section className="panel p-5">
           <DetailSection icon={ReceiptText} title="Fee and Accounting Snapshot">
             <div className="grid gap-2 sm:grid-cols-4">
-              <MetricTile label="Order fee" value={formatCurrency(order.fee)} />
-              <MetricTile label="Tech fee" value={formatCurrency(order.techFee)} />
-              <MetricTile label="Payout" value={formatCurrency(order.appraiserPayout)} />
-              <MetricTile label="Split" value={`${order.commissionSplitOverride ?? order.payrollSnapshot?.defaultAppraiserSplit ?? 0}%`} />
+              {authorizedFees.map((fee) => <MetricTile key={fee.key} label={fee.label} value={formatCurrency(fee.amount)} />)}
+              {canSeeInternalAccounting && <MetricTile label="Tech fee" value={formatCurrency(financials.techFee)} />}
+              {canSeeInternalAccounting && <MetricTile label="Split" value={`${order.commissionSplitOverride ?? order.payrollSnapshot?.defaultAppraiserSplit ?? 0}%`} />}
             </div>
-            <div className="mt-3 grid gap-2 text-sm">
-              <InfoRow label="Commissionable base" value={formatCurrency(order.payrollSnapshot?.commissionableBase ?? Math.max(0, order.fee - order.techFee - (order.otherNonCommissionableFees ?? 0)))} />
-              <InfoRow label="Calculation source" value={order.payrollSnapshot?.calculationSource ?? "Accounting workspace calculation pending"} />
-              <InfoRow label="Approved" value={order.payrollSnapshot?.approvedBy ? `${order.payrollSnapshot.approvedBy} on ${formatDate(order.payrollSnapshot.approvedDate ?? order.paidAt ?? order.dueDate)}` : "Not approved"} />
-            </div>
+            {canSeeInternalAccounting ? (
+              <div className="mt-3 grid gap-2 text-sm">
+                <InfoRow label="Commissionable base" value={formatCurrency(financials.commissionableBase)} />
+                <InfoRow label="Calculation source" value={order.payrollSnapshot?.calculationSource ?? "Accounting workspace calculation pending"} />
+                <InfoRow label="Approved" value={order.payrollSnapshot?.approvedBy ? `${order.payrollSnapshot.approvedBy} on ${formatDate(order.payrollSnapshot.approvedDate ?? order.paidAt ?? order.dueDate)}` : "Not approved"} />
+              </div>
+            ) : (
+              <div className="mt-3 rounded-md border border-line bg-slate-50 p-3 text-sm text-slate-600">Only fee fields permitted for your role are shown here.</div>
+            )}
             <div className="mt-4 flex flex-wrap gap-2">
               <button className="secondary-button" onClick={() => onGenerateInvoice(order.id)}><ReceiptText className="h-4 w-4" /> Generate invoice</button>
               <button className="secondary-button"><CreditCard className="h-4 w-4" /> Mark payout reviewed</button>

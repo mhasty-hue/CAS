@@ -32,12 +32,14 @@ import {
   webhookEvents,
   workflowTasks
 } from "@/data/platform";
-import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationTemplate, Order, OrderFormTemplate, OrderIntakePrefill, OrderStatus, Organization, OrganizationInvitation, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationTemplate, Order, OrderFormTemplate, OrderIntakePrefill, OrderStatus, Organization, OrganizationInvitation, OrganizationOrderStatus, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
 import { loadCasAuthContext } from "@/lib/auth/context";
 import { createDeliveryRecord } from "@/lib/delivery/service";
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
 import { canCreateOrders, canViewOwnOrdersOnly } from "@/lib/permissions";
 import { canTransitionOrderStatus, filterOrdersForWorkflow, resolveLegacyOrderQueue } from "@/lib/orders/workflow";
+import { createDemoOrderStatuses, statusUsageCount } from "@/lib/orders/status-config";
+import { applyAwardedVendorFee, sanitizeOrdersForUser } from "@/lib/orders/fees";
 import { publicRequestToOrderSeed } from "@/lib/public-intake/service";
 import { simulateOrderDocumentUpload } from "@/lib/storage/paths";
 import { createOrderMessage } from "@/lib/messaging/service";
@@ -70,6 +72,7 @@ export function CasApp() {
   const [runtimeUser, setRuntimeUser] = useState<PortalUser | null>(null);
   const [runtimeOrganization, setRuntimeOrganization] = useState<Organization | null>(null);
   const [orderList, setOrderList] = useState<Order[]>(orders);
+  const [orderStatusList, setOrderStatusList] = useState<OrganizationOrderStatus[]>(() => organizations.flatMap((organization) => createDemoOrderStatuses(organization.id)));
   const [appraiserList, setAppraiserList] = useState<AppraiserProfile[]>(appraisers);
   const [clientList, setClientList] = useState<ClientProfile[]>(clientProfiles);
   const [companyUserList, setCompanyUserList] = useState<CompanyUser[]>(companyUsers);
@@ -176,7 +179,7 @@ export function CasApp() {
         const bootstrap = await getCasRepository("supabase").loadBootstrapData(context.organization.id);
         if (canceled) return;
 
-        setOrderList(bootstrap.orders);
+        setOrderList(sanitizeOrdersForUser(bootstrap.orders, context.user, context.organization));
         setClientList(bootstrap.clients);
         setCompanyUserList(bootstrap.companyUsers);
         setAppraiserList(bootstrap.appraisers);
@@ -374,10 +377,11 @@ export function CasApp() {
     );
   }
 
-  function handleAssignOrder(orderId: string, appraiserName: string, note: string) {
+  function handleAssignOrder(orderId: string, appraiserName: string, note: string, vendorFee?: number) {
     const assignedOrder = orderList.find((order) => order.id === orderId);
     updateOrder(orderId, (order) => {
       const noteBody = note.trim();
+      const feeAdjustedOrder = typeof vendorFee === "number" && Number.isFinite(vendorFee) ? applyAwardedVendorFee(order, vendorFee) : order;
       const assignmentNote: Note | null = noteBody
         ? {
             id: `${order.id}-assignment-note-${Date.now()}`,
@@ -389,7 +393,7 @@ export function CasApp() {
         : null;
 
       return {
-        ...order,
+        ...feeAdjustedOrder,
         appraiser: appraiserName,
         status: order.status === "New" || order.status === "Unassigned" ? "Assigned" : order.status,
         nextAction: "Await appraiser acceptance",
@@ -464,30 +468,33 @@ export function CasApp() {
     }
   }
 
-  function handleStatusChange(orderId: string, status: OrderStatus, reason?: string) {
+  function handleStatusChange(orderId: string, status: OrderStatus, reason?: string, organizationStatusId?: string) {
     const currentOrder = orderList.find((order) => order.id === orderId);
     if (!currentOrder || !canTransitionOrderStatus(currentOrder, status, activeUser)) return;
+    const organizationStatus = orderStatusList.find((candidate) => candidate.id === organizationStatusId);
+    const organizationStatusLabel = organizationStatus?.name ?? status;
     updateOrder(orderId, (order) => ({
       ...order,
       status,
-      lastUpdate: `Status changed to ${status}`,
+      organizationStatusId,
+      lastUpdate: `Status changed to ${organizationStatusLabel}`,
       nextAction: status === "Completed" ? "No action" : order.nextAction,
       timeline: [
         {
           label: "Status updated",
-          detail: reason ? `${order.status} moved to ${status}: ${reason}` : `${order.status} moved to ${status}`,
+          detail: reason ? `${order.status} moved to ${organizationStatusLabel}: ${reason}` : `${order.status} moved to ${organizationStatusLabel}`,
           at: "Just now",
           actor: activeUser.name
         },
         ...order.timeline
       ],
       auditTrail: [
-        {
-          id: `${order.id}-status-${Date.now()}`,
-          action: reason ? `Status changed from ${order.status} to ${status}: ${reason}` : `Status changed from ${order.status} to ${status}`,
-          actor: activeUser.name,
-          at: "Just now"
-        },
+          {
+            id: `${order.id}-status-${Date.now()}`,
+            action: reason ? `Status changed from ${order.status} to ${organizationStatusLabel} (${status}): ${reason}` : `Status changed from ${order.status} to ${organizationStatusLabel} (${status})`,
+            actor: activeUser.name,
+            at: "Just now"
+          },
         ...order.auditTrail
       ]
     }));
@@ -572,6 +579,8 @@ export function CasApp() {
         }
       : null;
     const staffNote = value("notes");
+    const clientFee = numberValue("fee", kind === "amc" ? 625 : 575);
+    const techFee = numberValue("tech_fee", 35);
     const newOrder: Order = {
       id: `ord-${Date.now()}`,
       fileNumber: nextNumber,
@@ -590,8 +599,11 @@ export function CasApp() {
       dueDate: value("due_date", "2026-07-11"),
       status: "New",
       priority,
-      fee: numberValue("fee", kind === "amc" ? 625 : 575),
-      techFee: numberValue("tech_fee", 35),
+      fee: clientFee,
+      clientFee,
+      vendorFee: 0,
+      companyMargin: clientFee,
+      techFee,
       appraiserPayout: 0,
       documents: documentsList.length,
       lastUpdate: `Created by ${activeUser.name}`,
@@ -1209,6 +1221,73 @@ export function CasApp() {
     );
   }
 
+  function handleAddOrderStatus() {
+    const scopedStatuses = orderStatusList.filter((status) => status.organizationId === activeOrganization.id);
+    const nextDisplayOrder = Math.max(0, ...scopedStatuses.map((status) => status.displayOrder)) + 1;
+    setOrderStatusList((current) => [
+      ...current,
+      {
+        id: `${activeOrganization.id}-status-custom-${Date.now()}`,
+        organizationId: activeOrganization.id,
+        name: "Custom Status",
+        description: "Organization-facing status mapped to a CAS canonical workflow stage.",
+        canonicalStatus: "New",
+        clientFacingStage: "Order Received",
+        displayOrder: nextDisplayOrder,
+        active: true,
+        appearsInDropdown: true,
+        appearsAsFilter: true,
+        systemRequired: false
+      }
+    ]);
+  }
+
+  function handleUpdateOrderStatus(statusId: string, patch: Partial<OrganizationOrderStatus>) {
+    setOrderStatusList((current) =>
+      current.map((status) => {
+        if (status.id !== statusId) return status;
+        const protectedPatch = status.systemRequired
+          ? { ...patch, systemRequired: true, archivedAt: undefined, active: true }
+          : patch;
+        return { ...status, ...protectedPatch };
+      })
+    );
+  }
+
+  function handleArchiveOrderStatus(statusId: string) {
+    const status = orderStatusList.find((item) => item.id === statusId);
+    if (!status || status.systemRequired) return;
+    const usage = statusUsageCount(status, orderList);
+    setOrderStatusList((current) =>
+      current.map((item) =>
+        item.id === statusId
+          ? {
+              ...item,
+              active: false,
+              appearsInDropdown: false,
+              appearsAsFilter: false,
+              archivedAt: "Just now",
+              description: usage > 0 ? `${item.description ?? "Archived status."} Preserved on ${usage} historical order${usage === 1 ? "" : "s"}.` : item.description
+            }
+          : item
+      )
+    );
+  }
+
+  function handleRestoreOrderStatus(statusId: string) {
+    setOrderStatusList((current) =>
+      current.map((status) => (status.id === statusId ? { ...status, active: true, archivedAt: undefined } : status))
+    );
+  }
+
+  function handleMoveOrderStatus(statusId: string, direction: -1 | 1) {
+    setOrderStatusList((current) =>
+      current.map((status) =>
+        status.id === statusId ? { ...status, displayOrder: Math.max(1, status.displayOrder + direction * 0.5) } : status
+      )
+    );
+  }
+
   function handleGenerateInvoice(orderId: string) {
     const order = orderList.find((item) => item.id === orderId);
     if (!order) return;
@@ -1264,6 +1343,9 @@ export function CasApp() {
       status: "New",
       priority: request.requestedTiming.toLowerCase().includes("week") ? "High" : "Standard",
       fee: 0,
+      clientFee: 0,
+      vendorFee: 0,
+      companyMargin: 0,
       techFee: 0,
       appraiserPayout: 0,
       documents: request.documentCount,
@@ -1604,6 +1686,7 @@ export function CasApp() {
               order={selectedOrder}
               user={activeUser}
               organization={activeOrganization}
+              statusConfigs={orderStatusList}
               onBack={() => openView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders", "dashboard")}
               onAssignOrder={handleAssignOrder}
               onStatusChange={handleStatusChange}
@@ -1638,6 +1721,7 @@ export function CasApp() {
               initialQueue={activeOrderQueue}
               user={activeUser}
               organization={activeOrganization}
+              statusConfigs={orderStatusList}
               onOpenNewOrder={() => setActiveView(["amc_admin", "amc_staff", "client_user", "solo_appraiser"].includes(activeUser.role) ? "place-order" : "new-order")}
               onSelectOrder={(order) => setSelectedOrderId(order.id)}
               onOpenFullOrder={openOrderDetail}
@@ -1793,6 +1877,8 @@ export function CasApp() {
               user={activeUser}
               organization={activeOrganization}
               companyUsers={companyUserList}
+              orderList={orderList}
+              orderStatuses={orderStatusList}
               invitations={invitationList}
               publicOrderSettings={publicOrderSettingsList}
               publicOrderRequests={publicOrderRequestList}
@@ -1811,6 +1897,11 @@ export function CasApp() {
               onUpdatePublicConfirmation={handleUpdatePublicConfirmation}
               onToggleNotificationPreference={handleToggleNotificationPreference}
               onConvertPublicRequest={handleConvertPublicRequest}
+              onAddOrderStatus={handleAddOrderStatus}
+              onUpdateOrderStatus={handleUpdateOrderStatus}
+              onArchiveOrderStatus={handleArchiveOrderStatus}
+              onRestoreOrderStatus={handleRestoreOrderStatus}
+              onMoveOrderStatus={handleMoveOrderStatus}
             />
           )}
         </main>

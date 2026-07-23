@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, CalendarClock, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, Download, ExternalLink, Eye, FileCheck2, History, Home, ListChecks, MessageSquare, Plus, ReceiptText, RotateCcw, Search, SlidersHorizontal, UserCheck, X } from "lucide-react";
+import { Archive, CalendarClock, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, ExternalLink, Eye, FileCheck2, History, Home, ListChecks, MessageSquare, Plus, ReceiptText, RotateCcw, Search, UserCheck, X } from "lucide-react";
 import { appraisers } from "@/data/demo";
-import type { AppraiserProfile, BidRequest, ConnectedOrderSummary, DeliveryRecord, DocumentCategory, InspectionInfo, ManagedDocument, MessageChannel, Order, OrderMessage, OrderStatus, Organization, PortalUser, RequiredDocumentRule, RevisionRequest, RevisionStatus } from "@/types/domain";
-import { canAssignOrders, canCreateOrders, canEditInspections, canGenerateInvoices, canReopenOrders, canViewAccounting } from "@/lib/permissions";
+import type { AppraiserProfile, BidRequest, ConnectedOrderSummary, DeliveryRecord, DocumentCategory, InspectionInfo, ManagedDocument, MessageChannel, Order, OrderMessage, OrderStatus, Organization, OrganizationOrderStatus, PortalUser, RequiredDocumentRule, RevisionRequest, RevisionStatus } from "@/types/domain";
+import { canAssignOrders, canCreateOrders, canEditInspections, canGenerateInvoices, canReopenOrders } from "@/lib/permissions";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
-import { countQueueItems, getAllowedStatusTransitions, getDefaultOrderQueue, getIncomingAssignmentsForUser, getOpenBidRequestsForUser, getOrderQueueTabs, queueDefinitions, queueMatchesOrder, requiresStatusReason, statusDefinitions, type BidQueueContext, type ConnectedQueueContext, type OrderQueueId } from "@/lib/orders/workflow";
+import { countQueueItems, getDefaultOrderQueue, getIncomingAssignmentsForUser, getOpenBidRequestsForUser, getOrderQueueTabs, queueDefinitions, queueMatchesOrder, requiresStatusReason, statusDefinitions, type BidQueueContext, type ConnectedQueueContext, type OrderQueueId } from "@/lib/orders/workflow";
 import { getOrderDetailAlert, getPrimaryOrderAction } from "@/lib/orders/detail";
-import { statusFilters } from "./config";
+import { getAuthorizedOrderFees } from "@/lib/orders/fees";
+import { getCurrentStatusOptionId, getOrganizationStatusLabel, getStatusDropdownOptions, getStatusFilterOptions, statusFilterMatches } from "@/lib/orders/status-config";
 import { DetailSection, DueChip, InfoRow, ListOrEmpty, MetricTile, PriorityChip, StatusChip, SummaryItem } from "./shared";
 import { RequiredDocumentSummary } from "./documents/workspace";
 import { RevisionSummary } from "./revisions/workflow";
@@ -35,16 +36,40 @@ export function recommendedAppraiser(order: Order) {
   return [...candidates].sort((a, b) => workloadPercent(a) - workloadPercent(b))[0];
 }
 
-function WorkflowStatusChip({ order, user }: { order: Order; user: PortalUser }) {
-  if (user.role === "client_user") {
-    return <span className="chip border-brand-100 bg-brand-50 text-brand-700">{statusDefinitions[order.status].clientLabel}</span>;
+function WorkflowStatusChip({
+  order,
+  user,
+  organization,
+  statusConfigs
+}: {
+  order: Order;
+  user: PortalUser;
+  organization: Organization;
+  statusConfigs: OrganizationOrderStatus[];
+}) {
+  const label = getOrganizationStatusLabel(order, statusConfigs, organization, user);
+  if (user.role === "client_user" || label !== order.status) {
+    return <span className="chip border-brand-100 bg-brand-50 text-brand-700" title={`CAS workflow: ${order.status}`}>{label}</span>;
   }
   return <StatusChip status={order.status} />;
 }
 
-function StatusTransitionSelect({ order, user, onChange }: { order: Order; user: PortalUser; onChange: (order: Order, status: OrderStatus) => void }) {
-  const options = getAllowedStatusTransitions(order, user);
-  const enabled = options.some((option) => option.status !== order.status && !option.disabled);
+function StatusTransitionSelect({
+  order,
+  user,
+  organization,
+  statusConfigs,
+  onChange
+}: {
+  order: Order;
+  user: PortalUser;
+  organization: Organization;
+  statusConfigs: OrganizationOrderStatus[];
+  onChange: (order: Order, status: OrderStatus, organizationStatusId?: string) => void;
+}) {
+  const options = getStatusDropdownOptions(order, statusConfigs, organization, user);
+  const value = getCurrentStatusOptionId(order, statusConfigs, organization);
+  const enabled = options.some((option) => option.id !== value && !option.disabled);
 
   if (!enabled) {
     return (
@@ -57,16 +82,34 @@ function StatusTransitionSelect({ order, user, onChange }: { order: Order; user:
   return (
     <select
       className="h-9 rounded-md border border-line bg-white px-2 text-xs text-slate-700"
-      value={order.status}
-      onChange={(event) => onChange(order, event.target.value as OrderStatus)}
+      value={value}
+      onChange={(event) => {
+        const option = options.find((item) => item.id === event.target.value);
+        if (option) onChange(order, option.canonicalStatus, option.id);
+      }}
       aria-label={`Update ${order.fileNumber} status`}
     >
       {options.map((option) => (
-        <option key={option.status} value={option.status} disabled={option.disabled} title={option.reason}>
-          {option.label}{option.requiresReason && option.status !== order.status ? " *" : ""}
+        <option key={option.id} value={option.id} disabled={option.disabled} title={option.reason}>
+          {option.label}{option.requiresReason && option.canonicalStatus !== order.status ? " *" : ""}
         </option>
       ))}
     </select>
+  );
+}
+
+function OrderFeeCell({ order, user, organization }: { order: Order; user: PortalUser; organization: Organization }) {
+  const fees = getAuthorizedOrderFees(order, user, organization);
+  if (!fees.length) return <span className="text-slate-400">Restricted</span>;
+  return (
+    <div className="grid gap-1">
+      {fees.map((fee) => (
+        <div key={fee.key} className="whitespace-nowrap">
+          <span className="text-xs text-slate-500">{fee.label}</span>
+          <span className="ml-1 font-semibold text-slate-900">{formatCurrency(fee.amount)}</span>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -156,6 +199,7 @@ export function OrdersView({
   initialQueue,
   user,
   organization,
+  statusConfigs,
   onSelectOrder,
   onOpenFullOrder,
   onOpenNewOrder,
@@ -175,11 +219,12 @@ export function OrdersView({
   initialQueue?: OrderQueueId;
   user: PortalUser;
   organization: Organization;
+  statusConfigs: OrganizationOrderStatus[];
   onSelectOrder: (order: Order) => void;
   onOpenFullOrder?: (order: Order) => void;
   onOpenNewOrder?: () => void;
   onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
-  onStatusChange: (orderId: string, status: OrderStatus, reason?: string) => void;
+  onStatusChange: (orderId: string, status: OrderStatus, reason?: string, organizationStatusId?: string) => void;
   onReopenOrder: (orderId: string, reason: string) => void;
   onUpdateInspection: (orderId: string, inspection: InspectionInfo, action: InspectionAction, note: string) => void;
   onAddNote: (orderId: string) => void;
@@ -204,7 +249,7 @@ export function OrdersView({
   connected?: ConnectedQueueContext;
 }) {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"All" | OrderStatus>("All");
+  const [statusFilter, setStatusFilter] = useState("All");
   const [sortBy, setSortBy] = useState("Due date ascending");
   const [appraiserFilter, setAppraiserFilter] = useState("All appraisers");
   const [clientFilter, setClientFilter] = useState("All clients");
@@ -218,11 +263,12 @@ export function OrdersView({
   const clientOptions = Array.from(new Set(queueOrders.map((order) => order.client))).sort();
   const openBidRequests = bids ? getOpenBidRequestsForUser(bids, user, organization) : [];
   const incomingAssignments = connected ? getIncomingAssignmentsForUser(connected, user, organization) : [];
+  const statusOptions = useMemo(() => getStatusFilterOptions(statusConfigs, organization, user), [organization, statusConfigs, user]);
 
   const filteredOrders = useMemo(() => {
     const needle = search.toLowerCase();
     return queueOrders
-      .filter((order) => statusFilter === "All" || order.status === statusFilter)
+      .filter((order) => statusFilterMatches(order, statusFilter, statusConfigs, organization, user))
       .filter((order) => appraiserFilter === "All appraisers" || order.appraiser === appraiserFilter)
       .filter((order) => clientFilter === "All clients" || order.client === clientFilter)
       .filter((order) => priorityFilter === "All" || order.priority === priorityFilter)
@@ -233,17 +279,17 @@ export function OrdersView({
           .includes(needle)
       )
       .sort((a, b) => {
-        if (sortBy === "Fee") return b.fee - a.fee;
+        if (sortBy === "Authorized fees") return (getAuthorizedOrderFees(b, user, organization)[0]?.amount ?? 0) - (getAuthorizedOrderFees(a, user, organization)[0]?.amount ?? 0);
         if (sortBy === "Priority") return priorityRank(a.priority) - priorityRank(b.priority);
         if (sortBy === "Last update") return b.lastUpdate.localeCompare(a.lastUpdate);
         if (sortBy === "Assigned appraiser") return a.appraiser.localeCompare(b.appraiser);
         if (sortBy === "Client") return a.client.localeCompare(b.client);
-        if (sortBy === "Status") return a.status.localeCompare(b.status);
+        if (sortBy === "Status") return getOrganizationStatusLabel(a, statusConfigs, organization, user).localeCompare(getOrganizationStatusLabel(b, statusConfigs, organization, user));
         if (sortBy === "Inspection date") return inspectionSortValue(a) - inspectionSortValue(b);
         if (sortBy === "Due date descending") return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
         return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
       });
-  }, [appraiserFilter, clientFilter, priorityFilter, queueOrders, search, sortBy, statusFilter]);
+  }, [appraiserFilter, clientFilter, organization, priorityFilter, queueOrders, search, sortBy, statusConfigs, statusFilter, user]);
 
   const drawerOrder = drawerOrderId ? orderList.find((order) => order.id === drawerOrderId) ?? null : null;
   const drawerIndex = drawerOrder ? filteredOrders.findIndex((order) => order.id === drawerOrder.id) : -1;
@@ -261,7 +307,7 @@ export function OrdersView({
     setActiveQueue(queueTabs.includes(nextQueue) ? nextQueue : queueTabs[0] ?? "active");
   }, [initialQueue, organization, queueTabs, user]);
 
-  const showAccounting = canViewAccounting(user) && user.role !== "client_user" && (!user.appraiserName || selectedOrder.appraiser === user.appraiserName);
+  const showAccounting = orderList.some((order) => getAuthorizedOrderFees(order, user, organization).length > 0);
   const showAssignment = canAssignOrders(user);
   const allowReopen = canReopenOrders(user);
   const currentQueue = queueDefinitions[activeQueue];
@@ -292,19 +338,19 @@ export function OrdersView({
     onReopenOrder(order.id, reason.trim());
   }
 
-  function requestStatusChange(order: Order, status: OrderStatus) {
-    if (status === order.status) return;
-    const option = getAllowedStatusTransitions(order, user).find((item) => item.status === status);
+  function requestStatusChange(order: Order, status: OrderStatus, organizationStatusId?: string) {
+    if (status === order.status && organizationStatusId === order.organizationStatusId) return;
+    const option = getStatusDropdownOptions(order, statusConfigs, organization, user).find((item) => item.id === organizationStatusId || item.canonicalStatus === status);
     if (!option || option.disabled) {
       window.alert(option?.reason ?? "That status change is not available for your role.");
       return;
     }
     let reason: string | undefined;
-    if (option.requiresReason || requiresStatusReason(order.status, status)) {
-      reason = window.prompt(`Reason for changing this order to ${status}`)?.trim();
+    if (status !== order.status && (option.requiresReason || requiresStatusReason(order.status, status))) {
+      reason = window.prompt(`Reason for changing this order to ${option.label}`)?.trim();
       if (!reason) return;
     }
-    onStatusChange(order.id, status, reason);
+    onStatusChange(order.id, status, reason, organizationStatusId);
   }
 
   return (
@@ -322,11 +368,7 @@ export function OrdersView({
                   {filteredOrders.length} orders in {currentQueue.label.toLowerCase()}. {currentQueue.nextAction ?? "Use the tabs below to move through the work."}
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {showAssignment && <button className="secondary-button"><SlidersHorizontal className="h-4 w-4" /> Bulk update</button>}
-                <button className="secondary-button"><Download className="h-4 w-4" /> Export</button>
-                {canCreateOrders(user) && <button className="primary-button" onClick={onOpenNewOrder}><Plus className="h-4 w-4" /> New order</button>}
-              </div>
+              {canCreateOrders(user) && <button className="primary-button w-fit" onClick={onOpenNewOrder}><Plus className="h-4 w-4" /> New order</button>}
             </div>
 
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -364,8 +406,9 @@ export function OrdersView({
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input className="control w-full pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search file, borrower, client, address, appraiser" />
               </div>
-              <select className="control" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "All" | OrderStatus)}>
-                {statusFilters.map((status) => <option key={status}>{status}</option>)}
+              <select className="control" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="All">All statuses</option>
+                {statusOptions.map((status) => <option key={status.id} value={status.id}>{status.label}</option>)}
               </select>
               <select className="control" value={appraiserFilter} onChange={(event) => setAppraiserFilter(event.target.value)}>
                 <option>All appraisers</option>
@@ -388,7 +431,7 @@ export function OrdersView({
                 <option>Assigned appraiser</option>
                 <option>Client</option>
                 <option>Status</option>
-                <option>Fee</option>
+                <option>Authorized fees</option>
                 <option>Priority</option>
                 <option>Inspection date</option>
                 <option>Last update</option>
@@ -422,7 +465,7 @@ export function OrdersView({
                 <th className="px-4 py-3 font-semibold">Due</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Priority</th>
-                {showAccounting && <th className="px-4 py-3 font-semibold">Fee</th>}
+                {showAccounting && <th className="px-4 py-3 font-semibold">Authorized fees</th>}
                 <th className="px-4 py-3 font-semibold">Last update</th>
                 <th className="px-4 py-3 font-semibold">Next action</th>
                 <th className="px-4 py-3 font-semibold">Quick actions</th>
@@ -473,9 +516,9 @@ export function OrdersView({
                   <td className="px-4 py-4 text-slate-700">{order.reviewer}</td>
                   <td className="px-4 py-4 text-slate-600">{order.inspection?.scheduledDate ?? order.inspectionDate ? formatDate(order.inspection?.scheduledDate ?? order.inspectionDate ?? "") : "Not scheduled"}</td>
                   <td className="px-4 py-4"><DueChip date={order.dueDate} /></td>
-                  <td className="px-4 py-4"><WorkflowStatusChip order={order} user={user} /></td>
+                  <td className="px-4 py-4"><WorkflowStatusChip order={order} user={user} organization={organization} statusConfigs={statusConfigs} /></td>
                   <td className="px-4 py-4"><PriorityChip priority={order.priority} /></td>
-                  {showAccounting && <td className="px-4 py-4 font-medium text-slate-800">{formatCurrency(order.fee)}</td>}
+                  {showAccounting && <td className="px-4 py-4"><OrderFeeCell order={order} user={user} organization={organization} /></td>}
                   <td className="px-4 py-4 text-slate-600">{order.lastUpdate}</td>
                   <td className="px-4 py-4">
                     <div className="max-w-[220px] truncate text-slate-700">{order.nextAction}</div>
@@ -485,7 +528,7 @@ export function OrdersView({
                       <button className="icon-button" aria-label={`Open ${order.fileNumber}`} onClick={() => openOrder(order)}><Eye className="h-4 w-4" /></button>
                       {showAssignment && <button className="icon-button" aria-label={`Assign ${order.fileNumber}`} onClick={() => requestAssignment(order, recommendedAppraiser(order).name, "Assigned from quick action recommendation.")}><UserCheck className="h-4 w-4" /></button>}
                       {allowReopen && (statusDefinitions[order.status].lifecycle === "terminal" || statusDefinitions[order.status].lifecycle === "cancelled" || statusDefinitions[order.status].lifecycle === "delivered") && <button className="icon-button" aria-label={`Reopen ${order.fileNumber}`} onClick={() => requestReopen(order)}><RotateCcw className="h-4 w-4" /></button>}
-                      <StatusTransitionSelect order={order} user={user} onChange={requestStatusChange} />
+                      <StatusTransitionSelect order={order} user={user} organization={organization} statusConfigs={statusConfigs} onChange={requestStatusChange} />
                       <button className="icon-button" aria-label={`Add note to ${order.fileNumber}`} onClick={() => onAddNote(order.id)}><MessageSquare className="h-4 w-4" /></button>
                     </div>
                   </td>
@@ -506,6 +549,7 @@ export function OrdersView({
               order={drawerOrder}
               user={user}
               organization={organization}
+              statusConfigs={statusConfigs}
               bids={bids}
               onClose={() => setDrawerOrderId(null)}
               onPrevious={drawerIndex > 0 ? () => moveDrawer(-1) : undefined}
@@ -531,6 +575,7 @@ export function OrderDetailPanel({
   order,
   user,
   organization,
+  statusConfigs,
   bids,
   onClose,
   onPrevious,
@@ -546,12 +591,13 @@ export function OrderDetailPanel({
   order: Order;
   user: PortalUser;
   organization: Organization;
+  statusConfigs: OrganizationOrderStatus[];
   bids?: BidQueueContext;
   onClose: () => void;
   onPrevious?: () => void;
   onNext?: () => void;
   onOpenFullOrder?: (order: Order) => void;
-  onStatusChange: (order: Order, status: OrderStatus) => void;
+  onStatusChange: (order: Order, status: OrderStatus, organizationStatusId?: string) => void;
   onAddNote: (orderId: string) => void;
   onGenerateInvoice: (orderId: string) => void;
   managedDocuments: ManagedDocument[];
@@ -563,6 +609,8 @@ export function OrderDetailPanel({
   const primaryAction = getPrimaryOrderAction(order, user, organization, bids);
   const alert = getOrderDetailAlert(order, user, bids);
   const tabs: DetailTab[] = ["Overview", "Timeline"];
+  const authorizedFees = getAuthorizedOrderFees(order, user, organization);
+  const drawerFeeSummary = authorizedFees.length ? authorizedFees.map((fee) => `${fee.label}: ${formatCurrency(fee.amount)}`).join(" / ") : "Restricted";
   return (
     <aside className="panel h-full w-full overflow-hidden shadow-2xl sm:rounded-lg">
       <div className="border-b border-line bg-white p-5">
@@ -570,7 +618,7 @@ export function OrderDetailPanel({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold text-slate-950">{order.fileNumber}</span>
-              <WorkflowStatusChip order={order} user={user} />
+              <WorkflowStatusChip order={order} user={user} organization={organization} statusConfigs={statusConfigs} />
               <PriorityChip priority={order.priority} />
               <ReportStandardChip order={order} />
             </div>
@@ -586,7 +634,7 @@ export function OrderDetailPanel({
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
           <SummaryItem label="Due" value={formatDate(order.dueDate)} />
-          <SummaryItem label="Fee" value={formatCurrency(order.fee)} />
+          <SummaryItem label="Authorized fees" value={drawerFeeSummary} />
           <SummaryItem label="Appraiser" value={order.appraiser} />
           <SummaryItem label="Reviewer" value={order.reviewer} />
         </div>
@@ -617,7 +665,7 @@ export function OrderDetailPanel({
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button className="primary-button justify-center px-2" onClick={() => onOpenFullOrder?.(order)}><ExternalLink className="h-4 w-4" /> Open full order</button>
             <button className="secondary-button justify-center px-2" onClick={() => onAddNote(order.id)}><MessageSquare className="h-4 w-4" /> Add note</button>
-            <StatusTransitionSelect order={order} user={user} onChange={onStatusChange} />
+            <StatusTransitionSelect order={order} user={user} organization={organization} statusConfigs={statusConfigs} onChange={onStatusChange} />
             {showInvoiceAction && <button className="secondary-button justify-center px-2" onClick={() => onGenerateInvoice(order.id)}><ReceiptText className="h-4 w-4" /> Invoice</button>}
           </div>
         </section>

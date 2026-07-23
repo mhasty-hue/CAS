@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Bell, Building2, CheckCircle2, Globe2, Link2, ReceiptText, Settings, ShieldCheck, UserCheck } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, Bell, Building2, CheckCircle2, Globe2, Link2, Plus, ReceiptText, RotateCcw, Settings, ShieldCheck, UserCheck } from "lucide-react";
 import { permissionCatalog } from "@/data/demo";
-import type { CompanyUser, EmailDeliveryRecord, IntegrationLog, IntegrationSetting, InvoiceSettings, NotificationPreference, NotificationTemplate, Organization, OrganizationInvitation, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, UserRole } from "@/types/domain";
+import type { ClientTrackingStage, CompanyUser, EmailDeliveryRecord, IntegrationLog, IntegrationSetting, InvoiceSettings, NotificationPreference, NotificationTemplate, Order, OrderStatus, Organization, OrganizationInvitation, OrganizationOrderStatus, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, UserRole } from "@/types/domain";
 import { canInviteUsers, canManageCompanyUsers, canManageIntegrations, canManageNotificationSettings, canManagePublicOrdering } from "@/lib/permissions";
+import { orderStatusOptions } from "@/lib/orders/workflow";
+import { canArchiveStatus, canDeleteStatus, clientTrackingStages, statusUsageCount } from "@/lib/orders/status-config";
 import { cn } from "@/lib/utils";
 import { roleLabel, roleNavigation } from "./config";
 import { SectionHeader } from "./shared";
@@ -11,6 +13,8 @@ export function SettingsView({
   user,
   organization,
   companyUsers,
+  orderList,
+  orderStatuses,
   invitations,
   publicOrderSettings,
   publicOrderRequests,
@@ -28,11 +32,18 @@ export function SettingsView({
   onTogglePublicOrdering,
   onUpdatePublicConfirmation,
   onToggleNotificationPreference,
-  onConvertPublicRequest
+  onConvertPublicRequest,
+  onAddOrderStatus,
+  onUpdateOrderStatus,
+  onArchiveOrderStatus,
+  onRestoreOrderStatus,
+  onMoveOrderStatus
 }: {
   user: PortalUser;
   organization: Organization;
   companyUsers: CompanyUser[];
+  orderList: Order[];
+  orderStatuses: OrganizationOrderStatus[];
   invitations: OrganizationInvitation[];
   publicOrderSettings: PublicOrderSettings[];
   publicOrderRequests: PublicOrderRequest[];
@@ -51,6 +62,11 @@ export function SettingsView({
   onUpdatePublicConfirmation: (organizationId: string, confirmationMessage: string) => void;
   onToggleNotificationPreference: (preferenceId: string, channel: "emailEnabled" | "inAppEnabled") => void;
   onConvertPublicRequest: (requestId: string) => void;
+  onAddOrderStatus: () => void;
+  onUpdateOrderStatus: (statusId: string, patch: Partial<OrganizationOrderStatus>) => void;
+  onArchiveOrderStatus: (statusId: string) => void;
+  onRestoreOrderStatus: (statusId: string) => void;
+  onMoveOrderStatus: (statusId: string, direction: -1 | 1) => void;
 }) {
   const [selectedUserId, setSelectedUserId] = useState(companyUsers[0]?.id ?? "");
   const selectedUser = companyUsers.find((companyUser) => companyUser.id === selectedUserId) ?? companyUsers[0];
@@ -70,6 +86,19 @@ export function SettingsView({
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
       <div className="grid gap-5">
         <ProfileAndOrganizationPanel user={user} organization={organization} />
+        {canManage && (
+          <OrderStatusSettingsPanel
+            organization={organization}
+            statuses={orderStatuses}
+            orders={orderList}
+            canManage={canManage}
+            onAddStatus={onAddOrderStatus}
+            onUpdateStatus={onUpdateOrderStatus}
+            onArchiveStatus={onArchiveOrderStatus}
+            onRestoreStatus={onRestoreOrderStatus}
+            onMoveStatus={onMoveOrderStatus}
+          />
+        )}
         <div className="panel overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-line p-5 lg:flex-row lg:items-center lg:justify-between">
           <SectionHeader icon={Settings} title="Company Users and Permissions" />
@@ -194,6 +223,137 @@ function ProfileAndOrganizationPanel({ user, organization }: { user: PortalUser;
             <span>Public slug: {organization.slug ?? "not set"}</span>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+function OrderStatusSettingsPanel({
+  organization,
+  statuses,
+  orders,
+  canManage,
+  onAddStatus,
+  onUpdateStatus,
+  onArchiveStatus,
+  onRestoreStatus,
+  onMoveStatus
+}: {
+  organization: Organization;
+  statuses: OrganizationOrderStatus[];
+  orders: Order[];
+  canManage: boolean;
+  onAddStatus: () => void;
+  onUpdateStatus: (statusId: string, patch: Partial<OrganizationOrderStatus>) => void;
+  onArchiveStatus: (statusId: string) => void;
+  onRestoreStatus: (statusId: string) => void;
+  onMoveStatus: (statusId: string, direction: -1 | 1) => void;
+}) {
+  const scopedStatuses = statuses
+    .filter((status) => status.organizationId === organization.id)
+    .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name));
+
+  return (
+    <div className="panel overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-line p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <SectionHeader icon={Settings} title="Orders / Statuses" />
+          <p className="mt-1 text-sm text-slate-500">Customize organization-facing labels while CAS keeps canonical workflow automation, queues, and client tracking stable.</p>
+        </div>
+        <button className="primary-button disabled:opacity-50" disabled={!canManage} onClick={onAddStatus}><Plus className="h-4 w-4" /> Add status</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1120px] text-left text-sm">
+          <thead className="border-b border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Status name</th>
+              <th className="px-4 py-3">Canonical workflow stage</th>
+              <th className="px-4 py-3">Client-facing label</th>
+              <th className="px-4 py-3">Visible</th>
+              <th className="px-4 py-3">Used</th>
+              <th className="px-4 py-3">Order</th>
+              <th className="px-4 py-3">Archive</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {scopedStatuses.map((status) => {
+              const usage = statusUsageCount(status, orders);
+              const deleteBlocked = !canDeleteStatus(status, orders);
+              return (
+                <tr key={status.id} className={cn(status.archivedAt && "bg-slate-50 text-slate-500")}>
+                  <td className="px-4 py-3 align-top">
+                    <input
+                      className="control h-9 w-full"
+                      value={status.name}
+                      disabled={!canManage}
+                      onChange={(event) => onUpdateStatus(status.id, { name: event.target.value })}
+                    />
+                    <textarea
+                      className="control mt-2 min-h-16 w-full py-2 text-xs"
+                      value={status.description ?? ""}
+                      disabled={!canManage}
+                      onChange={(event) => onUpdateStatus(status.id, { description: event.target.value })}
+                      placeholder="Optional internal description"
+                    />
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                      {status.systemRequired && <span className="chip border-slate-200 bg-slate-50 text-slate-600">System required</span>}
+                      {status.archivedAt && <span className="chip border-amber-200 bg-amber-50 text-amber-800">Archived</span>}
+                      {deleteBlocked && !status.systemRequired && <span className="chip border-blue-200 bg-blue-50 text-blue-700">Historical orders preserved</span>}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <select
+                      className="control h-9"
+                      value={status.canonicalStatus}
+                      disabled={!canManage}
+                      onChange={(event) => onUpdateStatus(status.id, { canonicalStatus: event.target.value as OrderStatus })}
+                    >
+                      {orderStatusOptions.map((option) => <option key={option}>{option}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <select
+                      className="control h-9"
+                      value={status.clientFacingStage}
+                      disabled={!canManage}
+                      onChange={(event) => onUpdateStatus(status.id, { clientFacingStage: event.target.value as ClientTrackingStage })}
+                    >
+                      {clientTrackingStages.map((stage) => <option key={stage}>{stage}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <div className="grid gap-2 text-xs text-slate-600">
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={status.active} disabled={!canManage || status.systemRequired} onChange={() => onUpdateStatus(status.id, { active: !status.active })} /> Active</label>
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={status.appearsInDropdown} disabled={!canManage || Boolean(status.archivedAt)} onChange={() => onUpdateStatus(status.id, { appearsInDropdown: !status.appearsInDropdown })} /> Dropdown</label>
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={status.appearsAsFilter} disabled={!canManage || Boolean(status.archivedAt)} onChange={() => onUpdateStatus(status.id, { appearsAsFilter: !status.appearsAsFilter })} /> Orders filter</label>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <div className="font-semibold text-slate-900">{usage}</div>
+                    <div className="mt-1 text-xs text-slate-500">{usage > 0 ? "Archive preserves old orders and audit text." : "Unused in current demo orders."}</div>
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <div className="flex gap-1">
+                      <button className="icon-button disabled:opacity-40" disabled={!canManage} aria-label={`Move ${status.name} up`} onClick={() => onMoveStatus(status.id, -1)}><ArrowUp className="h-4 w-4" /></button>
+                      <button className="icon-button disabled:opacity-40" disabled={!canManage} aria-label={`Move ${status.name} down`} onClick={() => onMoveStatus(status.id, 1)}><ArrowDown className="h-4 w-4" /></button>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-500">Display {status.displayOrder}</div>
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    {status.archivedAt ? (
+                      <button className="secondary-button h-8 px-2 text-xs disabled:opacity-50" disabled={!canManage} onClick={() => onRestoreStatus(status.id)}><RotateCcw className="h-4 w-4" /> Restore</button>
+                    ) : (
+                      <button className="secondary-button h-8 px-2 text-xs disabled:opacity-50" disabled={!canManage || !canArchiveStatus(status, orders)} onClick={() => onArchiveStatus(status.id)}><Archive className="h-4 w-4" /> Archive</button>
+                    )}
+                    <div className="mt-2 text-xs text-slate-500">Permanent delete is unavailable for workflow safety.</div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

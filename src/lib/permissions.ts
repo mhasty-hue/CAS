@@ -9,6 +9,16 @@ const dashboardVisibilityPermissions: PermissionKey[] = [
 ];
 const fullAccountingPermissions: PermissionKey[] = [
   "see_accounting",
+  "view_accounting",
+  "view_client_fee",
+  "edit_client_fee",
+  "view_vendor_fee",
+  "edit_vendor_fee",
+  "view_margin",
+  "view_invoice",
+  "manage_invoice",
+  "view_commission",
+  "manage_commission",
   "view_accounting_summary",
   "view_full_accounting",
   "prepare_payroll",
@@ -23,7 +33,7 @@ const fullAccountingPermissions: PermissionKey[] = [
   "mark_invoices_paid"
 ];
 const appraiserPayPermissions: PermissionKey[] = ["see_appraiser_payouts", "view_own_pay"];
-const invoicePermissions: PermissionKey[] = ["generate_invoices", "edit_invoices", "mark_invoices_paid"];
+const invoicePermissions: PermissionKey[] = ["generate_invoices", "edit_invoices", "mark_invoices_paid", "view_invoice", "manage_invoice"];
 const platformAdminPermissions: PermissionKey[] = ["manage_public_ordering", "manage_notification_settings", "manage_integrations"];
 const documentManagerPermissions: PermissionKey[] = [
   "upload_order_documents",
@@ -59,6 +69,15 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "delete_documents",
     "see_accounting",
     "see_appraiser_payouts",
+    "view_client_fee",
+    "edit_client_fee",
+    "view_vendor_fee",
+    "edit_vendor_fee",
+    "view_margin",
+    "view_invoice",
+    "manage_invoice",
+    "view_commission",
+    "manage_commission",
     "manage_users",
     "manage_clients",
     "invite_users",
@@ -89,6 +108,15 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "delete_documents",
     "see_accounting",
     "see_appraiser_payouts",
+    "view_client_fee",
+    "edit_client_fee",
+    "view_vendor_fee",
+    "edit_vendor_fee",
+    "view_margin",
+    "view_invoice",
+    "manage_invoice",
+    "view_commission",
+    "manage_commission",
     "manage_users",
     "manage_clients",
     "review_reports",
@@ -147,7 +175,7 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "assign_tasks",
     "view_notification_logs"
   ],
-  appraiser: ["upload_documents", "upload_order_documents", "view_workfile_documents", "download_xml", "see_appraiser_payouts", "view_own_pay", "view_payroll_summary", "view_operational_dashboard", "edit_inspections", "view_own_orders_only"],
+  appraiser: ["upload_documents", "upload_order_documents", "view_workfile_documents", "download_xml", "see_appraiser_payouts", "view_vendor_fee", "view_own_pay", "view_payroll_summary", "view_operational_dashboard", "edit_inspections", "view_own_orders_only"],
   solo_appraiser: [
     "create_orders",
     "assign_orders",
@@ -155,6 +183,15 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     ...documentManagerPermissions,
     "see_accounting",
     "see_appraiser_payouts",
+    "view_client_fee",
+    "edit_client_fee",
+    "view_vendor_fee",
+    "edit_vendor_fee",
+    "view_margin",
+    "view_invoice",
+    "manage_invoice",
+    "view_commission",
+    "manage_commission",
     "manage_accounting",
     ...fullAccountingPermissions,
     ...dashboardVisibilityPermissions,
@@ -178,6 +215,10 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     "view_client_documents",
     "view_vendor_compliance_documents",
     "deliver_final_report",
+    "view_client_fee",
+    "view_vendor_fee",
+    "view_margin",
+    "view_invoice",
     "invite_vendors",
     "approve_vendors",
     "manage_users",
@@ -190,7 +231,7 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
     ...taskManagerPermissions
   ],
   amc_staff: ["view_all_orders", "create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_vendor_compliance_documents", "invite_vendors", "export_reports", "view_operational_dashboard", "manage_team_tasks", "assign_tasks", "view_notification_logs"],
-  client_user: ["create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_operational_dashboard", "view_own_orders_only"]
+  client_user: ["create_orders", "upload_documents", "upload_order_documents", "view_client_documents", "view_invoice", "view_client_fee", "view_operational_dashboard", "view_own_orders_only"]
 };
 
 export function getPermissions(user: PortalUser) {
@@ -204,6 +245,7 @@ export function hasPermission(user: PortalUser, permission: PermissionKey) {
 export function canViewAccounting(user: PortalUser) {
   return [
     "see_accounting",
+    "view_accounting",
     "view_accounting_summary",
     "view_full_accounting",
     "see_appraiser_payouts",

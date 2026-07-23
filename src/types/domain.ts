@@ -21,6 +21,17 @@ export type PermissionKey =
   | "delete_documents"
   | "see_accounting"
   | "see_appraiser_payouts"
+  | "view_client_fee"
+  | "edit_client_fee"
+  | "view_vendor_fee"
+  | "edit_vendor_fee"
+  | "view_margin"
+  | "view_accounting"
+  | "manage_accounting"
+  | "view_invoice"
+  | "manage_invoice"
+  | "view_commission"
+  | "manage_commission"
   | "manage_users"
   | "manage_clients"
   | "review_reports"
@@ -32,7 +43,6 @@ export type PermissionKey =
   | "view_own_orders_only"
   | "invite_users"
   | "manage_company_users"
-  | "manage_accounting"
   | "customize_order_forms"
   | "view_accounting_summary"
   | "view_full_accounting"
@@ -120,6 +130,17 @@ export type OrderStatus =
   | "Completed"
   | "On Hold"
   | "Cancelled";
+
+export type ClientTrackingStage =
+  | "Order Received"
+  | "Appraiser Being Assigned"
+  | "Appraiser Assigned"
+  | "Inspection Being Scheduled"
+  | "Inspection Scheduled"
+  | "Appraisal in Progress"
+  | "Report Under Review"
+  | "Additional Information Needed"
+  | "Completed";
 
 export type Priority = "Rush" | "High" | "Standard" | "Watch";
 
@@ -476,8 +497,12 @@ export type Order = {
   inspectionDate?: string;
   inspection?: InspectionInfo;
   status: OrderStatus;
+  organizationStatusId?: string;
   priority: Priority;
   fee: number;
+  clientFee?: number;
+  vendorFee?: number;
+  companyMargin?: number;
   techFee: number;
   appraiserPayout: number;
   documents: number;
@@ -1338,12 +1363,28 @@ export type ConnectedOrderSummary = {
   dueAt?: string;
   inspectionAt?: string;
   status: OrderStatus;
+  organizationStatusId?: string;
   simplifiedStatus: string;
   assignedSummary: string;
   nextAction: string;
   visibleTo: ConnectedParticipantRole[];
   documentsShared: number;
   messagesOpen: number;
+};
+
+export type OrganizationOrderStatus = {
+  id: string;
+  organizationId: string;
+  name: string;
+  description?: string;
+  canonicalStatus: OrderStatus;
+  clientFacingStage: ClientTrackingStage;
+  displayOrder: number;
+  active: boolean;
+  appearsInDropdown: boolean;
+  appearsAsFilter: boolean;
+  systemRequired: boolean;
+  archivedAt?: string;
 };
 
 export type ConnectedInvitation = {

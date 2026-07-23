@@ -14,6 +14,8 @@
     "supabase:smoke:connected": "node scripts/supabase/phase10-connected-smoke.mjs",
     "test:workflow": "node scripts/phase10-3b-regression.mjs",
     "test:order-detail": "node scripts/phase10-3c-order-detail-regression.mjs",
+    "test:status-config": "node scripts/phase10-3c1-status-regression.mjs",
+    "test:fee-visibility": "node scripts/phase10-3c1-fee-regression.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
