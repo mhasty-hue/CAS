@@ -13,6 +13,7 @@
     "supabase:smoke:security": "node scripts/supabase/phase10-security-smoke.mjs",
     "supabase:smoke:connected": "node scripts/supabase/phase10-connected-smoke.mjs",
     "test:workflow": "node scripts/phase10-3b-regression.mjs",
+    "test:order-detail": "node scripts/phase10-3c-order-detail-regression.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

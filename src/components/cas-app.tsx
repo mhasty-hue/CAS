@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { appraisers, calendarPreferences, clientProfiles, companyUsers, defaultOrderFormTemplate, orders, vendors } from "@/data/demo";
-import { bidAwards, bidRecipients, bidRequests, bidResponses, connectedOrderSummaries, connectedParticipants } from "@/data/connected";
+import { bidAwards, bidRecipients, bidRequests, bidResponses, connectedOrderSummaries, connectedParticipants, vendorCountyCoverage } from "@/data/connected";
 import {
   accountingEntries,
   automationRules,
@@ -54,6 +54,7 @@ import { demoMode, navCatalog, roleNavigation, type NavId } from "./cas/config";
 import { AppraiserPortalView, DashboardView } from "./cas/dashboard";
 import { NewOrderView } from "./cas/forms";
 import { CommandPalette, Sidebar, Topbar } from "./cas/layout";
+import { OrderDetailPage } from "./cas/order-detail";
 import { OrdersView } from "./cas/orders";
 import { CompletedReviewsView, ReviewTemplatesView, ReviewView, RevisionsView } from "./cas/review";
 import { DocumentsView, MessagesView, ReportsView } from "./cas/support";
@@ -119,6 +120,11 @@ export function CasApp() {
     const preferredOrderQueue = resolveLegacyOrderQueue(preferred, activeUser, activeOrganization);
     const fallbackOrderQueue = resolveLegacyOrderQueue(fallback, activeUser, activeOrganization);
     setActiveView(navigation.includes(preferred) || preferredOrderQueue ? preferred : navigation.includes(fallback) || fallbackOrderQueue ? fallback : "dashboard");
+  }
+
+  function openOrderDetail(order: Order) {
+    setSelectedOrderId(order.id);
+    setActiveView("order-detail");
   }
 
   useEffect(() => {
@@ -218,12 +224,12 @@ export function CasApp() {
   }, []);
 
   useEffect(() => {
-    if (!roleNavigation[activeUser.role].includes(activeView) && !resolveLegacyOrderQueue(activeView, activeUser, activeOrganization) && activeView !== "connected") {
+    if (!roleNavigation[activeUser.role].includes(activeView) && !resolveLegacyOrderQueue(activeView, activeUser, activeOrganization) && activeView !== "connected" && activeView !== "order-detail") {
       setActiveView("dashboard");
     }
   }, [activeOrganization, activeUser, activeView]);
 
-  const currentTitle = activeOrderQueue ? "Orders" : navCatalog[activeView]?.label ?? "Dashboard";
+  const currentTitle = activeView === "order-detail" ? selectedOrder.fileNumber : activeOrderQueue ? "Orders" : navCatalog[activeView]?.label ?? "Dashboard";
 
   function updateOrder(orderId: string, updater: (order: Order) => Order) {
     setOrderList((currentOrders) => currentOrders.map((order) => (order.id === orderId ? updater(order) : order)));
@@ -1593,6 +1599,38 @@ export function CasApp() {
               onPlaceOrder={() => setActiveView(["amc_admin", "amc_staff", "client_user", "solo_appraiser"].includes(activeUser.role) ? "place-order" : canCreateOrders(activeUser) ? "new-order" : "orders")}
             />
           )}
+          {activeView === "order-detail" && (
+            <OrderDetailPage
+              order={selectedOrder}
+              user={activeUser}
+              organization={activeOrganization}
+              onBack={() => openView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders", "dashboard")}
+              onAssignOrder={handleAssignOrder}
+              onStatusChange={handleStatusChange}
+              onUpdateInspection={handleUpdateInspection}
+              onAddNote={handleAddNote}
+              onGenerateInvoice={handleGenerateInvoice}
+              managedDocuments={managedDocumentList}
+              requiredDocumentRules={requiredDocumentRuleList}
+              orderMessages={orderMessageList}
+              revisionRequests={revisionRequestList}
+              deliveryRecords={deliveryRecordList}
+              onUploadDocument={handleUploadDocument}
+              onArchiveDocument={handleArchiveDocument}
+              onRestoreDocument={handleRestoreDocument}
+              onReplaceDocumentVersion={handleReplaceDocumentVersion}
+              onSubmitReport={handleSubmitReport}
+              onDeliverReport={handleDeliverReport}
+              onSendMessage={handleSendOrderMessage}
+              onToggleMessagePinned={handleToggleMessagePinned}
+              onToggleMessageRead={handleToggleMessageRead}
+              onUpdateRevisionStatus={handleUpdateRevisionStatus}
+              onRespondToRevisionItem={handleRespondToRevisionItem}
+              bids={{ requests: bidRequests, recipients: bidRecipients, responses: bidResponses, awards: bidAwards }}
+              connected={{ participants: connectedParticipants }}
+              vendorCoverage={vendorCountyCoverage}
+            />
+          )}
           {activeOrderQueue && (
             <OrdersView
               orderList={visibleOrders}
@@ -1602,6 +1640,7 @@ export function CasApp() {
               organization={activeOrganization}
               onOpenNewOrder={() => setActiveView(["amc_admin", "amc_staff", "client_user", "solo_appraiser"].includes(activeUser.role) ? "place-order" : "new-order")}
               onSelectOrder={(order) => setSelectedOrderId(order.id)}
+              onOpenFullOrder={openOrderDetail}
               onAssignOrder={handleAssignOrder}
               onStatusChange={handleStatusChange}
               onReopenOrder={handleReopenOrder}

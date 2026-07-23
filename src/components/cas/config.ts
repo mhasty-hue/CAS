@@ -6,6 +6,7 @@ import { orderStatusOptions } from "@/lib/orders/workflow";
 export type NavId =
   | "dashboard"
   | "orders"
+  | "order-detail"
   | "completed-orders"
   | "cancelled-orders"
   | "all-orders"
@@ -40,6 +41,7 @@ export type NavId =
 export const navCatalog: Record<NavId, { label: string; icon: LucideIcon }> = {
   dashboard: { label: "Dashboard", icon: LayoutDashboard },
   orders: { label: "Orders", icon: ListChecks },
+  "order-detail": { label: "Order Detail", icon: FileText },
   "completed-orders": { label: "Completed", icon: FileCheck2 },
   "cancelled-orders": { label: "Cancelled", icon: Archive },
   "all-orders": { label: "All Orders", icon: ListChecks },

@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, CalendarClock, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, Download, ExternalLink, Eye, FileCheck2, History, Home, ListChecks, MessageSquare, Plus, ReceiptText, RotateCcw, Search, SlidersHorizontal, UploadCloud, UserCheck, X } from "lucide-react";
+import { Archive, CalendarClock, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, Download, ExternalLink, Eye, FileCheck2, History, Home, ListChecks, MessageSquare, Plus, ReceiptText, RotateCcw, Search, SlidersHorizontal, UserCheck, X } from "lucide-react";
 import { appraisers } from "@/data/demo";
 import type { AppraiserProfile, BidRequest, ConnectedOrderSummary, DeliveryRecord, DocumentCategory, InspectionInfo, ManagedDocument, MessageChannel, Order, OrderMessage, OrderStatus, Organization, PortalUser, RequiredDocumentRule, RevisionRequest, RevisionStatus } from "@/types/domain";
 import { canAssignOrders, canCreateOrders, canEditInspections, canGenerateInvoices, canReopenOrders, canViewAccounting } from "@/lib/permissions";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { countQueueItems, getAllowedStatusTransitions, getDefaultOrderQueue, getIncomingAssignmentsForUser, getOpenBidRequestsForUser, getOrderQueueTabs, queueDefinitions, queueMatchesOrder, requiresStatusReason, statusDefinitions, type BidQueueContext, type ConnectedQueueContext, type OrderQueueId } from "@/lib/orders/workflow";
+import { getOrderDetailAlert, getPrimaryOrderAction } from "@/lib/orders/detail";
 import { statusFilters } from "./config";
 import { DetailSection, DueChip, InfoRow, ListOrEmpty, MetricTile, PriorityChip, StatusChip, SummaryItem } from "./shared";
-import { OrderDocumentWorkspace, RequiredDocumentSummary } from "./documents/workspace";
-import { OrderConversationPanel } from "./messages/conversation";
-import { RevisionSummary, RevisionWorkflowPanel } from "./revisions/workflow";
+import { RequiredDocumentSummary } from "./documents/workspace";
+import { RevisionSummary } from "./revisions/workflow";
 
 export function priorityRank(priority: Order["priority"]) {
   const ranks: Record<Order["priority"], number> = {
@@ -121,7 +121,7 @@ function BidRequestQueue({ requests }: { requests: BidRequest[] }) {
 }
 
 type InspectionAction = "schedule" | "reschedule" | "complete" | "cancel" | "note";
-type DetailTab = "Overview" | "Timeline" | "Documents" | "Messages" | "Review/Revisions" | "Accounting";
+type DetailTab = "Overview" | "Timeline";
 
 function inspectionSortValue(order: Order) {
   const value = order.inspection?.scheduledDate ?? order.inspectionDate;
@@ -157,29 +157,16 @@ export function OrdersView({
   user,
   organization,
   onSelectOrder,
+  onOpenFullOrder,
   onOpenNewOrder,
   onAssignOrder,
   onStatusChange,
   onReopenOrder,
-  onUpdateInspection,
   onAddNote,
   onGenerateInvoice,
   managedDocuments,
   requiredDocumentRules,
-  orderMessages,
   revisionRequests,
-  deliveryRecords,
-  onUploadDocument,
-  onArchiveDocument,
-  onRestoreDocument,
-  onReplaceDocumentVersion,
-  onSubmitReport,
-  onDeliverReport,
-  onSendMessage,
-  onToggleMessagePinned,
-  onToggleMessageRead,
-  onUpdateRevisionStatus,
-  onRespondToRevisionItem,
   bids,
   connected
 }: {
@@ -189,6 +176,7 @@ export function OrdersView({
   user: PortalUser;
   organization: Organization;
   onSelectOrder: (order: Order) => void;
+  onOpenFullOrder?: (order: Order) => void;
   onOpenNewOrder?: () => void;
   onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
   onStatusChange: (orderId: string, status: OrderStatus, reason?: string) => void;
@@ -517,30 +505,18 @@ export function OrdersView({
             <OrderDetailPanel
               order={drawerOrder}
               user={user}
+              organization={organization}
+              bids={bids}
               onClose={() => setDrawerOrderId(null)}
               onPrevious={drawerIndex > 0 ? () => moveDrawer(-1) : undefined}
               onNext={drawerIndex >= 0 && drawerIndex < filteredOrders.length - 1 ? () => moveDrawer(1) : undefined}
-              onAssignOrder={onAssignOrder}
+              onOpenFullOrder={onOpenFullOrder}
               onStatusChange={requestStatusChange}
-              onUpdateInspection={onUpdateInspection}
               onAddNote={onAddNote}
               onGenerateInvoice={onGenerateInvoice}
               managedDocuments={managedDocuments}
               requiredDocumentRules={requiredDocumentRules}
-              orderMessages={orderMessages}
               revisionRequests={revisionRequests}
-              deliveryRecords={deliveryRecords}
-              onUploadDocument={onUploadDocument}
-              onArchiveDocument={onArchiveDocument}
-              onRestoreDocument={onRestoreDocument}
-              onReplaceDocumentVersion={onReplaceDocumentVersion}
-              onSubmitReport={onSubmitReport}
-              onDeliverReport={onDeliverReport}
-              onSendMessage={onSendMessage}
-              onToggleMessagePinned={onToggleMessagePinned}
-              onToggleMessageRead={onToggleMessageRead}
-              onUpdateRevisionStatus={onUpdateRevisionStatus}
-              onRespondToRevisionItem={onRespondToRevisionItem}
             />
           </div>
         </div>
@@ -554,64 +530,39 @@ export function OrdersView({
 export function OrderDetailPanel({
   order,
   user,
+  organization,
+  bids,
   onClose,
   onPrevious,
   onNext,
-  onAssignOrder,
+  onOpenFullOrder,
   onStatusChange,
-  onUpdateInspection,
   onAddNote,
   onGenerateInvoice,
   managedDocuments,
   requiredDocumentRules,
-  orderMessages,
-  revisionRequests,
-  deliveryRecords,
-  onUploadDocument,
-  onArchiveDocument,
-  onRestoreDocument,
-  onReplaceDocumentVersion,
-  onSubmitReport,
-  onDeliverReport,
-  onSendMessage,
-  onToggleMessagePinned,
-  onToggleMessageRead,
-  onUpdateRevisionStatus,
-  onRespondToRevisionItem
+  revisionRequests
 }: {
   order: Order;
   user: PortalUser;
+  organization: Organization;
+  bids?: BidQueueContext;
   onClose: () => void;
   onPrevious?: () => void;
   onNext?: () => void;
-  onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
+  onOpenFullOrder?: (order: Order) => void;
   onStatusChange: (order: Order, status: OrderStatus) => void;
-  onUpdateInspection: (orderId: string, inspection: InspectionInfo, action: InspectionAction, note: string) => void;
   onAddNote: (orderId: string) => void;
   onGenerateInvoice: (orderId: string) => void;
   managedDocuments: ManagedDocument[];
   requiredDocumentRules: RequiredDocumentRule[];
-  orderMessages: OrderMessage[];
   revisionRequests: RevisionRequest[];
-  deliveryRecords: DeliveryRecord[];
-  onUploadDocument: (orderId: string, category: DocumentCategory) => void;
-  onArchiveDocument: (documentId: string) => void;
-  onRestoreDocument: (documentId: string) => void;
-  onReplaceDocumentVersion: (documentId: string) => void;
-  onSubmitReport: (orderId: string) => void;
-  onDeliverReport: (orderId: string) => void;
-  onSendMessage: (orderId: string, channel: MessageChannel, body: string) => void;
-  onToggleMessagePinned: (messageId: string) => void;
-  onToggleMessageRead: (messageId: string) => void;
-  onUpdateRevisionStatus: (revisionId: string, status: RevisionStatus) => void;
-  onRespondToRevisionItem: (revisionId: string, itemId: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<DetailTab>("Overview");
-  const reviewComplete = order.reviewItems.filter((item) => item.complete).length;
-  const showAccounting = canViewAccounting(user) && user.role !== "client_user" && (!user.appraiserName || order.appraiser === user.appraiserName);
-  const showAssignment = canAssignOrders(user);
   const showInvoiceAction = canGenerateInvoices(user);
-  const tabs: DetailTab[] = ["Overview", "Timeline", "Documents", "Messages", "Review/Revisions", ...(showAccounting ? ["Accounting" as const] : [])];
+  const primaryAction = getPrimaryOrderAction(order, user, organization, bids);
+  const alert = getOrderDetailAlert(order, user, bids);
+  const tabs: DetailTab[] = ["Overview", "Timeline"];
   return (
     <aside className="panel h-full w-full overflow-hidden shadow-2xl sm:rounded-lg">
       <div className="border-b border-line bg-white p-5">
@@ -629,7 +580,7 @@ export function OrderDetailPanel({
           <div className="flex items-center gap-1.5">
             <button className="icon-button disabled:opacity-40" disabled={!onPrevious} aria-label="Previous order" onClick={onPrevious}><ChevronLeft className="h-4 w-4" /></button>
             <button className="icon-button disabled:opacity-40" disabled={!onNext} aria-label="Next order" onClick={onNext}><ChevronRight className="h-4 w-4" /></button>
-            <button className="icon-button" aria-label="Open full order page"><ExternalLink className="h-4 w-4" /></button>
+            <button className="icon-button" aria-label="Open full order page" onClick={() => onOpenFullOrder?.(order)}><ExternalLink className="h-4 w-4" /></button>
             <button className="icon-button" aria-label="Close order detail" onClick={onClose}><X className="h-4 w-4" /></button>
           </div>
         </div>
@@ -658,21 +609,21 @@ export function OrderDetailPanel({
         {activeTab === "Overview" && (
           <>
         <section>
-          <h3 className="text-sm font-semibold text-slate-950">Quick Actions</h3>
+          <h3 className="text-sm font-semibold text-slate-950">Quick Summary</h3>
+          <div className="mt-3 rounded-md border border-line bg-slate-50 p-3 text-sm text-slate-700">
+            <div className="font-medium text-slate-950">{primaryAction.label}</div>
+            <p className="mt-1 leading-6">{alert}</p>
+          </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            {showAssignment && <button className="secondary-button justify-center px-2" onClick={() => onAssignOrder(order.id, recommendedAppraiser(order).name, "Assigned from order detail recommendation.")}><UserCheck className="h-4 w-4" /> Assign</button>}
+            <button className="primary-button justify-center px-2" onClick={() => onOpenFullOrder?.(order)}><ExternalLink className="h-4 w-4" /> Open full order</button>
             <button className="secondary-button justify-center px-2" onClick={() => onAddNote(order.id)}><MessageSquare className="h-4 w-4" /> Add note</button>
             <StatusTransitionSelect order={order} user={user} onChange={onStatusChange} />
             {showInvoiceAction && <button className="secondary-button justify-center px-2" onClick={() => onGenerateInvoice(order.id)}><ReceiptText className="h-4 w-4" /> Invoice</button>}
-            <button className="secondary-button justify-center px-2"><UploadCloud className="h-4 w-4" /> Upload</button>
           </div>
         </section>
 
-        {showAssignment && <AssignmentPanel order={order} onAssignOrder={onAssignOrder} />}
         <RequiredDocumentSummary order={order} documents={managedDocuments} rules={requiredDocumentRules} />
         <RevisionSummary order={order} revisions={revisionRequests} />
-        <ReportMetadataSection order={order} />
-        <InspectionPanel order={order} user={user} onUpdateInspection={onUpdateInspection} />
 
         <DetailSection icon={Home} title="Property, Borrower, Client">
           <div className="grid gap-2 text-sm">
@@ -696,20 +647,6 @@ export function OrderDetailPanel({
           </>
         )}
 
-        {activeTab === "Accounting" && showAccounting && <DetailSection icon={ReceiptText} title="Fee and Accounting Snapshot">
-          <div className="grid gap-2 sm:grid-cols-3">
-            <MetricTile label="Order fee" value={formatCurrency(order.fee)} />
-            <MetricTile label="Tech fee" value={formatCurrency(order.techFee)} />
-            <MetricTile label="Payout" value={formatCurrency(order.appraiserPayout)} />
-          </div>
-          <div className="mt-3 grid gap-2 text-sm">
-            <InfoRow label="Other noncommissionable" value={formatCurrency(order.otherNonCommissionableFees ?? order.payrollSnapshot?.otherNonCommissionableFees ?? 0)} />
-            <InfoRow label="Commissionable base" value={formatCurrency(order.payrollSnapshot?.commissionableBase ?? Math.max(0, order.fee - order.techFee - (order.otherNonCommissionableFees ?? 0)))} />
-            <InfoRow label="Calculation source" value={order.payrollSnapshot?.calculationSource ?? "Accounting workspace calculation pending"} />
-            <InfoRow label="Approved" value={order.payrollSnapshot?.approvedBy ? `${order.payrollSnapshot.approvedBy} on ${formatDate(order.payrollSnapshot.approvedDate ?? order.paidAt ?? order.dueDate)}` : "Not approved"} />
-          </div>
-        </DetailSection>}
-
         {activeTab === "Timeline" && (
           <>
         <DetailSection icon={Clock3} title="Status Timeline">
@@ -727,7 +664,7 @@ export function OrderDetailPanel({
           </div>
         </DetailSection>
 
-        <DetailSection icon={MessageSquare} title="Internal Notes">
+        {user.role !== "client_user" && <DetailSection icon={MessageSquare} title="Internal Notes">
           <div className="mt-3 space-y-2">
             {(order.notes.length ? order.notes : [{ id: "empty", author: "CAS", body: "No notes yet.", visibility: "internal", createdAt: "Now" }]).map((note) => (
               <div key={note.id} className="rounded-md border border-line px-3 py-2 text-sm">
@@ -736,7 +673,7 @@ export function OrderDetailPanel({
               </div>
             ))}
           </div>
-        </DetailSection>
+        </DetailSection>}
         <DetailSection icon={History} title="Assignment History">
           <ListOrEmpty
             empty="No assignment history yet."
@@ -747,66 +684,6 @@ export function OrderDetailPanel({
           <ListOrEmpty
             empty="No audit entries yet."
             items={order.auditTrail.map((item) => `${item.at} - ${item.actor}: ${item.action}`)}
-          />
-        </DetailSection>
-          </>
-        )}
-
-        {activeTab === "Messages" && <DetailSection icon={MessageSquare} title="Order Communication">
-          <OrderConversationPanel
-            order={order}
-            user={user}
-            messages={orderMessages}
-            onSendMessage={onSendMessage}
-            onTogglePinned={onToggleMessagePinned}
-            onToggleRead={onToggleMessageRead}
-          />
-        </DetailSection>
-        }
-
-        {activeTab === "Documents" && <DetailSection icon={UploadCloud} title="Documents and Uploads">
-          <OrderDocumentWorkspace
-            order={order}
-            user={user}
-            documents={managedDocuments}
-            requiredRules={requiredDocumentRules}
-            deliveryRecords={deliveryRecords}
-            onUploadDocument={onUploadDocument}
-            onArchiveDocument={onArchiveDocument}
-            onRestoreDocument={onRestoreDocument}
-            onReplaceDocumentVersion={onReplaceDocumentVersion}
-            onSubmitReport={onSubmitReport}
-            onDeliverReport={onDeliverReport}
-          />
-        </DetailSection>
-        }
-
-        {activeTab === "Review/Revisions" && (
-          <>
-        <DetailSection icon={FileCheck2} title="Review">
-          <div className="rounded-md border border-line bg-slate-50 p-3 text-sm">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-medium text-slate-900">Checklist progress</span>
-              <span className="text-slate-600">{reviewComplete}/{Math.max(order.reviewItems.length, 1)} complete</span>
-            </div>
-            <div className="mt-3 space-y-2">
-              {(order.reviewItems.length ? order.reviewItems : [{ label: "Review checklist will populate when submitted", category: "Review", complete: false }]).map((item) => (
-                <div key={`${item.category}-${item.label}`} className="flex items-center justify-between gap-2 text-xs text-slate-600">
-                  <span>{item.category}: {item.label}</span>
-                  <span className={cn("rounded-full px-2 py-0.5", item.complete ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800")}>{item.complete ? "Done" : "Open"}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </DetailSection>
-
-        <DetailSection icon={FileCheck2} title="Structured Revision Workflow">
-          <RevisionWorkflowPanel
-            order={order}
-            revisions={revisionRequests}
-            documents={managedDocuments}
-            onUpdateRevisionStatus={onUpdateRevisionStatus}
-            onRespondToRevisionItem={onRespondToRevisionItem}
           />
         </DetailSection>
           </>
