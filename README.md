@@ -1,3 +1,91 @@
 # CAS
 
 CAS is the Appraisal Operating System: a modern SaaS foundation for appraisal firms, solo appraisers, AMCs, lenders, reviewers, and office teams.
+
+## First implementation phase
+
+This branch establishes the first commercial-demo foundation for CAS:
+
+- Next.js app router with TypeScript and Tailwind CSS
+- Responsive SaaS shell with sidebar, topbar, global command search, dashboard, orders, intake, review, appraiser, vendor, accounting, analytics, documents, notifications, clients, and settings surfaces
+- Demo order, appraiser, client, vendor, KPI, notification, and chart data
+- Orders table with search, saved views, filters, sorting, selection, quick assignment, status chips, due warnings, and export/bulk action controls
+- Order detail panel with summary, quick actions, sections, timeline, notes, documents, accounting, and review context
+- Supabase-ready auth helper and environment variables
+- Multi-tenant Supabase schema with organizations, members, roles, permissions, invitations, orders, documents, reviews, accounting, vendor panel, workflow, automation, audit, and notification tables
+- RLS helpers and policies for tenant membership, admin access, permissions, vendor panel visibility, and sensitive accounting access
+- Seed data for a demo appraisal firm and AMC workspace
+- Phase 7 production foundation with Supabase Auth screens, invite acceptance, protected production shell behavior, public order-request links, notification preferences, assignment-level invoicing, invoice settings, and vendor-neutral LOS integration scaffolding
+- Phase 10.1 security hardening for exposed database helpers, fixed function search paths, private extension placement, and stricter public-order upload policies
+
+## Local setup
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Copy `.env.example` to `.env.local` and set Supabase values when connecting to a real project.
+
+## Supabase
+
+CAS now has a Supabase foundation while still keeping demo mode as the default fallback.
+
+- Leave `NEXT_PUBLIC_CAS_DATA_SOURCE=demo` to use the current local demo state.
+- Leave `NEXT_PUBLIC_CAS_DEMO_MODE=true` to keep the demo role switcher available.
+- Set `NEXT_PUBLIC_CAS_DATA_SOURCE=supabase` and `NEXT_PUBLIC_CAS_DEMO_MODE=false`, then provide `NEXT_PUBLIC_SUPABASE_URL` plus `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, when testing authenticated production mode. `NEXT_PUBLIC_SUPABASE_ANON_KEY` is kept as a compatibility fallback.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` server-side only. It is for seed/admin scripts, not browser code.
+- Email notifications use a development-log provider by default. Configure a real provider later through `CAS_EMAIL_PROVIDER` plus the relevant provider token.
+
+The schema starts in `supabase/migrations/202606290001_initial_schema.sql`; Phase 5 backend extensions are in `supabase/migrations/202607090001_phase5_backend_foundation.sql`; Phase 7 production foundations are in `supabase/migrations/202607100001_phase7_production_foundation.sql`. Demo seed data is in `supabase/seed.sql`.
+
+The schema is intentionally automation-ready and AI-ready: workflow steps, required fields/documents, automation rules, review state, audit logs, and notification records are first-class tables instead of hard-coded UI-only state.
+
+The app data-access layer lives in `src/lib/repositories`. It returns demo data by default and can load from Supabase once auth, tenant membership, and project environment variables are configured.
+
+Phase 10 authenticated staging validation uses ignored `.env.local` credentials for development-only users:
+
+- Company Admin: `CAS_STAGE_COMPANY_ADMIN_EMAIL` plus either `CAS_STAGE_COMPANY_ADMIN_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+- Office Staff: `CAS_STAGE_OFFICE_STAFF_EMAIL` plus either `CAS_STAGE_OFFICE_STAFF_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+- Appraiser: `CAS_STAGE_APPRAISER_EMAIL` plus either `CAS_STAGE_APPRAISER_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+- Reviewer: `CAS_STAGE_REVIEWER_EMAIL` plus either `CAS_STAGE_REVIEWER_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+- AMC Admin: `CAS_STAGE_AMC_ADMIN_EMAIL` plus either `CAS_STAGE_AMC_ADMIN_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+- Lender/Client User: `CAS_STAGE_CLIENT_USER_EMAIL` plus either `CAS_STAGE_CLIENT_USER_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`
+
+Run `pnpm supabase:provision-auth` to create the development Auth users from ignored local credentials. Then link them to roles/memberships in the development database and run `pnpm supabase:smoke`, `pnpm supabase:smoke:auth`, and `pnpm supabase:smoke:security`.
+
+Phase 10.1 release-readiness checklist:
+
+- Supabase Dashboard > Authentication > Password Security: enable leaked-password protection when the project plan supports it.
+- Supabase Dashboard > Authentication > Password Security: set production minimum password length to at least 12 characters and require mixed character classes.
+- Supabase Dashboard > Authentication > Providers > Email: confirm email confirmation is enabled before production launch.
+- Supabase Dashboard > Authentication > URL Configuration: confirm reset, invite, and callback URLs point to the deployed CAS domain.
+- Supabase Dashboard > Authentication > Sessions: configure production session duration, inactivity timeout, and single-session policy if required by the customer.
+- Supabase Dashboard > Authentication > Rate Limits and Bot Protection: review email, OTP, and public-intake abuse controls before enabling public ordering broadly.
+- Supabase Dashboard > Authentication > Multi-Factor: keep the MFA architecture enabled-ready for company admins and accounting users.
+- Supabase Dashboard > Database > Security Advisor and Performance Advisor: rerun advisors after every migration before release.
+
+Phase 7 adds:
+
+- `/login`, `/forgot-password`, `/reset-password`, `/auth/callback`, and `/invite/[token]` routes for Supabase Auth-ready access.
+- `/order/[organization-slug]` for public appraisal requests that staff can later convert into full orders.
+- Notification service interfaces that log safely in development until a real provider is configured.
+- Invoice service utilities for assignment-level line items, totals, invoice numbers, and draft invoice creation.
+- LOS provider interfaces plus a mock LendingQB / MeridianLink Mortgage adapter for future lender-system imports, status updates, document delivery, and vendor messages.
+
+## Validation
+
+Validated locally with:
+
+```bash
+pnpm install
+pnpm typecheck
+pnpm lint
+pnpm build
+pnpm supabase:provision-auth
+pnpm supabase:smoke
+pnpm supabase:smoke:auth
+pnpm supabase:smoke:security
+```
+
+The build compiles the app as static content and generates the typed route references used by Next.js.

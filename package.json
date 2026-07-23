@@ -1,0 +1,40 @@
+{
+  "name": "cas-appraisal-os",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbo",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint . --max-warnings=0",
+    "supabase:provision-auth": "node scripts/supabase/phase10-provision-auth-users.mjs",
+    "supabase:smoke": "node scripts/supabase/phase10-smoke.mjs",
+    "supabase:smoke:auth": "node scripts/supabase/phase10-auth-smoke.mjs",
+    "supabase:smoke:security": "node scripts/supabase/phase10-security-smoke.mjs",
+    "supabase:smoke:connected": "node scripts/supabase/phase10-connected-smoke.mjs",
+    "test:workflow": "node scripts/phase10-3b-regression.mjs",
+    "test:order-detail": "node scripts/phase10-3c-order-detail-regression.mjs",
+    "test:status-config": "node scripts/phase10-3c1-status-regression.mjs",
+    "test:fee-visibility": "node scripts/phase10-3c1-fee-regression.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "lucide-react": "^0.468.0",
+    "next": "^15.0.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.1.0",
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.14.0",
+    "eslint-config-next": "^15.0.3",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3"
+  }
+}
