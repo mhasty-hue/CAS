@@ -3,7 +3,7 @@ import { Archive, CheckCircle2, Download, Eye, FileArchive, FileCheck2, FileSear
 import type { DeliveryRecord, DocumentCategory, ManagedDocument, Order, PortalUser, RequiredDocumentRule } from "@/types/domain";
 import { canArchiveDocuments, canDeleteDocuments, canDownloadXML, canManageDocumentVisibility, canUploadOrderDocuments, canViewClientDocuments, canViewInternalDocuments, canViewWorkfileDocuments } from "@/lib/permissions";
 import { requiredDocumentChecklist, searchableDocumentText } from "@/lib/documents/rules";
-import { createSignedUrlPlaceholder, privateDocumentBucket, publicOrderUploadBucket, validateUploadFile } from "@/lib/storage/paths";
+import { validateUploadFile } from "@/lib/storage/paths";
 import { cn, formatDate } from "@/lib/utils";
 import { DocumentStatusChip, MetricTile, SectionHeader } from "../shared";
 
@@ -105,9 +105,8 @@ export function OrderDocumentWorkspace({
               Secure upload workspace
             </div>
             <p className="mt-1 text-sm text-brand-800">
-              Private bucket by default. Signed URL download placeholder, virus scan hook, duplicate detection, and org-scoped path are ready.
+              Files stay private by default. CAS checks file type, keeps versions organized, and limits downloads to the right people.
             </p>
-            <p className="mt-2 text-xs text-brand-700">Bucket: {privateDocumentBucket}; public intake bucket: {publicOrderUploadBucket}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <select className="control h-9" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value as DocumentCategory)}>
@@ -196,7 +195,7 @@ export function OrderDocumentWorkspace({
               <span>Scan: {document.auditMetadata.virusScanStatus}</span>
               <span>Duplicate: {document.auditMetadata.duplicateDetection}</span>
             </div>
-            <div className="mt-2 text-xs text-slate-500">Download endpoint placeholder: {createSignedUrlPlaceholder(document)}</div>
+            <div className="mt-2 text-xs text-slate-500">Secure download link will be generated when the file is opened.</div>
             {document.versions.length > 0 && (
               <details className="mt-3 rounded-md border border-line bg-slate-50 p-3">
                 <summary className="cursor-pointer text-xs font-semibold text-slate-700">Version history</summary>

@@ -1,32 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Archive, CalendarClock, ChevronLeft, ChevronRight, ClipboardCheck, Clock3, Download, ExternalLink, Eye, FileCheck2, History, Home, ListChecks, MessageSquare, Plus, ReceiptText, RotateCcw, Search, SlidersHorizontal, UploadCloud, UserCheck, X } from "lucide-react";
-import { appraisers, savedViews } from "@/data/demo";
-import type { AppraiserProfile, DeliveryRecord, DocumentCategory, InspectionInfo, ManagedDocument, MessageChannel, Order, OrderMessage, OrderStatus, PortalUser, RequiredDocumentRule, RevisionRequest, RevisionStatus } from "@/types/domain";
+import { appraisers } from "@/data/demo";
+import type { AppraiserProfile, BidRequest, ConnectedOrderSummary, DeliveryRecord, DocumentCategory, InspectionInfo, ManagedDocument, MessageChannel, Order, OrderMessage, OrderStatus, Organization, PortalUser, RequiredDocumentRule, RevisionRequest, RevisionStatus } from "@/types/domain";
 import { canAssignOrders, canCreateOrders, canEditInspections, canGenerateInvoices, canReopenOrders, canViewAccounting } from "@/lib/permissions";
-import { cn, daysUntil, formatCurrency, formatDate } from "@/lib/utils";
-import { orderStatusOptions, statusFilters, type SavedView } from "./config";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { countQueueItems, getAllowedStatusTransitions, getDefaultOrderQueue, getIncomingAssignmentsForUser, getOpenBidRequestsForUser, getOrderQueueTabs, queueDefinitions, queueMatchesOrder, requiresStatusReason, statusDefinitions, type BidQueueContext, type ConnectedQueueContext, type OrderQueueId } from "@/lib/orders/workflow";
+import { statusFilters } from "./config";
 import { DetailSection, DueChip, InfoRow, ListOrEmpty, MetricTile, PriorityChip, StatusChip, SummaryItem } from "./shared";
 import { OrderDocumentWorkspace, RequiredDocumentSummary } from "./documents/workspace";
 import { OrderConversationPanel } from "./messages/conversation";
 import { RevisionSummary, RevisionWorkflowPanel } from "./revisions/workflow";
-
-export function orderMatchesView(order: Order, view: SavedView) {
-  const days = daysUntil(order.dueDate);
-  const active = !["Completed", "Cancelled"].includes(order.status);
-
-  if (view === "All") return true;
-  if (view === "New") return order.status === "New";
-  if (view === "Unassigned") return order.status === "Unassigned";
-  if (view === "Assigned") return ["Assigned", "Accepted", "Inspection Scheduled", "Inspected", "Report In Progress"].includes(order.status);
-  if (view === "Due Today") return active && days === 0;
-  if (view === "Due This Week") return active && days >= 0 && days <= 7;
-  if (view === "Past Due") return active && days < 0;
-  if (view === "In Review") return ["Submitted", "In Review", "Ready for Delivery"].includes(order.status);
-  if (view === "Revisions") return ["Revisions Needed", "Revision Sent to Appraiser"].includes(order.status);
-  return order.status === "Completed";
-}
-
-
 
 export function priorityRank(priority: Order["priority"]) {
   const ranks: Record<Order["priority"], number> = {
@@ -52,19 +35,93 @@ export function recommendedAppraiser(order: Order) {
   return [...candidates].sort((a, b) => workloadPercent(a) - workloadPercent(b))[0];
 }
 
-type OrderWorkspace = "active" | "completed" | "cancelled" | "all" | "mine";
+function WorkflowStatusChip({ order, user }: { order: Order; user: PortalUser }) {
+  if (user.role === "client_user") {
+    return <span className="chip border-brand-100 bg-brand-50 text-brand-700">{statusDefinitions[order.status].clientLabel}</span>;
+  }
+  return <StatusChip status={order.status} />;
+}
+
+function StatusTransitionSelect({ order, user, onChange }: { order: Order; user: PortalUser; onChange: (order: Order, status: OrderStatus) => void }) {
+  const options = getAllowedStatusTransitions(order, user);
+  const enabled = options.some((option) => option.status !== order.status && !option.disabled);
+
+  if (!enabled) {
+    return (
+      <span className="rounded-md border border-line bg-slate-50 px-2 py-1.5 text-xs text-slate-500" title={options.find((option) => option.disabled)?.reason}>
+        Status locked
+      </span>
+    );
+  }
+
+  return (
+    <select
+      className="h-9 rounded-md border border-line bg-white px-2 text-xs text-slate-700"
+      value={order.status}
+      onChange={(event) => onChange(order, event.target.value as OrderStatus)}
+      aria-label={`Update ${order.fileNumber} status`}
+    >
+      {options.map((option) => (
+        <option key={option.status} value={option.status} disabled={option.disabled} title={option.reason}>
+          {option.label}{option.requiresReason && option.status !== order.status ? " *" : ""}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function SharedAssignmentQueue({ assignments }: { assignments: ConnectedOrderSummary[] }) {
+  return (
+    <section className="border-b border-line bg-slate-50/70 px-4 py-4">
+      <div className="grid gap-3 lg:grid-cols-2">
+        {assignments.map((assignment) => (
+          <article key={assignment.orderId} className="rounded-md border border-line bg-white p-4 text-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="font-semibold text-slate-950">{assignment.fileNumber} - {assignment.borrowerName}</div>
+                <div className="mt-1 text-slate-600">{assignment.propertyAddress}, {assignment.city} - {assignment.productType}</div>
+                <div className="mt-2 text-xs text-slate-500">{assignment.nextAction}</div>
+              </div>
+              <span className="chip border-amber-200 bg-amber-50 text-amber-800">{assignment.simplifiedStatus}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className="primary-button h-8 px-2 text-xs">Accept assignment</button>
+              <button className="secondary-button h-8 px-2 text-xs">Decline</button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BidRequestQueue({ requests }: { requests: BidRequest[] }) {
+  return (
+    <section className="border-b border-line bg-slate-50/70 px-4 py-4">
+      <div className="grid gap-3 lg:grid-cols-2">
+        {requests.map((request) => (
+          <article key={request.id} className="rounded-md border border-line bg-white p-4 text-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="font-semibold text-slate-950">{request.subjectAddress}</div>
+                <div className="mt-1 text-slate-600">{request.county}, {request.state} - {request.productType}</div>
+                <div className="mt-2 text-xs text-slate-500">Respond by {formatDate(request.bidDeadlineAt)}</div>
+              </div>
+              <span className="chip border-brand-200 bg-brand-50 text-brand-700">Open request</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className="primary-button h-8 px-2 text-xs">Review request</button>
+              <button className="secondary-button h-8 px-2 text-xs">No bid</button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 type InspectionAction = "schedule" | "reschedule" | "complete" | "cancel" | "note";
 type DetailTab = "Overview" | "Timeline" | "Documents" | "Messages" | "Review/Revisions" | "Accounting";
-
-const completedStatuses = new Set<OrderStatus>(["Delivered", "Completed"]);
-const cancelledStatuses = new Set<OrderStatus>(["Cancelled"]);
-
-function orderMatchesWorkspace(order: Order, workspace: OrderWorkspace) {
-  if (workspace === "all" || workspace === "mine") return true;
-  if (workspace === "completed") return completedStatuses.has(order.status);
-  if (workspace === "cancelled") return cancelledStatuses.has(order.status);
-  return !completedStatuses.has(order.status) && !cancelledStatuses.has(order.status);
-}
 
 function inspectionSortValue(order: Order) {
   const value = order.inspection?.scheduledDate ?? order.inspectionDate;
@@ -96,10 +153,11 @@ function ReportStandardChip({ order }: { order: Order }) {
 export function OrdersView({
   orderList,
   selectedOrder,
-  workspace = "active",
+  initialQueue,
   user,
+  organization,
   onSelectOrder,
-  onSwitchWorkspace,
+  onOpenNewOrder,
   onAssignOrder,
   onStatusChange,
   onReopenOrder,
@@ -121,16 +179,19 @@ export function OrdersView({
   onToggleMessagePinned,
   onToggleMessageRead,
   onUpdateRevisionStatus,
-  onRespondToRevisionItem
+  onRespondToRevisionItem,
+  bids,
+  connected
 }: {
   orderList: Order[];
   selectedOrder: Order;
-  workspace?: OrderWorkspace;
+  initialQueue?: OrderQueueId;
   user: PortalUser;
+  organization: Organization;
   onSelectOrder: (order: Order) => void;
-  onSwitchWorkspace?: (workspace: OrderWorkspace) => void;
+  onOpenNewOrder?: () => void;
   onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
-  onStatusChange: (orderId: string, status: OrderStatus) => void;
+  onStatusChange: (orderId: string, status: OrderStatus, reason?: string) => void;
   onReopenOrder: (orderId: string, reason: string) => void;
   onUpdateInspection: (orderId: string, inspection: InspectionInfo, action: InspectionAction, note: string) => void;
   onAddNote: (orderId: string) => void;
@@ -151,6 +212,8 @@ export function OrdersView({
   onToggleMessageRead: (messageId: string) => void;
   onUpdateRevisionStatus: (revisionId: string, status: RevisionStatus) => void;
   onRespondToRevisionItem: (revisionId: string, itemId: string) => void;
+  bids?: BidQueueContext;
+  connected?: ConnectedQueueContext;
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | OrderStatus>("All");
@@ -158,17 +221,19 @@ export function OrdersView({
   const [appraiserFilter, setAppraiserFilter] = useState("All appraisers");
   const [clientFilter, setClientFilter] = useState("All clients");
   const [priorityFilter, setPriorityFilter] = useState<"All" | Order["priority"]>("All");
-  const [view, setView] = useState<SavedView>("All");
+  const [activeQueue, setActiveQueue] = useState<OrderQueueId>(initialQueue ?? getDefaultOrderQueue(user, organization));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [drawerOrderId, setDrawerOrderId] = useState<string | null>(null);
-  const workspaceOrders = useMemo(() => orderList.filter((order) => orderMatchesWorkspace(order, workspace)), [orderList, workspace]);
-  const appraiserOptions = Array.from(new Set(workspaceOrders.map((order) => order.appraiser))).sort();
-  const clientOptions = Array.from(new Set(workspaceOrders.map((order) => order.client))).sort();
+  const queueTabs = useMemo(() => getOrderQueueTabs(user, organization), [organization, user]);
+  const queueOrders = useMemo(() => orderList.filter((order) => queueMatchesOrder(order, activeQueue)), [activeQueue, orderList]);
+  const appraiserOptions = Array.from(new Set(queueOrders.map((order) => order.appraiser))).sort();
+  const clientOptions = Array.from(new Set(queueOrders.map((order) => order.client))).sort();
+  const openBidRequests = bids ? getOpenBidRequestsForUser(bids, user, organization) : [];
+  const incomingAssignments = connected ? getIncomingAssignmentsForUser(connected, user, organization) : [];
 
   const filteredOrders = useMemo(() => {
     const needle = search.toLowerCase();
-    return workspaceOrders
-      .filter((order) => orderMatchesView(order, view))
+    return queueOrders
       .filter((order) => statusFilter === "All" || order.status === statusFilter)
       .filter((order) => appraiserFilter === "All appraisers" || order.appraiser === appraiserFilter)
       .filter((order) => clientFilter === "All clients" || order.client === clientFilter)
@@ -190,16 +255,10 @@ export function OrdersView({
         if (sortBy === "Due date descending") return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
         return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
       });
-  }, [appraiserFilter, clientFilter, priorityFilter, search, sortBy, statusFilter, view, workspaceOrders]);
+  }, [appraiserFilter, clientFilter, priorityFilter, queueOrders, search, sortBy, statusFilter]);
 
   const drawerOrder = drawerOrderId ? orderList.find((order) => order.id === drawerOrderId) ?? null : null;
   const drawerIndex = drawerOrder ? filteredOrders.findIndex((order) => order.id === drawerOrder.id) : -1;
-  const workspaceCounts = {
-    active: orderList.filter((order) => orderMatchesWorkspace(order, "active")).length,
-    completed: orderList.filter((order) => orderMatchesWorkspace(order, "completed")).length,
-    cancelled: orderList.filter((order) => orderMatchesWorkspace(order, "cancelled")).length,
-    all: orderList.length
-  };
 
   useEffect(() => {
     function onEscape(event: KeyboardEvent) {
@@ -209,15 +268,15 @@ export function OrdersView({
     return () => window.removeEventListener("keydown", onEscape);
   }, []);
 
-  function applySavedView(nextView: SavedView) {
-    setView(nextView);
-    setStatusFilter("All");
-  }
+  useEffect(() => {
+    const nextQueue = initialQueue ?? getDefaultOrderQueue(user, organization);
+    setActiveQueue(queueTabs.includes(nextQueue) ? nextQueue : queueTabs[0] ?? "active");
+  }, [initialQueue, organization, queueTabs, user]);
 
-  const showAccounting = canViewAccounting(user);
+  const showAccounting = canViewAccounting(user) && user.role !== "client_user" && (!user.appraiserName || selectedOrder.appraiser === user.appraiserName);
   const showAssignment = canAssignOrders(user);
-  const allowStatusUpdates = canAssignOrders(user) || user.role === "appraiser" || user.role === "solo_appraiser";
   const allowReopen = canReopenOrders(user);
+  const currentQueue = queueDefinitions[activeQueue];
 
   function openOrder(order: Order) {
     onSelectOrder(order);
@@ -231,6 +290,35 @@ export function OrdersView({
     openOrder(next);
   }
 
+  function requestAssignment(order: Order, appraiserName: string, fallbackNote: string) {
+    if (appraiserName === order.appraiser) return;
+    const needsReason = order.appraiser !== "Unassigned";
+    const reason = needsReason ? window.prompt("Reason for reassignment") : fallbackNote;
+    if (needsReason && !reason?.trim()) return;
+    onAssignOrder(order.id, appraiserName, reason?.trim() || fallbackNote);
+  }
+
+  function requestReopen(order: Order) {
+    const reason = window.prompt("Reason for reopening this order");
+    if (!reason?.trim()) return;
+    onReopenOrder(order.id, reason.trim());
+  }
+
+  function requestStatusChange(order: Order, status: OrderStatus) {
+    if (status === order.status) return;
+    const option = getAllowedStatusTransitions(order, user).find((item) => item.status === status);
+    if (!option || option.disabled) {
+      window.alert(option?.reason ?? "That status change is not available for your role.");
+      return;
+    }
+    let reason: string | undefined;
+    if (option.requiresReason || requiresStatusReason(order.status, status)) {
+      reason = window.prompt(`Reason for changing this order to ${status}`)?.trim();
+      if (!reason) return;
+    }
+    onStatusChange(order.id, status, reason);
+  }
+
   return (
     <div className="grid gap-5">
       <section className="panel overflow-hidden">
@@ -240,60 +328,47 @@ export function OrdersView({
               <div>
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
                   <ListChecks className="h-4 w-4 text-brand-600" />
-                  Order Worklist
+                  Orders Workspace
                 </div>
                 <p className="mt-1 text-sm text-slate-500">
-                  {filteredOrders.length} visible orders across {workspaceOrders.length} records in this queue.
+                  {filteredOrders.length} orders in {currentQueue.label.toLowerCase()}. {currentQueue.nextAction ?? "Use the tabs below to move through the work."}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 {showAssignment && <button className="secondary-button"><SlidersHorizontal className="h-4 w-4" /> Bulk update</button>}
                 <button className="secondary-button"><Download className="h-4 w-4" /> Export</button>
-                {canCreateOrders(user) && <button className="primary-button"><Plus className="h-4 w-4" /> New order</button>}
+                {canCreateOrders(user) && <button className="primary-button" onClick={onOpenNewOrder}><Plus className="h-4 w-4" /> New order</button>}
               </div>
             </div>
 
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              {([
-                ["active", "Active", workspaceCounts.active],
-                ["completed", "Completed", workspaceCounts.completed],
-                ["cancelled", "Cancelled", workspaceCounts.cancelled],
-                ["all", "All", workspaceCounts.all]
-              ] as Array<[OrderWorkspace, string, number]>).map(([id, label, count]) => (
+              {queueTabs.map((queueId) => {
+                const definition = queueDefinitions[queueId];
+                const count = countQueueItems({ orders: orderList, queueId, user, organization, bids, connected });
+                return (
                 <button
-                  key={id}
-                  onClick={() => onSwitchWorkspace?.(id)}
+                  key={queueId}
+                  onClick={() => {
+                    setActiveQueue(queueId);
+                    setStatusFilter("All");
+                  }}
                   className={cn(
                     "rounded-md border px-3 py-1.5 text-sm font-medium transition",
-                    workspace === id ? "border-slate-950 bg-slate-950 text-white" : "border-line bg-white text-slate-600 hover:bg-slate-50"
+                    activeQueue === queueId ? "border-slate-950 bg-slate-950 text-white" : "border-line bg-white text-slate-600 hover:bg-slate-50"
                   )}
                 >
-                  {label} <span className="ml-1 text-xs opacity-75">{count}</span>
+                  {definition.label} <span className="ml-1 text-xs opacity-75">{count}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
 
             <div className="grid gap-2 md:grid-cols-5">
-              <MetricTile label="Past due" value={String(orderList.filter((order) => orderMatchesView(order, "Past Due")).length)} />
-              <MetricTile label="Due today" value={String(orderList.filter((order) => orderMatchesView(order, "Due Today")).length)} />
-              <MetricTile label="Unassigned" value={String(orderList.filter((order) => order.status === "Unassigned" || order.status === "New").length)} />
-              <MetricTile label="In review" value={String(orderList.filter((order) => orderMatchesView(order, "In Review")).length)} />
-              <MetricTile label="Revisions" value={String(orderList.filter((order) => orderMatchesView(order, "Revisions")).length)} />
-            </div>
-
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              {savedViews.map((savedView) => (
-                <button
-                  key={savedView}
-                  onClick={() => applySavedView(savedView)}
-                  className={cn(
-                    "rounded-md border px-3 py-1.5 text-sm font-medium transition",
-                    view === savedView ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  )}
-                >
-                  {savedView}
-                </button>
-              ))}
+              <MetricTile label="Needs assignment" value={String(orderList.filter((order) => queueMatchesOrder(order, "needs-assignment")).length)} />
+              <MetricTile label="Due soon" value={String(orderList.filter((order) => queueMatchesOrder(order, "due-soon")).length)} />
+              <MetricTile label="In review" value={String(orderList.filter((order) => queueMatchesOrder(order, "in-review")).length)} />
+              <MetricTile label="Ready delivery" value={String(orderList.filter((order) => queueMatchesOrder(order, "ready-for-delivery")).length)} />
+              <MetricTile label="Revisions" value={String(orderList.filter((order) => queueMatchesOrder(order, "revisions")).length)} />
             </div>
 
             <div className="grid gap-2 md:grid-cols-[1fr_190px_180px_170px_150px_200px]">
@@ -333,6 +408,17 @@ export function OrdersView({
             </div>
           </div>
         </div>
+        {activeQueue === "incoming-assignments" && incomingAssignments.length > 0 && (
+          <SharedAssignmentQueue assignments={incomingAssignments} />
+        )}
+        {activeQueue === "bid-requests" && openBidRequests.length > 0 && (
+          <BidRequestQueue requests={openBidRequests} />
+        )}
+        {filteredOrders.length === 0 && (activeQueue === "bid-requests" || activeQueue === "incoming-assignments") ? (
+          <div className="border-b border-line px-4 py-5 text-sm text-slate-500">
+            {activeQueue === "bid-requests" && openBidRequests.length > 0 ? "Bid requests are shown above." : activeQueue === "incoming-assignments" && incomingAssignments.length > 0 ? "Incoming assignments are shown above." : currentQueue.empty}
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1540px] text-left text-sm">
             <thead className="border-b border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500">
@@ -355,6 +441,13 @@ export function OrdersView({
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
+              {filteredOrders.length === 0 && (
+                <tr>
+                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={15}>
+                    {currentQueue.empty}
+                  </td>
+                </tr>
+              )}
               {filteredOrders.map((order) => (
                 <tr key={order.id} onClick={() => openOrder(order)} className={cn("group hover:bg-slate-50", (drawerOrder?.id ?? selectedOrder.id) === order.id && "bg-brand-50/60")}>
                   <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
@@ -382,7 +475,7 @@ export function OrdersView({
                     <select
                       className="h-8 rounded-md border border-line bg-white px-2 text-xs text-slate-700"
                       value={order.appraiser}
-                      onChange={(event) => onAssignOrder(order.id, event.target.value, "Assigned from inline order table.")}
+                      onChange={(event) => requestAssignment(order, event.target.value, "Assigned from inline order table.")}
                       onClick={(event) => event.stopPropagation()}
                     >
                       <option>{order.appraiser}</option>
@@ -392,7 +485,7 @@ export function OrdersView({
                   <td className="px-4 py-4 text-slate-700">{order.reviewer}</td>
                   <td className="px-4 py-4 text-slate-600">{order.inspection?.scheduledDate ?? order.inspectionDate ? formatDate(order.inspection?.scheduledDate ?? order.inspectionDate ?? "") : "Not scheduled"}</td>
                   <td className="px-4 py-4"><DueChip date={order.dueDate} /></td>
-                  <td className="px-4 py-4"><StatusChip status={order.status} /></td>
+                  <td className="px-4 py-4"><WorkflowStatusChip order={order} user={user} /></td>
                   <td className="px-4 py-4"><PriorityChip priority={order.priority} /></td>
                   {showAccounting && <td className="px-4 py-4 font-medium text-slate-800">{formatCurrency(order.fee)}</td>}
                   <td className="px-4 py-4 text-slate-600">{order.lastUpdate}</td>
@@ -402,11 +495,9 @@ export function OrdersView({
                   <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
                     <div className="flex items-center gap-1.5">
                       <button className="icon-button" aria-label={`Open ${order.fileNumber}`} onClick={() => openOrder(order)}><Eye className="h-4 w-4" /></button>
-                      {showAssignment && <button className="icon-button" aria-label={`Assign ${order.fileNumber}`} onClick={() => onAssignOrder(order.id, recommendedAppraiser(order).name, "Assigned from quick action recommendation.")}><UserCheck className="h-4 w-4" /></button>}
-                      {allowReopen && (completedStatuses.has(order.status) || cancelledStatuses.has(order.status)) && <button className="icon-button" aria-label={`Reopen ${order.fileNumber}`} onClick={() => onReopenOrder(order.id, "Reopened from historical order queue.")}><RotateCcw className="h-4 w-4" /></button>}
-                      {allowStatusUpdates && <select className="h-9 rounded-md border border-line bg-white px-2 text-xs text-slate-700" value={order.status} onChange={(event) => onStatusChange(order.id, event.target.value as OrderStatus)}>
-                        {orderStatusOptions.map((status) => <option key={status}>{status}</option>)}
-                      </select>}
+                      {showAssignment && <button className="icon-button" aria-label={`Assign ${order.fileNumber}`} onClick={() => requestAssignment(order, recommendedAppraiser(order).name, "Assigned from quick action recommendation.")}><UserCheck className="h-4 w-4" /></button>}
+                      {allowReopen && (statusDefinitions[order.status].lifecycle === "terminal" || statusDefinitions[order.status].lifecycle === "cancelled" || statusDefinitions[order.status].lifecycle === "delivered") && <button className="icon-button" aria-label={`Reopen ${order.fileNumber}`} onClick={() => requestReopen(order)}><RotateCcw className="h-4 w-4" /></button>}
+                      <StatusTransitionSelect order={order} user={user} onChange={requestStatusChange} />
                       <button className="icon-button" aria-label={`Add note to ${order.fileNumber}`} onClick={() => onAddNote(order.id)}><MessageSquare className="h-4 w-4" /></button>
                     </div>
                   </td>
@@ -430,7 +521,7 @@ export function OrdersView({
               onPrevious={drawerIndex > 0 ? () => moveDrawer(-1) : undefined}
               onNext={drawerIndex >= 0 && drawerIndex < filteredOrders.length - 1 ? () => moveDrawer(1) : undefined}
               onAssignOrder={onAssignOrder}
-              onStatusChange={onStatusChange}
+              onStatusChange={requestStatusChange}
               onUpdateInspection={onUpdateInspection}
               onAddNote={onAddNote}
               onGenerateInvoice={onGenerateInvoice}
@@ -494,7 +585,7 @@ export function OrderDetailPanel({
   onPrevious?: () => void;
   onNext?: () => void;
   onAssignOrder: (orderId: string, appraiserName: string, note: string) => void;
-  onStatusChange: (orderId: string, status: OrderStatus) => void;
+  onStatusChange: (order: Order, status: OrderStatus) => void;
   onUpdateInspection: (orderId: string, inspection: InspectionInfo, action: InspectionAction, note: string) => void;
   onAddNote: (orderId: string) => void;
   onGenerateInvoice: (orderId: string) => void;
@@ -517,7 +608,7 @@ export function OrderDetailPanel({
 }) {
   const [activeTab, setActiveTab] = useState<DetailTab>("Overview");
   const reviewComplete = order.reviewItems.filter((item) => item.complete).length;
-  const showAccounting = canViewAccounting(user);
+  const showAccounting = canViewAccounting(user) && user.role !== "client_user" && (!user.appraiserName || order.appraiser === user.appraiserName);
   const showAssignment = canAssignOrders(user);
   const showInvoiceAction = canGenerateInvoices(user);
   const tabs: DetailTab[] = ["Overview", "Timeline", "Documents", "Messages", "Review/Revisions", ...(showAccounting ? ["Accounting" as const] : [])];
@@ -528,7 +619,7 @@ export function OrderDetailPanel({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold text-slate-950">{order.fileNumber}</span>
-              <StatusChip status={order.status} />
+              <WorkflowStatusChip order={order} user={user} />
               <PriorityChip priority={order.priority} />
               <ReportStandardChip order={order} />
             </div>
@@ -571,9 +662,7 @@ export function OrderDetailPanel({
           <div className="mt-3 grid grid-cols-2 gap-2">
             {showAssignment && <button className="secondary-button justify-center px-2" onClick={() => onAssignOrder(order.id, recommendedAppraiser(order).name, "Assigned from order detail recommendation.")}><UserCheck className="h-4 w-4" /> Assign</button>}
             <button className="secondary-button justify-center px-2" onClick={() => onAddNote(order.id)}><MessageSquare className="h-4 w-4" /> Add note</button>
-            <select className="control" value={order.status} onChange={(event) => onStatusChange(order.id, event.target.value as OrderStatus)}>
-              {orderStatusOptions.map((status) => <option key={status}>{status}</option>)}
-            </select>
+            <StatusTransitionSelect order={order} user={user} onChange={onStatusChange} />
             {showInvoiceAction && <button className="secondary-button justify-center px-2" onClick={() => onGenerateInvoice(order.id)}><ReceiptText className="h-4 w-4" /> Invoice</button>}
             <button className="secondary-button justify-center px-2"><UploadCloud className="h-4 w-4" /> Upload</button>
           </div>
@@ -879,7 +968,16 @@ export function AssignmentPanel({ order, onAssignOrder }: { order: Order; onAssi
           </div>
         </div>
         <textarea className="control min-h-20 w-full py-3" value={assignmentNote} onChange={(event) => setAssignmentNote(event.target.value)} />
-        <button className="primary-button justify-center" onClick={() => onAssignOrder(order.id, appraiserName, assignmentNote)}>
+        <button
+          className="primary-button justify-center"
+          onClick={() => {
+            if (order.appraiser !== "Unassigned" && !assignmentNote.trim()) {
+              window.alert("Add a reassignment reason before changing the appraiser.");
+              return;
+            }
+            onAssignOrder(order.id, appraiserName, assignmentNote.trim() || "Assigned from assignment panel.");
+          }}
+        >
           <UserCheck className="h-4 w-4" />
           Assign and update status
         </button>

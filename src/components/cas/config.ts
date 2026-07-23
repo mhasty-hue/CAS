@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, Archive, BarChart3, Bell, Bot, Building2, CalendarDays, ClipboardCheck, FileCheck2, FileText, Gavel, Inbox, LayoutDashboard, ListChecks, ListTodo, MessageSquare, Network, Plus, ReceiptText, Settings, ShieldCheck, UserCheck, Users2, WalletCards } from "lucide-react";
-import { savedViews } from "@/data/demo";
 import type { OrderStatus, UserRole } from "@/types/domain";
+import { orderStatusOptions } from "@/lib/orders/workflow";
 
 export type NavId =
   | "dashboard"
@@ -39,12 +39,12 @@ export type NavId =
 
 export const navCatalog: Record<NavId, { label: string; icon: LucideIcon }> = {
   dashboard: { label: "Dashboard", icon: LayoutDashboard },
-  orders: { label: "Active Orders", icon: ListChecks },
+  orders: { label: "Orders", icon: ListChecks },
   "completed-orders": { label: "Completed", icon: FileCheck2 },
   "cancelled-orders": { label: "Cancelled", icon: Archive },
   "all-orders": { label: "All Orders", icon: ListChecks },
   "my-orders": { label: "My Orders", icon: ListChecks },
-  connected: { label: "Connected", icon: Network },
+  connected: { label: "Network", icon: Network },
   "incoming-orders": { label: "Incoming", icon: Inbox },
   bids: { label: "Bids", icon: Gavel },
   tasks: { label: "Tasks", icon: ListTodo },
@@ -73,58 +73,19 @@ export const navCatalog: Record<NavId, { label: string; icon: LucideIcon }> = {
 };
 
 export const roleNavigation: Record<UserRole, NavId[]> = {
-  super_admin: ["dashboard", "connected", "incoming-orders", "bids", "tasks", "automations", "orders", "completed-orders", "cancelled-orders", "all-orders", "new-order", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "notifications", "settings"],
-  company_admin: ["dashboard", "connected", "incoming-orders", "bids", "tasks", "automations", "orders", "completed-orders", "cancelled-orders", "all-orders", "new-order", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "notifications", "settings"],
-  office_staff: ["dashboard", "connected", "incoming-orders", "bids", "tasks", "automations", "orders", "completed-orders", "cancelled-orders", "new-order", "calendar", "appraisers", "clients", "documents", "notifications"],
-  appraiser_manager: ["dashboard", "connected", "incoming-orders", "bids", "tasks", "orders", "completed-orders", "calendar", "appraisers", "accounting", "analytics", "notifications"],
-  appraiser: ["dashboard", "connected", "incoming-orders", "tasks", "my-orders", "completed-orders", "calendar", "revisions", "documents", "pay"],
-  solo_appraiser: ["dashboard", "connected", "incoming-orders", "bids", "tasks", "automations", "my-orders", "completed-orders", "place-order", "calendar", "revisions", "documents", "pay", "settings"],
-  reviewer: ["dashboard", "connected", "tasks", "review-queue", "revisions", "completed-reviews", "documents", "templates"],
-  amc_admin: ["dashboard", "connected", "incoming-orders", "bids", "tasks", "automations", "orders", "completed-orders", "cancelled-orders", "place-order", "vendors", "vendor-invites", "compliance", "reports", "notifications", "settings"],
-  amc_staff: ["dashboard", "connected", "incoming-orders", "bids", "tasks", "orders", "completed-orders", "place-order", "vendors", "vendor-invites", "reports", "notifications"],
-  client_user: ["dashboard", "connected", "place-order", "my-orders", "completed-orders", "documents", "messages"]
+  super_admin: ["dashboard", "orders", "new-order", "tasks", "automations", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "notifications", "settings"],
+  company_admin: ["dashboard", "orders", "new-order", "tasks", "automations", "calendar", "review", "appraisers", "clients", "accounting", "analytics", "notifications", "settings"],
+  office_staff: ["dashboard", "orders", "new-order", "tasks", "automations", "calendar", "appraisers", "clients", "documents", "notifications"],
+  appraiser_manager: ["dashboard", "orders", "tasks", "calendar", "appraisers", "accounting", "analytics", "notifications"],
+  appraiser: ["dashboard", "orders", "tasks", "calendar", "revisions", "documents", "pay"],
+  solo_appraiser: ["dashboard", "orders", "place-order", "tasks", "automations", "calendar", "revisions", "documents", "pay", "settings"],
+  reviewer: ["dashboard", "orders", "tasks", "review-queue", "revisions", "completed-reviews", "documents", "templates"],
+  amc_admin: ["dashboard", "orders", "place-order", "tasks", "automations", "vendors", "vendor-invites", "compliance", "reports", "notifications", "settings"],
+  amc_staff: ["dashboard", "orders", "place-order", "tasks", "vendors", "vendor-invites", "reports", "notifications"],
+  client_user: ["dashboard", "orders", "place-order", "documents", "messages"]
 };
 
-export const statusFilters: Array<"All" | OrderStatus> = [
-  "All",
-  "New",
-  "Unassigned",
-  "Assigned",
-  "Accepted",
-  "Inspection Scheduled",
-  "Inspected",
-  "Report In Progress",
-  "Submitted",
-  "In Review",
-  "Revisions Needed",
-  "Revision Sent to Appraiser",
-  "Ready for Delivery",
-  "Delivered",
-  "Completed",
-  "On Hold",
-  "Cancelled"
-];
-
-export type SavedView = (typeof savedViews)[number];
-
-export const orderStatusOptions: OrderStatus[] = [
-  "New",
-  "Unassigned",
-  "Assigned",
-  "Accepted",
-  "Inspection Scheduled",
-  "Inspected",
-  "Report In Progress",
-  "Submitted",
-  "In Review",
-  "Revisions Needed",
-  "Revision Sent to Appraiser",
-  "Ready for Delivery",
-  "Delivered",
-  "Completed",
-  "On Hold",
-  "Cancelled"
-];
+export const statusFilters: Array<"All" | OrderStatus> = ["All", ...orderStatusOptions];
 
 export const demoMode = process.env.NEXT_PUBLIC_CAS_DEMO_MODE !== "false" && process.env.NEXT_PUBLIC_CAS_DATA_SOURCE !== "supabase";
 

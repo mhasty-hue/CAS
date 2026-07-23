@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { appraisers, calendarPreferences, clientProfiles, companyUsers, defaultOrderFormTemplate, orders, vendors } from "@/data/demo";
+import { bidAwards, bidRecipients, bidRequests, bidResponses, connectedOrderSummaries, connectedParticipants } from "@/data/connected";
 import {
   accountingEntries,
   automationRules,
@@ -35,7 +36,8 @@ import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, 
 import { loadCasAuthContext } from "@/lib/auth/context";
 import { createDeliveryRecord } from "@/lib/delivery/service";
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
-import { canCreateOrders, canViewAllOrders, canViewOwnOrdersOnly } from "@/lib/permissions";
+import { canCreateOrders, canViewOwnOrdersOnly } from "@/lib/permissions";
+import { canTransitionOrderStatus, filterOrdersForWorkflow, resolveLegacyOrderQueue } from "@/lib/orders/workflow";
 import { publicRequestToOrderSeed } from "@/lib/public-intake/service";
 import { simulateOrderDocumentUpload } from "@/lib/storage/paths";
 import { createOrderMessage } from "@/lib/messaging/service";
@@ -47,7 +49,7 @@ import { AutomationCenterView, NotificationQueueView, TaskCenterView } from "./c
 import { ProductionAccessGate } from "./cas/auth";
 import { CalendarView } from "./cas/calendar";
 import { ClientsView } from "./cas/clients";
-import { BidManagementView, ConnectedOverviewView, IncomingOrdersView } from "./cas/connected";
+import { ConnectedOverviewView } from "./cas/connected";
 import { demoMode, navCatalog, roleNavigation, type NavId } from "./cas/config";
 import { AppraiserPortalView, DashboardView } from "./cas/dashboard";
 import { NewOrderView } from "./cas/forms";
@@ -59,14 +61,6 @@ import { SettingsView } from "./cas/users";
 import { ComplianceView, VendorInvitesView, VendorView } from "./cas/vendors";
 
 type InspectionAction = "schedule" | "reschedule" | "complete" | "cancel" | "note";
-
-function filterOrdersForUser(orderList: Order[], user: PortalUser, organization: Organization) {
-  if (canViewAllOrders(user)) return orderList;
-  if (user.appraiserName) return orderList.filter((order) => order.appraiser === user.appraiserName || order.appraiser === "Unassigned");
-  if (user.clientName) return orderList.filter((order) => order.client === user.clientName);
-  if (organization.type === "amc") return orderList.filter((order) => order.amc === organization.name || order.client === organization.name);
-  return orderList.filter((order) => order.client === organization.name || order.appraiser === user.name);
-}
 
 export function CasApp() {
   const [activeView, setActiveView] = useState<NavId>("dashboard");
@@ -116,12 +110,15 @@ export function CasApp() {
     ? organizations.find((organization) => organization.id === activeUser.organizationId) ?? organizations[0]
     : runtimeOrganization ?? organizations.find((organization) => organization.id === activeUser.organizationId) ?? organizations[0];
   const activeNavItems = roleNavigation[activeUser.role].map((id) => ({ id, ...navCatalog[id] }));
-  const visibleOrders = filterOrdersForUser(orderList, activeUser, activeOrganization);
+  const visibleOrders = filterOrdersForWorkflow(orderList, activeUser, activeOrganization);
   const selectedOrder = visibleOrders.find((order) => order.id === selectedOrderId) ?? visibleOrders[0] ?? orderList[0];
+  const activeOrderQueue = resolveLegacyOrderQueue(activeView, activeUser, activeOrganization);
 
   function openView(preferred: NavId, fallback: NavId = "dashboard") {
     const navigation = roleNavigation[activeUser.role];
-    setActiveView(navigation.includes(preferred) ? preferred : navigation.includes(fallback) ? fallback : "dashboard");
+    const preferredOrderQueue = resolveLegacyOrderQueue(preferred, activeUser, activeOrganization);
+    const fallbackOrderQueue = resolveLegacyOrderQueue(fallback, activeUser, activeOrganization);
+    setActiveView(navigation.includes(preferred) || preferredOrderQueue ? preferred : navigation.includes(fallback) || fallbackOrderQueue ? fallback : "dashboard");
   }
 
   useEffect(() => {
@@ -221,12 +218,12 @@ export function CasApp() {
   }, []);
 
   useEffect(() => {
-    if (!roleNavigation[activeUser.role].includes(activeView)) {
+    if (!roleNavigation[activeUser.role].includes(activeView) && !resolveLegacyOrderQueue(activeView, activeUser, activeOrganization) && activeView !== "connected") {
       setActiveView("dashboard");
     }
-  }, [activeUser.role, activeView]);
+  }, [activeOrganization, activeUser, activeView]);
 
-  const currentTitle = navCatalog[activeView]?.label ?? "Dashboard";
+  const currentTitle = activeOrderQueue ? "Orders" : navCatalog[activeView]?.label ?? "Dashboard";
 
   function updateOrder(orderId: string, updater: (order: Order) => Order) {
     setOrderList((currentOrders) => currentOrders.map((order) => (order.id === orderId ? updater(order) : order)));
@@ -461,7 +458,9 @@ export function CasApp() {
     }
   }
 
-  function handleStatusChange(orderId: string, status: OrderStatus) {
+  function handleStatusChange(orderId: string, status: OrderStatus, reason?: string) {
+    const currentOrder = orderList.find((order) => order.id === orderId);
+    if (!currentOrder || !canTransitionOrderStatus(currentOrder, status, activeUser)) return;
     updateOrder(orderId, (order) => ({
       ...order,
       status,
@@ -470,17 +469,17 @@ export function CasApp() {
       timeline: [
         {
           label: "Status updated",
-          detail: `${order.status} moved to ${status}`,
+          detail: reason ? `${order.status} moved to ${status}: ${reason}` : `${order.status} moved to ${status}`,
           at: "Just now",
-          actor: "Nora Fields"
+          actor: activeUser.name
         },
         ...order.timeline
       ],
       auditTrail: [
         {
           id: `${order.id}-status-${Date.now()}`,
-          action: `Status changed from ${order.status} to ${status}`,
-          actor: "Nora Fields",
+          action: reason ? `Status changed from ${order.status} to ${status}: ${reason}` : `Status changed from ${order.status} to ${status}`,
+          actor: activeUser.name,
           at: "Just now"
         },
         ...order.auditTrail
@@ -773,7 +772,16 @@ export function CasApp() {
             },
             ...order.revisionLog
           ]
-        : order.revisionLog
+        : order.revisionLog,
+      auditTrail: [
+        {
+          id: `${order.id}-review-status-${Date.now()}`,
+          action: `Review workflow changed status from ${order.status} to ${status}`,
+          actor: activeUser.name,
+          at: "Just now"
+        },
+        ...order.auditTrail
+      ]
     }));
     if (action === "return" && reviewOrder) {
       const taskId = `task-revision-${Date.now()}`;
@@ -1580,36 +1588,20 @@ export function CasApp() {
             <ConnectedOverviewView
               user={activeUser}
               organization={activeOrganization}
-              onOpenIncoming={() => openView("incoming-orders", "connected")}
-              onOpenBids={() => openView("bids", "connected")}
+              onOpenIncoming={() => openView("incoming-orders", "orders")}
+              onOpenBids={() => openView("bids", "orders")}
               onPlaceOrder={() => setActiveView(["amc_admin", "amc_staff", "client_user", "solo_appraiser"].includes(activeUser.role) ? "place-order" : canCreateOrders(activeUser) ? "new-order" : "orders")}
             />
           )}
-          {activeView === "incoming-orders" && (
-            <IncomingOrdersView
-              user={activeUser}
-              organization={activeOrganization}
-              onOpenBids={() => openView("bids", "incoming-orders")}
-              onOpenOrders={() => openView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders", "connected")}
-            />
-          )}
-          {activeView === "bids" && (
-            <BidManagementView
-              user={activeUser}
-              organization={activeOrganization}
-            />
-          )}
-          {(activeView === "orders" || activeView === "my-orders" || activeView === "completed-orders" || activeView === "cancelled-orders" || activeView === "all-orders") && (
+          {activeOrderQueue && (
             <OrdersView
               orderList={visibleOrders}
               selectedOrder={selectedOrder}
-              workspace={activeView === "completed-orders" ? "completed" : activeView === "cancelled-orders" ? "cancelled" : activeView === "all-orders" ? "all" : activeView === "my-orders" ? "mine" : "active"}
+              initialQueue={activeOrderQueue}
               user={activeUser}
+              organization={activeOrganization}
+              onOpenNewOrder={() => setActiveView(["amc_admin", "amc_staff", "client_user", "solo_appraiser"].includes(activeUser.role) ? "place-order" : "new-order")}
               onSelectOrder={(order) => setSelectedOrderId(order.id)}
-              onSwitchWorkspace={(workspace) => {
-                const target: NavId = workspace === "completed" ? "completed-orders" : workspace === "cancelled" ? "cancelled-orders" : workspace === "all" ? "all-orders" : canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders";
-                openView(target, canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders");
-              }}
               onAssignOrder={handleAssignOrder}
               onStatusChange={handleStatusChange}
               onReopenOrder={handleReopenOrder}
@@ -1632,6 +1624,8 @@ export function CasApp() {
               onToggleMessageRead={handleToggleMessageRead}
               onUpdateRevisionStatus={handleUpdateRevisionStatus}
               onRespondToRevisionItem={handleRespondToRevisionItem}
+              bids={{ requests: bidRequests, recipients: bidRecipients, responses: bidResponses, awards: bidAwards }}
+              connected={{ summaries: connectedOrderSummaries, participants: connectedParticipants }}
             />
           )}
           {activeView === "tasks" && (

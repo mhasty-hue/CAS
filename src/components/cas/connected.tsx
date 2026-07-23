@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { ArrowRight, BadgeCheck, Building2, CheckCircle2, ClipboardCheck, Clock3, FileText, Gavel, Inbox, LockKeyhole, Mail, MapPin, ShieldCheck, Sparkles, UserRoundCheck, XCircle } from "lucide-react";
 import {
-  architectureAuditFindings,
   bidAwards,
   bidEmailPreview,
   bidRecipients,
@@ -42,7 +41,7 @@ function SoftChip({ children, tone = "neutral" }: { children: ReactNode; tone?: 
 function ConnectedHero({ user, organization, onOpenIncoming, onOpenBids, onPlaceOrder }: { user: PortalUser; organization: Organization; onOpenIncoming: () => void; onOpenBids: () => void; onPlaceOrder: () => void }) {
   const subscription = organizationSubscriptions.find((candidate) => candidate.organizationId === organization.id) ?? organizationSubscriptions[0]!;
   const connectedOnly = subscription.planKey === "connected_free";
-  const headline = connectedOnly ? "Free participation access" : "Workspace operating access";
+  const headline = connectedOnly ? "Shared work access" : "Full operating access";
 
   return (
     <section className="panel overflow-hidden">
@@ -50,15 +49,15 @@ function ConnectedHero({ user, organization, onOpenIncoming, onOpenBids, onPlace
         <div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-normal text-brand-700">
             <Sparkles className="h-4 w-4" />
-            CAS Connected + Workspace
+            Network
           </div>
-          <h2 className="mt-2 text-2xl font-semibold text-slate-950">One identity, one shared order, permission-based views.</h2>
+          <h2 className="mt-2 text-2xl font-semibold text-slate-950">Organizations you work with.</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            {organization.name} is running with {subscription.planName}. {headline} is separate from the role shown in the demo switcher, so invited appraisers and clients can participate without buying a Workspace.
+            {organization.name} is running with {subscription.planName}. {headline} lets clients, vendors, appraisers, and reviewers work together while each person sees only the work they are invited to handle.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <button className="primary-button" onClick={onOpenIncoming}><Inbox className="h-4 w-4" /> Incoming CAS Orders</button>
-            <button className="secondary-button" onClick={onOpenBids}><Gavel className="h-4 w-4" /> Manage Bids</button>
+            <button className="primary-button" onClick={onOpenIncoming}><Inbox className="h-4 w-4" /> Incoming work</button>
+            <button className="secondary-button" onClick={onOpenBids}><Gavel className="h-4 w-4" /> Bid requests</button>
             <button className="secondary-button" onClick={onPlaceOrder}><ArrowRight className="h-4 w-4" /> Place Order</button>
           </div>
         </div>
@@ -66,8 +65,8 @@ function ConnectedHero({ user, organization, onOpenIncoming, onOpenBids, onPlace
           <div className="text-sm font-semibold text-slate-950">{user.name}</div>
           <div className="mt-1 text-xs text-slate-500">{user.email}</div>
           <div className="mt-3 grid gap-2">
-            <MetricTile label="Identity" value="Single user" />
-            <MetricTile label="Org role" value={user.title ?? user.role} />
+            <MetricTile label="User" value={user.title ?? user.role} />
+            <MetricTile label="Organization" value={organization.type.replace("_", " ")} />
             <MetricTile label="Plan" value={subscription.planName} />
           </div>
         </div>
@@ -84,23 +83,23 @@ function SubscriptionPanel({ organization }: { organization: Organization }) {
 
   return (
     <section className="panel p-5">
-      <SectionHeader icon={BadgeCheck} title="Access Model" />
+      <SectionHeader icon={BadgeCheck} title="Plan Access" />
       <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <MetricTile label="Identity" value="User profile" />
+        <MetricTile label="Account" value="User profile" />
         <MetricTile label="Role" value={organization.type.replace("_", " ")} />
-        <MetricTile label="Entitlement" value={plan.audience === "connected" ? "Connected" : "Workspace"} />
+        <MetricTile label="Access" value={plan.audience === "connected" ? "Invited work" : "Full workspace"} />
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="rounded-md border border-line p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><UserRoundCheck className="h-4 w-4 text-brand-600" /> Connected participation</div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><UserRoundCheck className="h-4 w-4 text-brand-600" /> Shared work</div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {(connectedEntitlements.length ? connectedEntitlements : subscriptionPlans[0].entitlements).map((entitlement) => <SoftChip key={entitlement} tone="brand">{entitlement.replaceAll("_", " ")}</SoftChip>)}
+            {(connectedEntitlements.length ? connectedEntitlements : subscriptionPlans[0].entitlements).map((entitlement) => <SoftChip key={entitlement} tone="brand">{entitlement.replace("connected_", "").replaceAll("_", " ")}</SoftChip>)}
           </div>
         </div>
         <div className="rounded-md border border-line p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Building2 className="h-4 w-4 text-brand-600" /> Workspace modules</div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Building2 className="h-4 w-4 text-brand-600" /> Workspace tools</div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {workspaceEntitlements.length ? workspaceEntitlements.slice(0, 10).map((entitlement) => <SoftChip key={entitlement}>{entitlement.replaceAll("_", " ")}</SoftChip>) : <span className="text-sm text-slate-500">No paid Workspace modules are required for Connected access.</span>}
+            {workspaceEntitlements.length ? workspaceEntitlements.slice(0, 10).map((entitlement) => <SoftChip key={entitlement}>{entitlement.replaceAll("_", " ")}</SoftChip>) : <span className="text-sm text-slate-500">No paid workspace tools are required for invited shared work.</span>}
           </div>
         </div>
       </div>
@@ -136,7 +135,7 @@ function ConnectedOrderCard({ order }: { order: ConnectedOrderSummary }) {
 
 function ConnectedPortalPreview({ user }: { user: PortalUser }) {
   const isClient = user.role === "client_user";
-  const title = isClient ? "Client Status Portal" : "Connected Appraiser Portal";
+  const title = isClient ? "Client Order Status" : "Shared Assignment View";
   const visibleOrders = isClient
     ? connectedOrderSummaries.filter((order) => order.visibleTo.includes("ordering_client"))
     : connectedOrderSummaries.filter((order) => order.visibleTo.includes("assigned_appraiser") || order.visibleTo.includes("appraisal_company"));
@@ -149,24 +148,8 @@ function ConnectedPortalPreview({ user }: { user: PortalUser }) {
       </div>
       <div className="mt-4 rounded-md border border-line bg-slate-50 p-3 text-sm text-slate-600">
         {isClient
-          ? "Clients see status, due dates when permitted, shared messages, requested documents, final reports, and invoice-ready information. Payroll, commissions, internal notes, and QC findings stay hidden."
-          : "Connected appraisers can accept assignments, schedule inspections, download permitted lender documents, upload reports/XML/invoices, and respond to revisions without buying a Workspace."}
-      </div>
-    </section>
-  );
-}
-
-function ArchitectureAuditPanel() {
-  return (
-    <section className="panel p-5">
-      <SectionHeader icon={ShieldCheck} title="Architecture Audit" />
-      <div className="mt-4 divide-y divide-line rounded-md border border-line">
-        {architectureAuditFindings.map((item) => (
-          <details key={item.question} className="group p-3">
-            <summary className="cursor-pointer text-sm font-semibold text-slate-900">{item.question}</summary>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{item.finding}</p>
-          </details>
-        ))}
+          ? "Clients see status, due dates when permitted, messages, requested documents, final reports, and invoice-ready information. Payroll, commissions, internal notes, and QC findings stay hidden."
+          : "Shared appraisers can accept assignments, schedule inspections, download permitted documents, upload deliverables, and respond to revisions."}
       </div>
     </section>
   );
@@ -183,14 +166,13 @@ export function ConnectedOverviewView({ user, organization, onOpenIncoming, onOp
         </div>
         <div className="grid gap-5">
           <section className="panel p-5">
-            <SectionHeader icon={LockKeyhole} title="Private By Default" />
+            <SectionHeader icon={LockKeyhole} title="Shared Work Stays Private" />
             <div className="mt-4 grid gap-2 text-sm text-slate-600">
-              {["No broad cross-tenant order reads", "No client access to payroll or commission", "Document access follows explicit grants", "Bidders never see other bidders", "Connected access survives Workspace upgrade"].map((item) => (
+              {["Clients do not see payroll or commission", "Documents stay limited to the right people", "Bidders do not see other bidders", "Shared work stays attached after plan changes"].map((item) => (
                 <div key={item} className="flex items-center gap-2 rounded-md border border-line px-3 py-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />{item}</div>
               ))}
             </div>
           </section>
-          <ArchitectureAuditPanel />
         </div>
       </div>
     </div>
@@ -206,7 +188,7 @@ export function IncomingOrdersView({ user, organization, onOpenBids, onOpenOrder
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
       <div className="panel p-5">
-        <SectionHeader icon={Inbox} title="Incoming CAS Orders" />
+        <SectionHeader icon={Inbox} title="Incoming Assignments" />
         <div className="mt-4 grid gap-3">
           {incomingOrders.map((order) => (
             <article key={order.orderId} className="rounded-md border border-line p-4">
@@ -217,7 +199,6 @@ export function IncomingOrdersView({ user, organization, onOpenBids, onOpenOrder
                     <SoftChip tone="warn">{order.simplifiedStatus}</SoftChip>
                   </div>
                   <p className="mt-1 text-sm text-slate-600">{order.propertyAddress}, {order.city} - {order.productType}</p>
-                  <p className="mt-1 text-xs text-slate-500">Same master order ID: {order.orderId}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button className="primary-button"><CheckCircle2 className="h-4 w-4" /> Accept</button>
@@ -247,9 +228,9 @@ export function IncomingOrdersView({ user, organization, onOpenBids, onOpenOrder
           </div>
         </section>
         <section className="panel p-5">
-          <SectionHeader icon={Building2} title="Upgrade Continuity" action="Active orders" onAction={onOpenOrders} />
+          <SectionHeader icon={Building2} title="Account History" action="Active orders" onAction={onOpenOrders} />
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            {upgrade.preservedOrderCount} assignments, {upgrade.preservedDocumentCount} documents, and {upgrade.preservedMessageCount} messages stayed attached to the same identity after Workspace activation.
+            {upgrade.preservedOrderCount} assignments, {upgrade.preservedDocumentCount} documents, and {upgrade.preservedMessageCount} messages stayed with this account after plan changes.
           </p>
           <div className="mt-3 text-xs text-slate-500">{organization.name} - {user.name}</div>
         </section>
@@ -331,10 +312,10 @@ export function BidManagementView({ user, organization }: { user: PortalUser; or
       <div className="panel p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-brand-700"><Gavel className="h-4 w-4" /> County-Based Bid Management</div>
-            <h2 className="mt-2 text-2xl font-semibold text-slate-950">One bid request, separate private invitations.</h2>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-brand-700"><Gavel className="h-4 w-4" /> Bid Requests</div>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-950">Choose the right appraiser for the county.</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              {organization.name} can send one master bid tied to the same order. Each bidder receives their own invitation and only sees their own response.
+              {organization.name} can ask eligible vendors for availability and compare responses without exposing other bidders.
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -357,7 +338,7 @@ export function BidManagementView({ user, organization }: { user: PortalUser; or
           <section className="panel p-5">
             <SectionHeader icon={MapPin} title="Bid Setup" />
             <div className="mt-4 grid gap-2">
-              <MetricTile label="Order" value={activeBid.orderId} />
+              <MetricTile label="Order" value={activeBid.subjectAddress} />
               <MetricTile label="County" value={`${county}, GA`} />
               <MetricTile label="Product" value={productType} />
               <MetricTile label="Deadline" value={formatDate(activeBid.bidDeadlineAt)} />
@@ -419,7 +400,7 @@ export function BidManagementView({ user, organization }: { user: PortalUser; or
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="font-semibold text-slate-950">{award.winnerName}</div>
-                  <p className="mt-1 text-sm text-slate-600">Winning response converts into an assignment on the same master order: {award.orderId}.</p>
+                  <p className="mt-1 text-sm text-slate-600">Winning response becomes the assignment for this order.</p>
                 </div>
                 <span className={cn("chip", toneForStatus(award.status))}>{award.status.replace("_", " ")}</span>
               </div>

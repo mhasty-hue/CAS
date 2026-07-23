@@ -1,10 +1,17 @@
 import type { LucideIcon } from "lucide-react";
 import { Bell, Command, Home, PanelLeft, Search, Workflow, X } from "lucide-react";
-import { workflowSteps } from "@/data/demo";
 import { portalUsers } from "@/data/platform";
 import type { Order, Organization, PortalUser } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import { demoMode, roleLabel, type NavId } from "./config";
+
+function focusLabels(user: PortalUser) {
+  if (user.role === "client_user") return ["Place orders", "Track status", "Documents", "Messages"];
+  if (user.role === "appraiser" || user.role === "solo_appraiser") return ["Assignments", "Due soon", "Revisions", "Pay"];
+  if (user.role === "reviewer") return ["Review queue", "Findings", "Revisions", "Delivery"];
+  if (user.role === "amc_admin" || user.role === "amc_staff") return ["Intake", "Assignment", "Vendor coverage", "Delivery"];
+  return ["Intake", "Assignment", "Review", "Delivery", "Closeout"];
+}
 
 export function Sidebar({
   activeView,
@@ -57,10 +64,10 @@ export function Sidebar({
       <div className="hidden border-t border-line p-4 lg:block">
         <div className="rounded-md border border-line bg-slate-50 p-3">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-normal text-slate-500">
-            <Workflow className="h-4 w-4" /> Portal scope
+            <Workflow className="h-4 w-4" /> Work focus
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {[organization.type.replace("_", " "), ...workflowSteps.slice(0, 5)].map((step) => (
+            {focusLabels(user).map((step) => (
               <span key={step} className="rounded-full bg-white px-2 py-1 text-[11px] text-slate-600 ring-1 ring-line">
                 {step}
               </span>
@@ -159,5 +166,4 @@ export function CommandPalette({ query, setQuery, onClose, onNavigate, onSelectO
     </div>
   );
 }
-
 
