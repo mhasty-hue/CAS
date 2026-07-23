@@ -43,6 +43,10 @@ The schema is intentionally automation-ready and AI-ready: workflow steps, requi
 
 The app data-access layer lives in `src/lib/repositories`. It returns demo data by default and can load from Supabase once auth, tenant membership, and project environment variables are configured.
 
+## Public Demo
+
+The isolated public no-login demo should run from a separate deployment/branch with fictional data only. See `docs/public-demo-deployment.md` for the current-state audit, demo architecture, Vercel setup, reset behavior, and safety checklist.
+
 Phase 10 authenticated staging validation uses ignored `.env.local` credentials for development-only users:
 
 - Company Admin: `CAS_STAGE_COMPANY_ADMIN_EMAIL` plus either `CAS_STAGE_COMPANY_ADMIN_PASSWORD` or shared `CAS_STAGE_TEST_PASSWORD`

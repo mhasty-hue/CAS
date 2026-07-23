@@ -38,6 +38,7 @@ import { createDeliveryRecord } from "@/lib/delivery/service";
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
 import { canCreateOrders, canViewOwnOrdersOnly } from "@/lib/permissions";
 import { canTransitionOrderStatus, filterOrdersForWorkflow, resolveLegacyOrderQueue } from "@/lib/orders/workflow";
+import { clonePublicDemoFixture, getPublicDemoDefaultUserId, getPublicDemoRoleByUserId } from "@/lib/demo/public-demo";
 import { createDemoOrderStatuses, statusUsageCount } from "@/lib/orders/status-config";
 import { applyAwardedVendorFee, sanitizeOrdersForUser } from "@/lib/orders/fees";
 import { publicRequestToOrderSeed } from "@/lib/public-intake/service";
@@ -52,6 +53,7 @@ import { ProductionAccessGate } from "./cas/auth";
 import { CalendarView } from "./cas/calendar";
 import { ClientsView } from "./cas/clients";
 import { ConnectedOverviewView } from "./cas/connected";
+import { PublicDemoBanner, PublicDemoLandingPage, type DemoStartOptions } from "./cas/demo/public-demo";
 import { demoMode, navCatalog, roleNavigation, type NavId } from "./cas/config";
 import { AppraiserPortalView, DashboardView } from "./cas/dashboard";
 import { NewOrderView } from "./cas/forms";
@@ -65,7 +67,7 @@ import { ComplianceView, VendorInvitesView, VendorView } from "./cas/vendors";
 
 type InspectionAction = "schedule" | "reschedule" | "complete" | "cancel" | "note";
 
-export function CasApp() {
+export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: boolean }) {
   const [activeView, setActiveView] = useState<NavId>("dashboard");
   const [authState, setAuthState] = useState<"loading" | "ready" | "signed-out" | "error">(demoMode ? "ready" : "loading");
   const [authError, setAuthError] = useState("");
@@ -104,10 +106,13 @@ export function CasApp() {
   const [notificationQueueList, setNotificationQueueList] = useState<NotificationQueueItem[]>(notificationQueue);
   const [scheduledJobList, setScheduledJobList] = useState<ScheduledJob[]>(scheduledJobs);
   const [webhookEventList, setWebhookEventList] = useState<WebhookEvent[]>(webhookEvents);
-  const [activeUserId, setActiveUserId] = useState(portalUsers[0].id);
+  const [activeUserId, setActiveUserId] = useState(publicDemoEnabled ? getPublicDemoDefaultUserId() : portalUsers[0].id);
   const [selectedOrderId, setSelectedOrderId] = useState(orders[0].id);
+  const [publicDemoStarted, setPublicDemoStarted] = useState(!publicDemoEnabled);
+  const [demoNotice, setDemoNotice] = useState("");
   const [commandOpen, setCommandOpen] = useState(false);
   const [globalQuery, setGlobalQuery] = useState("");
+  const publicDemoActive = publicDemoEnabled && demoMode;
   const demoActiveUser = portalUsers.find((user) => user.id === activeUserId) ?? portalUsers[0];
   const activeUser = demoMode ? demoActiveUser : runtimeUser ?? demoActiveUser;
   const activeOrganization = demoMode
@@ -128,6 +133,73 @@ export function CasApp() {
   function openOrderDetail(order: Order) {
     setSelectedOrderId(order.id);
     setActiveView("order-detail");
+  }
+
+  function recordDemoSimulation(message: string) {
+    if (publicDemoActive) setDemoNotice(message);
+  }
+
+  function restoreDemoFixtures() {
+    setOrderList(clonePublicDemoFixture(orders));
+    setOrderStatusList(organizations.flatMap((organization) => createDemoOrderStatuses(organization.id)));
+    setAppraiserList(clonePublicDemoFixture(appraisers));
+    setClientList(clonePublicDemoFixture(clientProfiles));
+    setCompanyUserList(clonePublicDemoFixture(companyUsers));
+    setVendorList(clonePublicDemoFixture(vendors));
+    setVendorDocumentList(clonePublicDemoFixture(vendorDocuments));
+    setInvoiceList(clonePublicDemoFixture(invoices));
+    setInvoiceSettingsList(clonePublicDemoFixture(invoiceSettings));
+    setAccountingList(clonePublicDemoFixture(accountingEntries));
+    setInvitationList(clonePublicDemoFixture(organizationInvitations));
+    setPublicOrderSettingsList(clonePublicDemoFixture(publicOrderSettings));
+    setPublicOrderRequestList(clonePublicDemoFixture(publicOrderRequests));
+    setNotificationPreferenceList(clonePublicDemoFixture(notificationPreferences));
+    setNotificationTemplateList(clonePublicDemoFixture(notificationTemplates));
+    setEmailDeliveryList(clonePublicDemoFixture(emailDeliveryRecords));
+    setIntegrationList(clonePublicDemoFixture(integrationSettings));
+    setIntegrationLogList(clonePublicDemoFixture(integrationLogs));
+    setManagedDocumentList(clonePublicDemoFixture(managedDocuments));
+    setRequiredDocumentRuleList(clonePublicDemoFixture(requiredDocumentRules));
+    setOrderMessageList(clonePublicDemoFixture(orderMessages));
+    setRevisionRequestList(clonePublicDemoFixture(revisionRequests));
+    setReportSubmissionList(clonePublicDemoFixture(reportSubmissions));
+    setDeliveryRecordList(clonePublicDemoFixture(deliveryRecords));
+    setDocumentAuditEventList(clonePublicDemoFixture(documentAuditEvents));
+    setOrderFormTemplate(clonePublicDemoFixture(defaultOrderFormTemplate));
+    setCalendarPreferenceList(clonePublicDemoFixture(calendarPreferences));
+    setAutomationRuleList(clonePublicDemoFixture(automationRules));
+    setAutomationRunList(clonePublicDemoFixture(automationRuns));
+    setTaskList(clonePublicDemoFixture(workflowTasks));
+    setNotificationQueueList(clonePublicDemoFixture(notificationQueue));
+    setScheduledJobList(clonePublicDemoFixture(scheduledJobs));
+    setWebhookEventList(clonePublicDemoFixture(webhookEvents));
+    setSelectedOrderId(orders[0].id);
+    setGlobalQuery("");
+    setCommandOpen(false);
+  }
+
+  function startPublicDemo(userId: string, options?: DemoStartOptions) {
+    const role = getPublicDemoRoleByUserId(userId);
+    const nextOrderId = options?.orderId ?? role?.recommendedOrderId;
+    setActiveUserId(userId);
+    if (nextOrderId) setSelectedOrderId(nextOrderId);
+    setActiveView(options?.view ?? role?.recommendedView ?? "dashboard");
+    setPublicDemoStarted(true);
+    setCommandOpen(false);
+    recordDemoSimulation("Demo role loaded. Actions stay in this browser session and no external notices are sent.");
+  }
+
+  function handlePublicDemoRoleChange(userId: string) {
+    const role = getPublicDemoRoleByUserId(userId);
+    startPublicDemo(userId, { view: role?.recommendedView ?? "dashboard", orderId: role?.recommendedOrderId });
+  }
+
+  function handleResetPublicDemo() {
+    restoreDemoFixtures();
+    setActiveUserId(getPublicDemoDefaultUserId());
+    setActiveView("dashboard");
+    setPublicDemoStarted(false);
+    setDemoNotice("Demo reset. Original fictional data, statuses, assignments, bids, and fees were restored.");
   }
 
   useEffect(() => {
@@ -359,6 +431,7 @@ export function CasApp() {
       automationRuleId: ruleId,
       auditHistory: [{ id: `${taskId}-audit`, action: "Task created by automation test", actor: activeUser.name, at: "Just now" }]
     });
+    recordDemoSimulation("Demo automation test simulated. No real email, SMS, payment, calendar, or webhook action was sent.");
   }
 
   function handleRetryNotification(notificationId: string) {
@@ -375,6 +448,7 @@ export function CasApp() {
           : notification
       )
     );
+    recordDemoSimulation("Demo email not sent. The notification retry was simulated in local demo state.");
   }
 
   function handleAssignOrder(orderId: string, appraiserName: string, note: string, vendorFee?: number) {
@@ -430,6 +504,7 @@ export function CasApp() {
         ]
       };
     });
+    recordDemoSimulation("Demo assignment invitation simulated. No vendor email, SMS, webhook, or external invite was sent.");
     if (assignedOrder) {
       const taskId = `task-assignment-${Date.now()}`;
       addWorkflowTask({
@@ -746,6 +821,7 @@ export function CasApp() {
       ...currentVendors
     ]);
     setActiveView("vendor-invites");
+    recordDemoSimulation("Demo vendor invitation simulated. No external invitation was sent.");
   }
 
   function handleVendorDocumentStatus(vendorId: string, documentType: VendorDocument["type"], status: VendorDocument["status"]) {
@@ -1207,6 +1283,7 @@ export function CasApp() {
     setPublicOrderSettingsList((current) =>
       current.map((settings) => (settings.organizationId === organizationId ? { ...settings, enabled: !settings.enabled, updatedAt: "Just now" } : settings))
     );
+    recordDemoSimulation("Demo public order page setting changed locally. No public link or webhook was published.");
   }
 
   function handleUpdatePublicConfirmation(organizationId: string, confirmationMessage: string) {
@@ -1219,6 +1296,7 @@ export function CasApp() {
     setNotificationPreferenceList((current) =>
       current.map((preference) => (preference.id === preferenceId ? { ...preference, [channel]: !preference[channel] } : preference))
     );
+    recordDemoSimulation("Demo notification preference changed locally. No email, SMS, or push provider was contacted.");
   }
 
   function handleAddOrderStatus() {
@@ -1307,6 +1385,7 @@ export function CasApp() {
         ...currentOrder.auditTrail
       ]
     }));
+    recordDemoSimulation("Demo invoice generated locally. No payment processor or external accounting system was contacted.");
   }
 
   function handleMarkInvoicePaid(invoiceId: string) {
@@ -1317,6 +1396,7 @@ export function CasApp() {
           : invoice
       )
     );
+    recordDemoSimulation("Demo invoice marked paid locally. No payment transaction was processed.");
   }
 
   function handleConvertPublicRequest(requestId: string) {
@@ -1399,6 +1479,7 @@ export function CasApp() {
     );
     setSelectedOrderId(newOrder.id);
     openView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders", "dashboard");
+    recordDemoSimulation("Demo public order converted locally. No requester email or production order webhook was sent.");
   }
 
   function handleDeactivateCompanyUser(userId: string) {
@@ -1417,6 +1498,7 @@ export function CasApp() {
         preference.id === preferenceId ? { ...preference, [key]: !preference[key] } : preference
       )
     );
+    recordDemoSimulation("Demo calendar preference changed locally. No Google Calendar write was attempted.");
   }
 
   function addDocumentAuditEvent(event: DocumentAuditEvent) {
@@ -1446,6 +1528,7 @@ export function CasApp() {
       at: "Just now",
       detail: `${document.displayName} uploaded to secure storage path.`
     });
+    recordDemoSimulation("Demo document upload simulated. No production storage bucket was used.");
   }
 
   function handleArchiveDocument(documentId: string) {
@@ -1499,6 +1582,7 @@ export function CasApp() {
       })
     );
     addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, documentId, event: "Version replaced", actor: activeUser.name, at: "Just now", detail: "New document version uploaded." });
+    recordDemoSimulation("Demo report version replaced locally. No production storage object was overwritten.");
   }
 
   function handleSubmitReport(orderId: string) {
@@ -1557,6 +1641,7 @@ export function CasApp() {
         preview: `${submittedOrder.fileNumber} was submitted and needs review routing.`
       });
     }
+    recordDemoSimulation("Demo report submitted locally. No reviewer email, LOS callback, or production document delivery was sent.");
   }
 
   function handleDeliverReport(orderId: string) {
@@ -1566,6 +1651,7 @@ export function CasApp() {
     setDeliveryRecordList((current) => [delivery, ...current]);
     handleStatusChange(orderId, "Delivered");
     addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, orderId, event: "Delivered", actor: activeUser.name, at: "Just now", detail: `Secure delivery created for ${delivery.recipientName}.` });
+    recordDemoSimulation("Demo report delivery simulated. No client email, portal invite, webhook, or file transfer was sent.");
   }
 
   function handleSendOrderMessage(orderId: string, channel: MessageChannel, body: string) {
@@ -1574,6 +1660,7 @@ export function CasApp() {
     const message = createOrderMessage(order, activeUser, channel, body);
     setOrderMessageList((current) => [message, ...current]);
     addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, orderId, messageId: message.id, event: "Message sent", actor: activeUser.name, at: "Just now", detail: `${channel} sent.` });
+    recordDemoSimulation("Demo message saved locally. No email, SMS, or external message was sent.");
   }
 
   function handleToggleMessagePinned(messageId: string) {
@@ -1624,6 +1711,10 @@ export function CasApp() {
     addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, revisionId, event: "Revision responded to", actor: activeUser.name, at: "Just now", detail: "Revision item response submitted." });
   }
 
+  if (publicDemoActive && !publicDemoStarted) {
+    return <PublicDemoLandingPage onStart={startPublicDemo} />;
+  }
+
   if (!demoMode && authState !== "ready") {
     return <ProductionAccessGate state={authState === "loading" ? "loading" : authState === "signed-out" ? "signed-out" : "error"} detail={authError} />;
   }
@@ -1638,6 +1729,16 @@ export function CasApp() {
         onNavigate={setActiveView}
       />
       <div className="min-w-0">
+        {publicDemoActive && (
+          <PublicDemoBanner
+            user={activeUser}
+            organization={activeOrganization}
+            notice={demoNotice}
+            onSelectRole={handlePublicDemoRoleChange}
+            onSwitchHome={() => setPublicDemoStarted(false)}
+            onReset={handleResetPublicDemo}
+          />
+        )}
         <Topbar
           title={currentTitle}
           user={activeUser}
@@ -1646,6 +1747,7 @@ export function CasApp() {
           setQuery={setGlobalQuery}
           onCommand={() => setCommandOpen(true)}
           onUserChange={setActiveUserId}
+          showRoleSwitcher={!publicDemoActive}
         />
         <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
           {activeView === "dashboard" && (

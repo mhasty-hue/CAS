@@ -88,7 +88,8 @@ export function Topbar({
   onCommand,
   query,
   setQuery,
-  onUserChange
+  onUserChange,
+  showRoleSwitcher = true
 }: {
   title: string;
   user: PortalUser;
@@ -97,6 +98,7 @@ export function Topbar({
   query: string;
   setQuery: (value: string) => void;
   onUserChange: (userId: string) => void;
+  showRoleSwitcher?: boolean;
 }) {
   return (
     <header className="sticky top-[65px] z-10 border-b border-line bg-white/90 backdrop-blur lg:top-0">
@@ -117,7 +119,7 @@ export function Topbar({
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input className="control w-full pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" />
         </div>
-        {demoMode && (
+        {demoMode && showRoleSwitcher && (
           <label className="hidden items-center gap-2 lg:flex">
             <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">Demo role</span>
             <select className="control w-56" value={user.id} onChange={(event) => onUserChange(event.target.value)} aria-label="Switch demo role">
@@ -166,4 +168,3 @@ export function CommandPalette({ query, setQuery, onClose, onNavigate, onSelectO
     </div>
   );
 }
-

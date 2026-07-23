@@ -202,7 +202,7 @@ export const connectedParticipants: ConnectedParticipant[] = [
     id: "participant-owner-1001",
     orderId: "ord-1001",
     participantOrganizationId: "org-firm-1",
-    participantName: "CAA Valuation Group",
+    participantName: "CAA Real Property Services",
     participantType: "appraisal_company",
     role: "primary_owner",
     accessStatus: "active",
@@ -296,7 +296,7 @@ export const vendorCountyCoverage: VendorCountyCoverage[] = [
   },
   {
     id: "cov-talia-cobb",
-    displayName: "Talia Morris Appraisals",
+    displayName: "Upstate Appraisal Group",
     managingOrganizationId: "org-amc-1",
     appraiserProfileId: "app-4",
     vendorOrganizationId: "org-solo-1",
@@ -385,7 +385,7 @@ export const vendorCountyCoverage: VendorCountyCoverage[] = [
   },
   {
     id: "cov-blueridge-cherokee",
-    displayName: "Blue Ridge Review Partners",
+    displayName: "Blue Ridge Valuation",
     managingOrganizationId: "org-amc-1",
     vendorProfileId: "ven-3",
     state: "GA",
@@ -524,7 +524,7 @@ export const bidRequests: BidRequest[] = [
     id: "bid-1001",
     orderId: "ord-1001",
     sendingOrganizationId: "org-amc-1",
-    sendingOrganizationName: "Pioneer AMC",
+    sendingOrganizationName: "National Valuation Services",
     subjectAddress: "1840 Magnolia Trace",
     city: "Marietta",
     state: "GA",
@@ -539,6 +539,26 @@ export const bidRequests: BidRequest[] = [
     lockResponses: false,
     nearbyCandidateMode: false,
     recipientIds: ["bid-recipient-1", "bid-recipient-2", "bid-recipient-3"]
+  },
+  {
+    id: "bid-1006",
+    orderId: "ord-1006",
+    sendingOrganizationId: "org-amc-1",
+    sendingOrganizationName: "National Valuation Services",
+    subjectAddress: "1447 Ashford Creek Lane",
+    city: "Kennesaw",
+    state: "GA",
+    county: "Cobb",
+    productType: "1004 URAR",
+    assignmentSummary: "Needs-assignment demo file with engagement letter, order package, access notes, and clear vendor fee terms.",
+    requiredCredentials: ["Certified Residential", "GA license"],
+    requiredSpecialties: ["Conventional"],
+    bidDeadlineAt: "2026-07-24T16:00:00-04:00",
+    requestedDueAt: "2026-07-31",
+    status: "open",
+    lockResponses: false,
+    nearbyCandidateMode: false,
+    recipientIds: ["bid-recipient-1006-a", "bid-recipient-1006-b", "bid-recipient-1006-c"]
   }
 ];
 
@@ -559,7 +579,7 @@ export const bidRecipients: BidRecipient[] = [
   {
     id: "bid-recipient-2",
     bidRequestId: "bid-1001",
-    recipientName: "Talia Morris Appraisals",
+    recipientName: "Upstate Appraisal Group",
     recipientOrganizationId: "org-solo-1",
     recipientUserId: "user-solo",
     recipientEmail: "talia@appraisals.example",
@@ -579,6 +599,45 @@ export const bidRecipients: BidRecipient[] = [
     coverageCounty: "Cobb",
     coverageMatch: "direct",
     invitationStatus: "declined",
+    emailStatus: "responded",
+    eligibilitySnapshot: bidEligibility.eligible[2]
+  },
+  {
+    id: "bid-recipient-1006-a",
+    bidRequestId: "bid-1006",
+    recipientName: "North Metro Valuation",
+    recipientOrganizationId: "org-vendor-1",
+    recipientEmail: "renee@northmetro.example",
+    vendorProfileId: "ven-1",
+    coverageCounty: "Cobb",
+    coverageMatch: "direct",
+    invitationStatus: "responded",
+    emailStatus: "responded",
+    eligibilitySnapshot: bidEligibility.eligible[0]
+  },
+  {
+    id: "bid-recipient-1006-b",
+    bidRequestId: "bid-1006",
+    recipientName: "Upstate Appraisal Group",
+    recipientOrganizationId: "org-solo-1",
+    recipientUserId: "user-solo",
+    recipientEmail: "talia@appraisals.example",
+    appraiserProfileId: "app-4",
+    coverageCounty: "Cobb",
+    coverageMatch: "direct",
+    invitationStatus: "responded",
+    emailStatus: "responded",
+    eligibilitySnapshot: bidEligibility.eligible[1]
+  },
+  {
+    id: "bid-recipient-1006-c",
+    bidRequestId: "bid-1006",
+    recipientName: "Ari Bennett",
+    appraiserProfileId: "app-5",
+    recipientEmail: "ari@appraisals.example",
+    coverageCounty: "Cobb",
+    coverageMatch: "direct",
+    invitationStatus: "responded",
     emailStatus: "responded",
     eligibilitySnapshot: bidEligibility.eligible[2]
   }
@@ -624,6 +683,48 @@ export const bidResponses: BidResponse[] = [
     declineExplanation: "Already at inspection capacity through the deadline.",
     revisionNumber: 1,
     submittedAt: "2026-07-20T11:05:00-04:00"
+  },
+  {
+    id: "bid-response-1006-a",
+    bidRequestId: "bid-1006",
+    recipientId: "bid-recipient-1006-a",
+    responderName: "Renee Walker",
+    proposedFee: 475,
+    turnTimeDays: 5,
+    inspectionAvailability: "Can inspect Friday morning",
+    notes: "Direct Cobb coverage and complete vendor compliance.",
+    acceptedConditions: true,
+    responseStatus: "submitted",
+    revisionNumber: 1,
+    submittedAt: "2026-07-22T09:10:00-04:00"
+  },
+  {
+    id: "bid-response-1006-b",
+    bidRequestId: "bid-1006",
+    recipientId: "bid-recipient-1006-b",
+    responderName: "Talia Morris",
+    proposedFee: 500,
+    turnTimeDays: 3,
+    inspectionAvailability: "Can inspect Thursday afternoon",
+    notes: "Fastest direct slot this week.",
+    acceptedConditions: true,
+    responseStatus: "submitted",
+    revisionNumber: 1,
+    submittedAt: "2026-07-22T09:42:00-04:00"
+  },
+  {
+    id: "bid-response-1006-c",
+    bidRequestId: "bid-1006",
+    recipientId: "bid-recipient-1006-c",
+    responderName: "Ari Bennett",
+    proposedFee: 525,
+    turnTimeDays: 2,
+    inspectionAvailability: "Can inspect tomorrow morning",
+    notes: "Rush capacity available with standard conditions.",
+    acceptedConditions: true,
+    responseStatus: "submitted",
+    revisionNumber: 1,
+    submittedAt: "2026-07-22T10:05:00-04:00"
   }
 ];
 
@@ -678,7 +779,7 @@ export const connectedUpgradeHistory: ConnectedUpgradeRecord[] = [
 
 export const bidEmailPreview = {
   subject: "New appraisal bid opportunity in CAS",
-  body: "You have received a new appraisal bid opportunity from Pioneer AMC. Log in to CAS to review the assignment details and submit your proposed fee and turn time.",
+  body: "You have received a new appraisal bid opportunity from National Valuation Services. Log in to CAS to review the assignment details and submit your proposed fee and turn time.",
   fields: ["Requesting organization", "Property address", "Appraisal type", "Bid deadline", "Secure review link"],
   omitted: ["Other bidder names", "Other bids", "Internal rankings", "Client billing", "AMC margin", "Internal notes"]
 };
