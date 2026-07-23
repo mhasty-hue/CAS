@@ -32,7 +32,7 @@ import type {
 export const organizations: Organization[] = [
   {
     id: "org-firm-1",
-    name: "CAA Valuation Group",
+    name: "CAA Real Property Services",
     slug: "caa-valuation",
     type: "appraisal_firm",
     status: "Active",
@@ -43,12 +43,12 @@ export const organizations: Organization[] = [
   },
   {
     id: "org-amc-1",
-    name: "Pioneer AMC",
-    slug: "pioneer-amc",
+    name: "National Valuation Services",
+    slug: "national-valuation-services",
     type: "amc",
     status: "Active",
     primaryContact: "Derek Sloan",
-    email: "vendors@pioneeramc.example",
+    email: "vendors@nationalvaluation.example",
     phone: "(404) 555-0191",
     address: "2555 Cumberland Pkwy, Atlanta, GA"
   },
@@ -76,14 +76,69 @@ export const organizations: Organization[] = [
   },
   {
     id: "org-solo-1",
-    name: "Talia Morris Appraisals",
-    slug: "talia-morris-appraisals",
+    name: "Upstate Appraisal Group",
+    slug: "upstate-appraisal-group",
     type: "solo_appraiser",
     status: "Active",
     primaryContact: "Talia Morris",
     email: "talia@appraisals.example",
     phone: "(770) 555-0168",
     address: "88 West Paces Ferry, Atlanta, GA"
+  },
+  {
+    id: "org-client-2",
+    name: "First Carolina Community Bank",
+    slug: "first-carolina-community-bank",
+    type: "lender_client",
+    status: "Active",
+    primaryContact: "Iris Coleman",
+    email: "appraisals@firstcarolina.example",
+    phone: "(864) 555-0127",
+    address: "410 River Street, Greenville, SC"
+  },
+  {
+    id: "org-firm-2",
+    name: "Blue Ridge Valuation",
+    slug: "blue-ridge-valuation",
+    type: "appraisal_firm",
+    status: "Active",
+    primaryContact: "Renee Walker",
+    email: "connected@blueridgevaluation.example",
+    phone: "(828) 555-0164",
+    address: "118 Maple Walk, Asheville, NC"
+  },
+  {
+    id: "org-private-attorney",
+    name: "Rowan Legal Group",
+    slug: "rowan-legal-group",
+    type: "lender_client",
+    status: "Active",
+    primaryContact: "Elise Rowan",
+    email: "orders@rowanlegal.example",
+    phone: "(919) 555-0188",
+    address: "75 Court Square, Raleigh, NC"
+  },
+  {
+    id: "org-private-owner",
+    name: "Private Property Owner",
+    slug: "private-property-owner",
+    type: "lender_client",
+    status: "Active",
+    primaryContact: "Elena Park",
+    email: "elena.park@example.com",
+    phone: "(704) 555-0173",
+    address: "12 Garden Lane, Charlotte, NC"
+  },
+  {
+    id: "org-private-estate",
+    name: "Hollis Estate Representative",
+    slug: "hollis-estate-representative",
+    type: "lender_client",
+    status: "Active",
+    primaryContact: "Grant Hollis",
+    email: "grant.hollis@example.com",
+    phone: "(803) 555-0136",
+    address: "240 Oak Registry, Columbia, SC"
   }
 ];
 
@@ -124,7 +179,7 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-amc",
     name: "Derek Sloan",
-    email: "derek@pioneeramc.example",
+    email: "derek@nationalvaluation.example",
     role: "amc_admin",
     organizationId: "org-amc-1",
     title: "AMC Admin"
@@ -146,6 +201,59 @@ export const portalUsers: PortalUser[] = [
     organizationId: "org-solo-1",
     title: "Solo Appraiser",
     appraiserName: "Talia Morris"
+  },
+  {
+    id: "user-amc-staff",
+    name: "Riley Ortiz",
+    email: "riley@nationalvaluation.example",
+    role: "amc_staff",
+    organizationId: "org-amc-1",
+    title: "AMC Office Staff"
+  },
+  {
+    id: "user-lender-internal",
+    name: "Iris Coleman",
+    email: "iris@firstcarolina.example",
+    role: "client_user",
+    organizationId: "org-client-2",
+    title: "Lender Administrator",
+    clientName: "First Carolina Community Bank"
+  },
+  {
+    id: "user-hybrid-lender",
+    name: "Theo Barnes",
+    email: "theo@harborpoint.example",
+    role: "client_user",
+    organizationId: "org-client-1",
+    title: "Hybrid Lender",
+    clientName: "HarborPoint Lending"
+  },
+  {
+    id: "user-attorney",
+    name: "Elise Rowan",
+    email: "elise@rowanlegal.example",
+    role: "client_user",
+    organizationId: "org-private-attorney",
+    title: "Attorney",
+    clientName: "Rowan Legal Group"
+  },
+  {
+    id: "user-property-owner",
+    name: "Elena Park",
+    email: "elena.park@example.com",
+    role: "client_user",
+    organizationId: "org-private-owner",
+    title: "Property Owner",
+    clientName: "Elena Park"
+  },
+  {
+    id: "user-connected-renee",
+    name: "Renee Walker",
+    email: "renee@blueridgevaluation.example",
+    role: "solo_appraiser",
+    organizationId: "org-firm-2",
+    title: "CAS Connected Participant",
+    appraiserName: "Renee Walker"
   }
 ];
 
@@ -185,7 +293,7 @@ export const publicOrderSettings: PublicOrderSettings[] = [
     enabled: true,
     publicSlug: "caa-valuation",
     buttonLabel: "Order an appraisal",
-    brandName: "CAA Valuation Group",
+    brandName: "CAA Real Property Services",
     brandColor: "#2276d2",
     confirmationMessage: "Thanks. Our appraisal team will review your request and contact you before opening a formal assignment.",
     notificationRecipients: ["ops@caavaluation.example", "nora@caavaluation.example"],
@@ -202,7 +310,7 @@ export const publicOrderSettings: PublicOrderSettings[] = [
     enabled: true,
     publicSlug: "talia-morris-appraisals",
     buttonLabel: "Request appraisal help",
-    brandName: "Talia Morris Appraisals",
+    brandName: "Upstate Appraisal Group",
     brandColor: "#0f766e",
     confirmationMessage: "Your request has been received. Talia will confirm scope, timing, and fee before beginning work.",
     notificationRecipients: ["talia@appraisals.example"],
@@ -698,8 +806,8 @@ export const invoices: Invoice[] = [
     id: "inv-1002",
     organizationId: "org-firm-1",
     invoiceNumber: "CAA-INV-260102",
-    client: "Pioneer AMC",
-    billingParty: "Pioneer AMC",
+    client: "National Valuation Services",
+    billingParty: "National Valuation Services",
     billToContact: "Derek Sloan",
     amount: 4180,
     subtotal: 4180,
@@ -752,7 +860,7 @@ export const invoiceSettings: InvoiceSettings[] = [
   {
     id: "invoice-settings-caa",
     organizationId: "org-firm-1",
-    companyName: "CAA Valuation Group",
+    companyName: "CAA Real Property Services",
     companyAddress: "1100 Circle 75 Pkwy, Atlanta, GA",
     taxId: "XX-XXX4581",
     invoicePrefix: "CAA-INV",
@@ -764,7 +872,7 @@ export const invoiceSettings: InvoiceSettings[] = [
   {
     id: "invoice-settings-solo",
     organizationId: "org-solo-1",
-    companyName: "Talia Morris Appraisals",
+    companyName: "Upstate Appraisal Group",
     companyAddress: "88 West Paces Ferry, Atlanta, GA",
     invoicePrefix: "TMA",
     nextInvoiceNumber: 260021,
@@ -1171,7 +1279,7 @@ export const workflowTasks: WorkflowTask[] = [
     id: "task-due-1",
     organizationId: "org-firm-1",
     relatedOrderId: "ord-1003",
-    relatedClient: "Pioneer AMC",
+    relatedClient: "National Valuation Services",
     title: "Confirm delivery plan for past-due file",
     description: "Call the appraiser, confirm completion ETA, and add a client-safe status comment before noon.",
     assignedTo: "Mina Patel",
@@ -1224,9 +1332,9 @@ export const workflowTasks: WorkflowTask[] = [
     id: "task-invoice-1",
     organizationId: "org-firm-1",
     relatedInvoiceId: "inv-1002",
-    relatedClient: "Pioneer AMC",
+    relatedClient: "National Valuation Services",
     title: "Follow up on overdue AMC invoice",
-    description: "Confirm payment date with Pioneer AMC and mark invoice status once funds are received.",
+    description: "Confirm payment date with National Valuation Services and mark invoice status once funds are received.",
     assignedTo: "Nora Fields",
     assignedRole: "company_admin",
     createdBy: "Overdue invoice follow-up",

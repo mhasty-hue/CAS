@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, Archive, BarChart3, Bell, Bot, Building2, CalendarDays, ClipboardCheck, FileCheck2, FileText, Gavel, Inbox, LayoutDashboard, ListChecks, ListTodo, MessageSquare, Network, Plus, ReceiptText, Settings, ShieldCheck, UserCheck, Users2, WalletCards } from "lucide-react";
 import type { OrderStatus, UserRole } from "@/types/domain";
+import { isClientPublicDemoMode, isLocalDemoDataSource } from "@/lib/demo/mode";
 import { orderStatusOptions } from "@/lib/orders/workflow";
 
 export type NavId =
@@ -89,7 +90,9 @@ export const roleNavigation: Record<UserRole, NavId[]> = {
 
 export const statusFilters: Array<"All" | OrderStatus> = ["All", ...orderStatusOptions];
 
-export const demoMode = process.env.NEXT_PUBLIC_CAS_DEMO_MODE !== "false" && process.env.NEXT_PUBLIC_CAS_DATA_SOURCE !== "supabase";
+export const publicDemoMode = isClientPublicDemoMode();
+export const localDemoMode = isLocalDemoDataSource();
+export const demoMode = publicDemoMode || localDemoMode;
 
 
 export function roleLabel(role: UserRole) {

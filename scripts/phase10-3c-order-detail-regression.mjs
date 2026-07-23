@@ -68,7 +68,7 @@ assert(companyOrg && amcOrg && clientOrg && soloOrg && admin && amcAdmin && jord
 const connected = { participants: connectedParticipants };
 const bidContext = { requests: bidRequests, recipients: bidRecipients, responses: bidResponses, awards: bidAwards };
 const cobbOrder = orders.find((order) => order.id === "ord-1001");
-const amcManagedOrder = orders.find((order) => order.amc === "Pioneer AMC");
+const amcManagedOrder = orders.find((order) => order.amc === "National Valuation Services");
 assert(cobbOrder && amcManagedOrder, "Expected relationship demo orders.");
 
 function summaryValue(items, label) {
@@ -77,7 +77,7 @@ function summaryValue(items, label) {
 
 const amcRelationship = detail.buildOrderRelationshipSummary({ order: amcManagedOrder, user: amcAdmin, organization: amcOrg, connected });
 assert.equal(summaryValue(amcRelationship, "Ordered by"), amcManagedOrder.client, "AMC-managed summary should show the ordering lender/client.");
-assert.equal(summaryValue(amcRelationship, "Managed by"), "Pioneer AMC", "AMC-managed summary should show the managing AMC.");
+assert.equal(summaryValue(amcRelationship, "Managed by"), "National Valuation Services", "AMC-managed summary should show the managing AMC.");
 assert.equal(summaryValue(amcRelationship, "Assigned appraiser"), amcManagedOrder.appraiser, "AMC-managed summary should show the assigned appraiser.");
 assert(!amcRelationship.some((item) => /org-|ord-|participant-/.test(item.value)), "Relationship summary must not expose internal identifiers.");
 
@@ -89,7 +89,7 @@ assert.equal(summaryValue(directRelationship, "Managed by"), "HarborPoint Lendin
 const publicOrder = { ...cobbOrder, id: "relationship-public-order", amc: "Direct private client", client: "Private Client", appraiser: "Jordan Lee" };
 const publicRelationship = detail.buildOrderRelationshipSummary({ order: publicOrder, user: admin, organization: companyOrg, connected: { participants: [] } });
 assert.equal(summaryValue(publicRelationship, "Ordered by"), "Private Client", "Public order summary should show private client orderer.");
-assert.equal(summaryValue(publicRelationship, "Managed by"), "CAA Valuation Group", "Public order summary should show managing appraisal company.");
+assert.equal(summaryValue(publicRelationship, "Managed by"), "CAA Real Property Services", "Public order summary should show managing appraisal company.");
 
 const clientRelationship = detail.buildOrderRelationshipSummary({ order: cobbOrder, user: claire, organization: clientOrg, connected });
 assert(!clientRelationship.some((item) => item.label === "Billing party"), "Client users should not see private billing relationship details by default.");
@@ -174,7 +174,7 @@ assert.equal(bidAwards[0].orderId, cobbOrder.id, "Award should convert a winning
 
 const soloVisibleRecipients = detail.getVisibleBidRecipientsForUser(cobbOrder, bidContext, talia, soloOrg);
 assert.equal(soloVisibleRecipients.length, 1, "Bidder should see only their own invitation.");
-assert.equal(soloVisibleRecipients[0].recipientName, "Talia Morris Appraisals", "Solo bidder should not see other bidders.");
+assert.equal(soloVisibleRecipients[0].recipientName, "Upstate Appraisal Group", "Solo bidder should not see other bidders.");
 assert.equal(detail.getVisibleBidRecipientsForUser(cobbOrder, bidContext, claire, clientOrg).length, 0, "Lender using AMC must not see bid recipients.");
 assert.equal(detail.canViewBidComparison(cobbOrder, claire, clientOrg), false, "Lender using AMC must not see bid responses or vendor fee comparison.");
 

@@ -519,7 +519,7 @@ await runCheck(results, "bid invitations are private per recipient and declines 
       recipient_organization_id: orgs.amc,
       recipient_user_id: amcAdmin.userId,
       recipient_email: credentials.amcAdmin.email,
-      recipient_name: "Pioneer AMC Demo Bidder",
+      recipient_name: "National Valuation Demo Bidder",
       coverage_county: "Cobb",
       coverage_match: "direct",
       eligibility_snapshot: { reason: "Separate recipient used to prove bidder privacy." },
