@@ -1,0 +1,161 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import Module from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const root = path.resolve(__dirname, "..");
+const require = Module.createRequire(import.meta.url);
+const originalResolveFilename = Module._resolveFilename;
+
+function resolveProjectModule(request) {
+  const withoutAlias = request.startsWith("@/") ? path.join(root, "src", request.slice(2)) : path.resolve(path.dirname(request), request);
+  const candidates = [
+    withoutAlias,
+    `${withoutAlias}.ts`,
+    `${withoutAlias}.tsx`,
+    `${withoutAlias}.js`,
+    path.join(withoutAlias, "index.ts"),
+    path.join(withoutAlias, "index.tsx")
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate));
+}
+
+Module._resolveFilename = function resolveFilename(request, parent, isMain, options) {
+  if (request.startsWith("@/")) {
+    const resolved = resolveProjectModule(request);
+    if (resolved) return resolved;
+  }
+  return originalResolveFilename.call(this, request, parent, isMain, options);
+};
+
+for (const extension of [".ts", ".tsx"]) {
+  Module._extensions[extension] = function loadTypeScript(module, filename) {
+    const source = fs.readFileSync(filename, "utf8");
+    const output = ts.transpileModule(source, {
+      compilerOptions: {
+        jsx: ts.JsxEmit.ReactJSX,
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2020,
+        esModuleInterop: true
+      },
+      fileName: filename
+    }).outputText;
+    module._compile(output, filename);
+  };
+}
+
+const { orders } = require("../src/data/demo.ts");
+const { organizations, portalUsers } = require("../src/data/platform.ts");
+const { demoReportReviewResults, demoReportReviewScenarios, demoReportVersions } = require("../src/data/report-review.ts");
+const { disabledAiReviewProvider } = require("../src/lib/report-review/ai-provider.ts");
+const ingestion = require("../src/lib/report-review/ingestion.ts");
+const permissions = require("../src/lib/report-review/permissions.ts");
+const profiles = require("../src/lib/report-review/profiles.ts");
+const rules = require("../src/lib/report-review/rules.ts");
+const fees = require("../src/lib/orders/fees.ts");
+
+const org = organizations.find((organization) => organization.id === "org-firm-1");
+const admin = portalUsers.find((user) => user.id === "user-admin");
+const reviewer = portalUsers.find((user) => user.id === "user-reviewer");
+const appraiser = portalUsers.find((user) => user.id === "user-appraiser");
+const client = portalUsers.find((user) => user.id === "user-client");
+assert(org && admin && reviewer && appraiser && client, "Expected demo organization and users.");
+
+function file(orderId, fileName, checksum = `sha256-${fileName}`) {
+  return {
+    id: `${orderId}-${fileName}`,
+    fileName,
+    mimeType: fileName.endsWith(".xml") ? "application/xml" : "application/pdf",
+    sizeBytes: 4_000_000,
+    storagePath: `organizations/${org.id}/orders/${orderId}/reports/${fileName}`,
+    checksum,
+    uploadedBy: reviewer.name,
+    uploadedAt: "2026-07-27T12:00:00Z"
+  };
+}
+
+function ingest(orderId, scenarioHint, sourceFile = null, existingVersions = []) {
+  const order = orders.find((candidate) => candidate.id === orderId);
+  assert(order, `Expected order ${orderId}.`);
+  return ingestion.ingestReportUpload({
+    order,
+    organization: org,
+    user: reviewer,
+    sourceFiles: [sourceFile ?? file(order.id, `${order.fileNumber}-report.pdf`)],
+    runMode: "review_queue",
+    existingVersions,
+    scenarioHint
+  });
+}
+
+assert.equal(demoReportReviewScenarios.length, 5, "Expected the five requested demo review scenarios.");
+assert(demoReportVersions.length >= 5, "Demo report versions should exist.");
+assert(demoReportReviewResults.length >= 5, "Demo review results should exist.");
+assert(demoReportVersions.every((version) => version.immutable && version.storagePreserved), "Report versions must be immutable and preserve original files.");
+
+const profileIds = profiles.reviewProfiles.map((profile) => profile.id).sort();
+assert(profileIds.includes("uad-3-6-urar"), "UAD 3.6 profile should be configured.");
+assert(profileIds.includes("estate-retrospective"), "Estate/retrospective profile should be configured.");
+assert(profileIds.includes("divorce-litigation"), "Divorce/litigation profile should be configured.");
+assert(profiles.reviewOverlays.some((overlay) => overlay.id === "fha" && overlay.ruleIds.includes("fha-condition-commentary")), "FHA overlay should carry FHA condition checks.");
+assert.equal(profiles.selectReportProfile("UAD 3.6 URAR").id, "uad-3-6-urar", "UAD 3.6 product should select the UAD profile.");
+
+const conventional = ingest("ord-1001", "conventional inconsistency");
+assert.equal(conventional.status, "needs_review", "Conventional inconsistency should require review.");
+assert(conventional.reviewResult.findings.some((finding) => finding.ruleId === "final-value-reconciliation-match" && finding.severity === "Warning"), "Final value mismatch should produce a warning.");
+assert(conventional.reviewResult.findings.some((finding) => finding.ruleId === "net-gross-adjustment-math" && finding.status === "Open"), "Adjustment math should produce an open finding.");
+assert(conventional.reportVersion.normalizedReport.reconciliation.finalValue.sourceFileName, "Extracted fields should carry source file evidence.");
+assert(conventional.reportVersion.normalizedReport.reconciliation.finalValue.confidence > 0, "Extracted fields should carry confidence.");
+
+const fha = ingest("ord-1002", "fha condition");
+assert(fha.reviewResult.findings.some((finding) => finding.ruleId === "fha-condition-commentary" && finding.severity === "Critical"), "FHA condition issue should be critical.");
+assert(fha.reviewResult.overlayIds.includes("fha"), "FHA review should include the FHA overlay.");
+
+const estate = ingest("ord-demo-private", "estate retrospective");
+assert(estate.reviewResult.findings.some((finding) => finding.ruleId === "estate-retrospective-effective-date" && finding.severity === "Critical"), "Estate date mismatch should be critical.");
+assert(estate.reviewResult.overlayIds.includes("estate"), "Estate review should include estate overlay.");
+
+const clean = ingest("ord-demo-ready", "clean");
+assert.equal(clean.status, "ready", "Clean demo report should be ready.");
+assert.equal(clean.reviewResult.summary.openFindings, 0, "Clean demo report should have no open findings.");
+
+const prior = ingest("ord-1012", "conventional inconsistency", file("ord-1012", "CAA-26-1059-report-v1.pdf", "sha256-v1"));
+const revised = ingest("ord-1012", "revised corrected", file("ord-1012", "CAA-26-1059-revised-v2.pdf", "sha256-v2"), [prior.reportVersion]);
+assert(revised.reportVersion.versionNumber === 2, "Revised report should create a new immutable version.");
+assert(revised.reportVersion.normalizedReport.versionComparison.resolvedFindingIds.length > 0, "Revised report should preserve mapping to prior findings.");
+assert(revised.reviewResult.findings.some((finding) => finding.ruleId === "revised-version-compare" && finding.severity === "Passed"), "Revised version comparison should pass when prior findings are resolved.");
+
+const duplicate = ingest("ord-1001", "conventional inconsistency", conventional.reportVersion.sourceFiles[0], [conventional.reportVersion]);
+assert.equal(duplicate.status, "duplicate", "Duplicate report upload should not create a new version.");
+const large = ingest("ord-1001", "conventional inconsistency", { ...file("ord-1001", "large-report.pdf"), sizeBytes: 101 * 1024 * 1024 });
+assert.equal(large.status, "failed", "Large report upload should fail in plain language.");
+assert(large.errors[0].includes("100 MB"), "Large upload error should explain the size limit.");
+const malformed = ingest("ord-1001", "conventional inconsistency", file("ord-1001", "malformed-report.pdf"));
+assert.equal(malformed.status, "failed", "Malformed report should fail before review.");
+assert(malformed.errors[0].includes("could not be parsed"), "Malformed upload error should be plain language.");
+
+const order1001 = orders.find((order) => order.id === "ord-1001");
+const appraiserFindings = permissions.getVisibleReviewFindings(conventional.reviewResult, { user: appraiser, organization: org, order: order1001 });
+assert(appraiserFindings.some((finding) => finding.severity !== "Passed"), "Assigned appraiser should see permitted open findings.");
+const reviewerFindings = permissions.getVisibleReviewFindings(conventional.reviewResult, { user: reviewer, organization: org, order: order1001 });
+assert(reviewerFindings.length >= appraiserFindings.length, "Reviewer should see internal report findings.");
+assert.equal(permissions.getVisibleReviewFindings(conventional.reviewResult, { user: client, organization: org, order: order1001 }).length, 0, "Client should not see internal findings before release.");
+const releasableFinding = conventional.reviewResult.findings.find((finding) => finding.severity !== "Passed");
+const released = rules.releaseFindingToClient(conventional.reviewResult, releasableFinding.id, reviewer.name);
+assert.equal(permissions.getVisibleReviewFindings(released, { user: client, organization: org, order: order1001 }).length, 1, "Only released findings should be client visible.");
+
+const responded = rules.respondToReviewFinding(conventional.reviewResult, releasableFinding.id, "Corrected report uploaded.", appraiser.name);
+assert(responded.findings.find((finding) => finding.id === releasableFinding.id).status === "Appraiser Responded", "Appraiser response should update finding status.");
+const dismissed = rules.updateReviewFindingStatus(conventional.reviewResult, releasableFinding.id, "Dismissed", reviewer.name);
+assert(dismissed.summary.openFindings < conventional.reviewResult.summary.openFindings, "Dismissed findings should reduce open count.");
+
+const reviewerPayload = fees.sanitizeOrderFeesForUser(order1001, reviewer, org);
+assert.equal(reviewerPayload.clientFee, undefined, "Reviewer report review should not expose client fee.");
+assert.equal(reviewerPayload.vendorFee, undefined, "Reviewer report review should not expose vendor fee.");
+assert.equal(disabledAiReviewProvider.analyze({ order: order1001, report: conventional.reportVersion.normalizedReport, profile: conventional.profile, overlays: conventional.overlays }).status, "disabled", "AI provider should remain disabled by default.");
+
+console.log("Phase 10.4 report ingestion, deterministic review, permissions, upload safety, versioning, and AI-disabled checks passed.");
