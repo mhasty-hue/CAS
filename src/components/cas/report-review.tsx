@@ -16,6 +16,7 @@ type ReportReviewPanelProps = {
   onRespondToFinding: (findingId: string, response: string) => void;
   onUpdateFindingStatus: (findingId: string, status: ReviewFindingStatus, severity?: ReviewSeverity) => void;
   onReleaseFindingToClient: (findingId: string) => void;
+  onMarkReadyForDelivery: (orderId: string) => void;
 };
 
 const severityTone: Record<ReviewSeverity, string> = {
@@ -171,7 +172,8 @@ export function ReportReviewPanel({
   onUploadCorrectedReport,
   onRespondToFinding,
   onUpdateFindingStatus,
-  onReleaseFindingToClient
+  onReleaseFindingToClient,
+  onMarkReadyForDelivery
 }: ReportReviewPanelProps) {
   const { orderVersions, latestVersion, latestResult } = latestResultForOrder(order.id, versions, results);
   const context = { user, organization, order };
@@ -179,6 +181,8 @@ export function ReportReviewPanel({
   const canManage = canReviewerManageFinding(context);
   const canRun = user.role !== "client_user";
   const openVisibleFindings = visibleFindings.filter((finding) => finding.severity !== "Passed" && !["Dismissed", "Resolved", "Accepted Explanation", "Corrected"].includes(finding.status));
+  const uploadLabel = latestVersion ? "Run checks again" : user.role === "appraiser" || user.role === "solo_appraiser" ? "Upload report and run checks" : "Run review checks";
+  const readyDisabled = !latestResult || openVisibleFindings.length > 0;
 
   return (
     <section className="grid gap-5">
@@ -194,12 +198,18 @@ export function ReportReviewPanel({
             <div className="flex flex-wrap gap-2">
               <button className="secondary-button" onClick={() => onRunReview(order.id)}>
                 <FileSearch className="h-4 w-4" />
-                Run review checks
+                {uploadLabel}
               </button>
               <button className="primary-button" onClick={() => onUploadCorrectedReport(order.id)}>
                 <UploadCloud className="h-4 w-4" />
                 Upload corrected version
               </button>
+              {canManage && (
+                <button className="primary-button disabled:opacity-50" disabled={readyDisabled} onClick={() => onMarkReadyForDelivery(order.id)}>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Mark ready for delivery
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -209,6 +219,19 @@ export function ReportReviewPanel({
           <MetricTile label="Version" value={latestVersion ? `v${latestVersion.versionNumber}` : "No report version"} />
           <MetricTile label="Open findings" value={String(openVisibleFindings.length)} />
           <MetricTile label="AI provider" value={latestResult?.aiProviderStatus === "enabled" ? "Enabled" : "Disabled"} />
+        </div>
+        <div className="mt-4 grid gap-2 md:grid-cols-5">
+          {[
+            { label: "1. Upload", done: Boolean(latestVersion) },
+            { label: "2. Check", done: Boolean(latestResult) },
+            { label: "3. Respond", done: Boolean(latestResult?.findings.some((finding) => finding.appraiserResponse) || latestVersion?.normalizedReport.versionComparison) },
+            { label: "4. Review", done: Boolean(latestResult && openVisibleFindings.length === 0) },
+            { label: "5. Release", done: order.status === "Ready for Delivery" || order.status === "Delivered" || order.status === "Completed" }
+          ].map((step) => (
+            <div key={step.label} className={cn("rounded-md border px-3 py-2 text-xs font-medium", step.done ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-line bg-white text-slate-500")}>
+              {step.label}
+            </div>
+          ))}
         </div>
 
         {latestResult && (

@@ -36,7 +36,7 @@ import {
 import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationTemplate, Order, OrderFormTemplate, OrderIntakePrefill, OrderStatus, Organization, OrganizationInvitation, OrganizationOrderStatus, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
 import type { AppraisalReportVersion, IngestionSourceFile, ReportReviewResult, ReviewFindingStatus, ReviewSeverity } from "@/types/report-review";
 import { loadCasAuthContext } from "@/lib/auth/context";
-import { createDeliveryRecord } from "@/lib/delivery/service";
+import { createDeliveryRecord, markDeliveredFilesClientVisible } from "@/lib/delivery/service";
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
 import { canCreateOrders, canViewOwnOrdersOnly } from "@/lib/permissions";
 import { canTransitionOrderStatus, filterOrdersForWorkflow, resolveLegacyOrderQueue } from "@/lib/orders/workflow";
@@ -1774,6 +1774,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     if (!order) return;
     const delivery = createDeliveryRecord(order, activeUser, managedDocumentList);
     setDeliveryRecordList((current) => [delivery, ...current]);
+    setManagedDocumentList((current) => markDeliveredFilesClientVisible(current, delivery));
     handleStatusChange(orderId, "Delivered");
     addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, orderId, event: "Delivered", actor: activeUser.name, at: "Just now", detail: `Secure delivery created for ${delivery.recipientName}.` });
     recordDemoSimulation("Demo report delivery simulated. No client email, portal invite, webhook, or file transfer was sent.");
@@ -1943,6 +1944,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
               onRespondToReportFinding={handleRespondToReportFinding}
               onUpdateReportFindingStatus={handleUpdateReportFindingStatus}
               onReleaseReportFindingToClient={handleReleaseReportFindingToClient}
+              onMarkReportReadyForDelivery={(orderId) => handleReviewAction(orderId, "approve")}
               bids={{ requests: bidRequests, recipients: bidRecipients, responses: bidResponses, awards: bidAwards }}
               connected={{ participants: connectedParticipants }}
               vendorCoverage={vendorCountyCoverage}

@@ -57,6 +57,7 @@ const permissions = require("../src/lib/report-review/permissions.ts");
 const profiles = require("../src/lib/report-review/profiles.ts");
 const rules = require("../src/lib/report-review/rules.ts");
 const fees = require("../src/lib/orders/fees.ts");
+const delivery = require("../src/lib/delivery/service.ts");
 
 const org = organizations.find((organization) => organization.id === "org-firm-1");
 const admin = portalUsers.find((user) => user.id === "user-admin");
@@ -157,5 +158,95 @@ const reviewerPayload = fees.sanitizeOrderFeesForUser(order1001, reviewer, org);
 assert.equal(reviewerPayload.clientFee, undefined, "Reviewer report review should not expose client fee.");
 assert.equal(reviewerPayload.vendorFee, undefined, "Reviewer report review should not expose vendor fee.");
 assert.equal(disabledAiReviewProvider.analyze({ order: order1001, report: conventional.reportVersion.normalizedReport, profile: conventional.profile, overlays: conventional.overlays }).status, "disabled", "AI provider should remain disabled by default.");
+
+const appraiserUpload = ingestion.ingestReportUpload({
+  order: order1001,
+  organization: org,
+  user: appraiser,
+  sourceFiles: [file(order1001.id, "CAA-26-1048-appraiser-upload.pdf", "sha256-appraiser-v1")],
+  runMode: "pre_submission",
+  existingVersions: [],
+  scenarioHint: "conventional inconsistency"
+});
+assert(appraiserUpload.reportVersion.immutable, "Appraiser upload should create an immutable report version.");
+assert.equal(appraiserUpload.reportVersion.versionNumber, 1, "First appraiser upload should create version 1.");
+assert(appraiserUpload.reviewResult.findings.some((finding) => finding.severity !== "Passed"), "Appraiser upload should produce structured findings.");
+
+const appraiserVisibleFinding = permissions.getVisibleReviewFindings(appraiserUpload.reviewResult, { user: appraiser, organization: org, order: order1001 }).find((finding) => finding.severity !== "Passed");
+assert(appraiserVisibleFinding, "Appraiser should see at least one finding to answer.");
+const answered = rules.respondToReviewFinding(appraiserUpload.reviewResult, appraiserVisibleFinding.id, "I uploaded a corrected version addressing the adjustment math and exhibit inconsistency.", appraiser.name);
+assert.equal(answered.findings.find((finding) => finding.id === appraiserVisibleFinding.id).status, "Appraiser Responded", "Appraiser response should be captured before reviewer action.");
+
+const correctedUpload = ingestion.ingestReportUpload({
+  order: order1001,
+  organization: org,
+  user: appraiser,
+  sourceFiles: [file(order1001.id, "CAA-26-1048-corrected-v2.pdf", "sha256-appraiser-v2")],
+  runMode: "revision_compare",
+  existingVersions: [appraiserUpload.reportVersion],
+  scenarioHint: "revised corrected"
+});
+assert.equal(correctedUpload.reportVersion.versionNumber, 2, "Corrected upload should create immutable version 2.");
+assert(correctedUpload.reportVersion.normalizedReport.versionComparison.resolvedFindingIds.length > 0, "Corrected version should compare against prior findings.");
+
+const reviewerCleared = correctedUpload.reviewResult.findings.reduce(
+  (result, finding) => finding.severity === "Passed" ? result : rules.updateReviewFindingStatus(result, finding.id, "Resolved", reviewer.name),
+  correctedUpload.reviewResult
+);
+assert.equal(reviewerCleared.summary.openFindings, 0, "Reviewer should be able to resolve findings before marking ready for delivery.");
+const reportReviewSource = fs.readFileSync(path.join(root, "src", "components", "cas", "report-review.tsx"), "utf8");
+assert(reportReviewSource.includes("Upload report and run checks"), "Appraiser workflow should expose upload-and-check language.");
+assert(reportReviewSource.includes("Mark ready for delivery"), "Reviewer workflow should expose ready-for-delivery action.");
+
+const deliveryDocs = [
+  {
+    id: "doc-final-report",
+    organizationId: org.id,
+    orderId: order1001.id,
+    uploaderId: appraiser.id,
+    uploaderName: appraiser.name,
+    category: "Appraisal report PDF",
+    fileName: "CAA-26-1048-final.pdf",
+    displayName: "Final appraisal report",
+    fileType: "application/pdf",
+    fileSizeBytes: 4_000_000,
+    storagePath: "organizations/org-firm-1/orders/ord-1001/documents/final.pdf",
+    versionNumber: 2,
+    visibility: "Reviewer",
+    source: "Appraiser upload",
+    uploadedAt: "Just now",
+    description: "Final report",
+    tags: ["report"],
+    status: "Uploaded",
+    auditMetadata: { createdBy: appraiser.name, lastAction: "Uploaded", lastActionAt: "Just now", virusScanStatus: "Passed", duplicateDetection: "Unique" },
+    versions: []
+  },
+  {
+    id: "doc-workfile",
+    organizationId: org.id,
+    orderId: order1001.id,
+    uploaderId: appraiser.id,
+    uploaderName: appraiser.name,
+    category: "Workfile",
+    fileName: "workfile.pdf",
+    displayName: "Internal workfile",
+    fileType: "application/pdf",
+    fileSizeBytes: 1_000_000,
+    storagePath: "organizations/org-firm-1/orders/ord-1001/documents/workfile.pdf",
+    versionNumber: 1,
+    visibility: "Organization internal",
+    source: "Appraiser upload",
+    uploadedAt: "Just now",
+    description: "Internal support",
+    tags: ["workfile"],
+    status: "Uploaded",
+    auditMetadata: { createdBy: appraiser.name, lastAction: "Uploaded", lastActionAt: "Just now", virusScanStatus: "Passed", duplicateDetection: "Unique" },
+    versions: []
+  }
+];
+const deliveryRecord = delivery.createDeliveryRecord({ ...order1001, status: "Ready for Delivery" }, reviewer, deliveryDocs);
+const deliveredDocs = delivery.markDeliveredFilesClientVisible(deliveryDocs, deliveryRecord);
+assert.equal(deliveredDocs.find((document) => document.id === "doc-final-report").visibility, "Delivery recipient", "Delivered final report should become client-visible.");
+assert.equal(deliveredDocs.find((document) => document.id === "doc-workfile").visibility, "Organization internal", "Workfile should remain internal after report delivery.");
 
 console.log("Phase 10.4 report ingestion, deterministic review, permissions, upload safety, versioning, and AI-disabled checks passed.");

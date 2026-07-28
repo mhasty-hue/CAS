@@ -107,6 +107,7 @@ type OrderDetailPageProps = {
   onRespondToReportFinding: (findingId: string, response: string) => void;
   onUpdateReportFindingStatus: (findingId: string, status: ReviewFindingStatus, severity?: ReviewSeverity) => void;
   onReleaseReportFindingToClient: (findingId: string) => void;
+  onMarkReportReadyForDelivery: (orderId: string) => void;
   bids: OrderBidContext;
   connected: OrderConnectedContext;
   vendorCoverage: VendorCountyCoverage[];
@@ -742,6 +743,7 @@ export function OrderDetailPage({
   onRespondToReportFinding,
   onUpdateReportFindingStatus,
   onReleaseReportFindingToClient,
+  onMarkReportReadyForDelivery,
   bids,
   connected,
   vendorCoverage
@@ -981,6 +983,7 @@ export function OrderDetailPage({
               onRespondToFinding={onRespondToReportFinding}
               onUpdateFindingStatus={onUpdateReportFindingStatus}
               onReleaseFindingToClient={onReleaseReportFindingToClient}
+              onMarkReadyForDelivery={onMarkReportReadyForDelivery}
             />
           </section>
         </div>
