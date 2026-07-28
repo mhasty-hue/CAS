@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { appraisers, calendarPreferences, clientProfiles, companyUsers, defaultOrderFormTemplate, orders, vendors } from "@/data/demo";
 import { bidAwards, bidRecipients, bidRequests, bidResponses, connectedOrderSummaries, connectedParticipants, vendorCountyCoverage } from "@/data/connected";
+import { demoReportReviewResults, demoReportVersions } from "@/data/report-review";
 import {
   accountingEntries,
   automationRules,
@@ -33,8 +34,9 @@ import {
   workflowTasks
 } from "@/data/platform";
 import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationTemplate, Order, OrderFormTemplate, OrderIntakePrefill, OrderStatus, Organization, OrganizationInvitation, OrganizationOrderStatus, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
+import type { AppraisalReportVersion, IngestionSourceFile, ReportReviewResult, ReviewFindingStatus, ReviewSeverity } from "@/types/report-review";
 import { loadCasAuthContext } from "@/lib/auth/context";
-import { createDeliveryRecord } from "@/lib/delivery/service";
+import { createDeliveryRecord, markDeliveredFilesClientVisible } from "@/lib/delivery/service";
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
 import { canCreateOrders, canViewOwnOrdersOnly } from "@/lib/permissions";
 import { canTransitionOrderStatus, filterOrdersForWorkflow, resolveLegacyOrderQueue } from "@/lib/orders/workflow";
@@ -45,6 +47,8 @@ import { publicRequestToOrderSeed } from "@/lib/public-intake/service";
 import { simulateOrderDocumentUpload } from "@/lib/storage/paths";
 import { createOrderMessage } from "@/lib/messaging/service";
 import { applyPayrollSnapshot, calculatePayrollSnapshot } from "@/lib/accounting/payroll";
+import { ingestReportUpload } from "@/lib/report-review/ingestion";
+import { releaseFindingToClient, respondToReviewFinding, updateReviewFindingStatus } from "@/lib/report-review/rules";
 import { getCasRepository } from "@/lib/repositories";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { AccountingView, AnalyticsView } from "./cas/accounting";
@@ -96,6 +100,8 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
   const [orderMessageList, setOrderMessageList] = useState<OrderMessage[]>(orderMessages);
   const [revisionRequestList, setRevisionRequestList] = useState<RevisionRequest[]>(revisionRequests);
   const [reportSubmissionList, setReportSubmissionList] = useState<ReportSubmission[]>(reportSubmissions);
+  const [reportVersionList, setReportVersionList] = useState<AppraisalReportVersion[]>(demoReportVersions);
+  const [reportReviewResultList, setReportReviewResultList] = useState<ReportReviewResult[]>(demoReportReviewResults);
   const [deliveryRecordList, setDeliveryRecordList] = useState<DeliveryRecord[]>(deliveryRecords);
   const [documentAuditEventList, setDocumentAuditEventList] = useState<DocumentAuditEvent[]>(documentAuditEvents);
   const [orderFormTemplate, setOrderFormTemplate] = useState<OrderFormTemplate>(defaultOrderFormTemplate);
@@ -163,6 +169,8 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     setOrderMessageList(clonePublicDemoFixture(orderMessages));
     setRevisionRequestList(clonePublicDemoFixture(revisionRequests));
     setReportSubmissionList(clonePublicDemoFixture(reportSubmissions));
+    setReportVersionList(clonePublicDemoFixture(demoReportVersions));
+    setReportReviewResultList(clonePublicDemoFixture(demoReportReviewResults));
     setDeliveryRecordList(clonePublicDemoFixture(deliveryRecords));
     setDocumentAuditEventList(clonePublicDemoFixture(documentAuditEvents));
     setOrderFormTemplate(clonePublicDemoFixture(defaultOrderFormTemplate));
@@ -273,6 +281,8 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
         setOrderMessageList(bootstrap.orderMessages);
         setRevisionRequestList(bootstrap.revisionRequests);
         setReportSubmissionList(bootstrap.reportSubmissions);
+        setReportVersionList([]);
+        setReportReviewResultList([]);
         setDeliveryRecordList(bootstrap.deliveryRecords);
         setDocumentAuditEventList(bootstrap.documentAuditEvents);
         setOrderFormTemplate(bootstrap.orderFormTemplate);
@@ -1644,11 +1654,127 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     recordDemoSimulation("Demo report submitted locally. No reviewer email, LOS callback, or production document delivery was sent.");
   }
 
+  function getReportReviewSourceFiles(order: Order, corrected = false): IngestionSourceFile[] {
+    const reviewDocuments = managedDocumentList.filter((document) =>
+      document.orderId === order.id &&
+      ["Appraisal report PDF", "Appraisal XML", "UAD 3.6 data package", "Photos", "Sketch", "Map", "Addenda"].includes(document.category)
+    );
+    if (reviewDocuments.length && !corrected) {
+      return reviewDocuments.map((document) => ({
+        id: document.id,
+        fileName: document.fileName,
+        mimeType: document.fileType,
+        sizeBytes: document.fileSizeBytes,
+        storagePath: document.storagePath,
+        checksum: document.checksum,
+        uploadedBy: document.uploaderName,
+        uploadedAt: document.uploadedAt
+      }));
+    }
+
+    const nextVersion = Math.max(0, ...reportVersionList.filter((version) => version.orderId === order.id).map((version) => version.versionNumber)) + 1;
+    return [
+      {
+        id: `${order.id}-demo-review-source-v${nextVersion}`,
+        fileName: `${order.fileNumber}-${corrected ? "corrected-" : ""}report-v${nextVersion}.pdf`,
+        mimeType: "application/pdf",
+        sizeBytes: 4_200_000 + nextVersion,
+        storagePath: `organizations/${activeOrganization.id}/orders/${order.id}/report-review/${order.fileNumber}-report-v${nextVersion}.pdf`,
+        checksum: `sha256-demo-review-${order.id}-v${nextVersion}`,
+        uploadedBy: activeUser.name,
+        uploadedAt: "Just now"
+      }
+    ];
+  }
+
+  function recordReportReviewResult(order: Order, result: ReturnType<typeof ingestReportUpload>, actionLabel: string) {
+    if (!result.reportVersion || !result.reviewResult) {
+      const message = result.errors[0] ?? result.warnings[0] ?? "CAS could not create a report review version.";
+      recordDemoSimulation(message);
+      return;
+    }
+
+    setReportVersionList((current) => [result.reportVersion!, ...current.filter((version) => version.id !== result.reportVersion!.id)]);
+    setReportReviewResultList((current) => [result.reviewResult!, ...current.filter((review) => review.id !== result.reviewResult!.id)]);
+    updateOrder(order.id, (currentOrder) => ({
+      ...currentOrder,
+      lastUpdate: actionLabel,
+      nextAction: result.reviewResult!.summary.openFindings ? "Review automated QC findings" : currentOrder.nextAction,
+      timeline: [
+        {
+          label: actionLabel,
+          detail: `${result.reviewResult!.summary.openFindings} open finding(s), ${result.reviewResult!.summary.Passed} passed checks.`,
+          at: "Just now",
+          actor: activeUser.name
+        },
+        ...currentOrder.timeline
+      ],
+      auditTrail: [
+        {
+          id: `${order.id}-report-review-${Date.now()}`,
+          action: `${actionLabel}: ${result.reviewResult!.auditSummary}`,
+          actor: activeUser.name,
+          at: "Just now"
+        },
+        ...currentOrder.auditTrail
+      ]
+    }));
+    recordDemoSimulation("Demo report review ran locally using deterministic checks. No external AI provider or production document parser was called.");
+  }
+
+  function handleRunReportReview(orderId: string) {
+    const order = orderList.find((candidate) => candidate.id === orderId);
+    if (!order) return;
+    const result = ingestReportUpload({
+      order,
+      organization: activeOrganization,
+      user: activeUser,
+      sourceFiles: getReportReviewSourceFiles(order),
+      runMode: "pre_submission",
+      existingVersions: reportVersionList.filter((version) => version.orderId === order.id)
+    });
+    recordReportReviewResult(order, result, "Report QC checks run");
+  }
+
+  function handleUploadCorrectedReport(orderId: string) {
+    const order = orderList.find((candidate) => candidate.id === orderId);
+    if (!order) return;
+    const result = ingestReportUpload({
+      order,
+      organization: activeOrganization,
+      user: activeUser,
+      sourceFiles: getReportReviewSourceFiles(order, true),
+      runMode: "revision_compare",
+      existingVersions: reportVersionList.filter((version) => version.orderId === order.id),
+      scenarioHint: "revised corrected"
+    });
+    recordReportReviewResult(order, result, "Corrected report version reviewed");
+  }
+
+  function updateReportReviewResult(findingId: string, updater: (result: ReportReviewResult) => ReportReviewResult) {
+    setReportReviewResultList((current) => current.map((result) => result.findings.some((finding) => finding.id === findingId) ? updater(result) : result));
+  }
+
+  function handleRespondToReportFinding(findingId: string, response: string) {
+    updateReportReviewResult(findingId, (result) => respondToReviewFinding(result, findingId, response, activeUser.name));
+    recordDemoSimulation("Demo appraiser response saved locally. No client-visible message was sent.");
+  }
+
+  function handleUpdateReportFindingStatus(findingId: string, status: ReviewFindingStatus, severity?: ReviewSeverity) {
+    updateReportReviewResult(findingId, (result) => updateReviewFindingStatus(result, findingId, status, activeUser.name, severity));
+  }
+
+  function handleReleaseReportFindingToClient(findingId: string) {
+    updateReportReviewResult(findingId, (result) => releaseFindingToClient(result, findingId, activeUser.name));
+    recordDemoSimulation("Demo finding marked client-visible locally. Nothing was delivered until the reviewer releases the report.");
+  }
+
   function handleDeliverReport(orderId: string) {
     const order = orderList.find((item) => item.id === orderId);
     if (!order) return;
     const delivery = createDeliveryRecord(order, activeUser, managedDocumentList);
     setDeliveryRecordList((current) => [delivery, ...current]);
+    setManagedDocumentList((current) => markDeliveredFilesClientVisible(current, delivery));
     handleStatusChange(orderId, "Delivered");
     addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, orderId, event: "Delivered", actor: activeUser.name, at: "Just now", detail: `Secure delivery created for ${delivery.recipientName}.` });
     recordDemoSimulation("Demo report delivery simulated. No client email, portal invite, webhook, or file transfer was sent.");
@@ -1799,6 +1925,8 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
               requiredDocumentRules={requiredDocumentRuleList}
               orderMessages={orderMessageList}
               revisionRequests={revisionRequestList}
+              reportVersions={reportVersionList}
+              reportReviewResults={reportReviewResultList}
               deliveryRecords={deliveryRecordList}
               onUploadDocument={handleUploadDocument}
               onArchiveDocument={handleArchiveDocument}
@@ -1811,6 +1939,12 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
               onToggleMessageRead={handleToggleMessageRead}
               onUpdateRevisionStatus={handleUpdateRevisionStatus}
               onRespondToRevisionItem={handleRespondToRevisionItem}
+              onRunReportReview={handleRunReportReview}
+              onUploadCorrectedReport={handleUploadCorrectedReport}
+              onRespondToReportFinding={handleRespondToReportFinding}
+              onUpdateReportFindingStatus={handleUpdateReportFindingStatus}
+              onReleaseReportFindingToClient={handleReleaseReportFindingToClient}
+              onMarkReportReadyForDelivery={(orderId) => handleReviewAction(orderId, "approve")}
               bids={{ requests: bidRequests, recipients: bidRecipients, responses: bidResponses, awards: bidAwards }}
               connected={{ participants: connectedParticipants }}
               vendorCoverage={vendorCountyCoverage}
@@ -1898,6 +2032,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
             <ReviewView
               orderList={visibleOrders.length ? visibleOrders : orderList}
               user={activeUser}
+              reportReviewResults={reportReviewResultList}
               onReviewAction={handleReviewAction}
               onCompleteReviewItem={handleCompleteReviewItem}
               onReviewerComment={handleReviewerComment}

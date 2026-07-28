@@ -17,6 +17,7 @@
     "test:status-config": "node scripts/phase10-3c1-status-regression.mjs",
     "test:fee-visibility": "node scripts/phase10-3c1-fee-regression.mjs",
     "test:public-demo": "node scripts/public-demo-regression.mjs",
+    "test:report-review": "node scripts/phase10-4-report-review-regression.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

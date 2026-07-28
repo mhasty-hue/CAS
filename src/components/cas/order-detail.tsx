@@ -37,6 +37,7 @@ import type {
   RevisionStatus,
   VendorCountyCoverage
 } from "@/types/domain";
+import type { AppraisalReportVersion, ReportReviewResult, ReviewFindingStatus, ReviewSeverity } from "@/types/report-review";
 import {
   buildBidRequestDraft,
   buildDirectAssignmentDraft,
@@ -67,6 +68,7 @@ import { DetailSection, DueChip, InfoRow, ListOrEmpty, MetricTile, PriorityChip,
 import { OrderDocumentWorkspace, RequiredDocumentSummary } from "./documents/workspace";
 import { OrderConversationPanel } from "./messages/conversation";
 import { InspectionPanel, ReportMetadataSection } from "./orders";
+import { ReportReviewPanel } from "./report-review";
 import { RevisionSummary, RevisionWorkflowPanel } from "./revisions/workflow";
 
 type InspectionAction = "schedule" | "reschedule" | "complete" | "cancel" | "note";
@@ -86,6 +88,8 @@ type OrderDetailPageProps = {
   requiredDocumentRules: RequiredDocumentRule[];
   orderMessages: OrderMessage[];
   revisionRequests: RevisionRequest[];
+  reportVersions: AppraisalReportVersion[];
+  reportReviewResults: ReportReviewResult[];
   deliveryRecords: DeliveryRecord[];
   onUploadDocument: (orderId: string, category: DocumentCategory) => void;
   onArchiveDocument: (documentId: string) => void;
@@ -98,6 +102,12 @@ type OrderDetailPageProps = {
   onToggleMessageRead: (messageId: string) => void;
   onUpdateRevisionStatus: (revisionId: string, status: RevisionStatus) => void;
   onRespondToRevisionItem: (revisionId: string, itemId: string) => void;
+  onRunReportReview: (orderId: string) => void;
+  onUploadCorrectedReport: (orderId: string) => void;
+  onRespondToReportFinding: (findingId: string, response: string) => void;
+  onUpdateReportFindingStatus: (findingId: string, status: ReviewFindingStatus, severity?: ReviewSeverity) => void;
+  onReleaseReportFindingToClient: (findingId: string) => void;
+  onMarkReportReadyForDelivery: (orderId: string) => void;
   bids: OrderBidContext;
   connected: OrderConnectedContext;
   vendorCoverage: VendorCountyCoverage[];
@@ -714,6 +724,8 @@ export function OrderDetailPage({
   requiredDocumentRules,
   orderMessages,
   revisionRequests,
+  reportVersions,
+  reportReviewResults,
   deliveryRecords,
   onUploadDocument,
   onArchiveDocument,
@@ -726,6 +738,12 @@ export function OrderDetailPage({
   onToggleMessageRead,
   onUpdateRevisionStatus,
   onRespondToRevisionItem,
+  onRunReportReview,
+  onUploadCorrectedReport,
+  onRespondToReportFinding,
+  onUpdateReportFindingStatus,
+  onReleaseReportFindingToClient,
+  onMarkReportReadyForDelivery,
   bids,
   connected,
   vendorCoverage
@@ -932,23 +950,40 @@ export function OrderDetailPage({
       )}
 
       {activeSection === "review" && (
-        <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
+        <div className="grid gap-5">
+          <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
+            <section className="panel p-5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><FileCheck2 className="h-4 w-4 text-brand-600" /> Review State</div>
+              <div className="mt-4 grid gap-3">
+                <MetricTile label="Checklist" value={`${reviewComplete}/${Math.max(order.reviewItems.length, 1)} complete`} />
+                <MetricTile label="Reviewer" value={order.reviewer} />
+                <MetricTile label="Status" value={statusDefinitions[order.status].stage} />
+              </div>
+              <button className="secondary-button mt-4 w-full justify-center" onClick={() => onAddNote(order.id)}><MessageSquare className="h-4 w-4" /> Add review note</button>
+            </section>
+            <section className="panel p-5">
+              <RevisionWorkflowPanel
+                order={order}
+                revisions={revisionRequests}
+                documents={managedDocuments}
+                onUpdateRevisionStatus={onUpdateRevisionStatus}
+                onRespondToRevisionItem={onRespondToRevisionItem}
+              />
+            </section>
+          </div>
           <section className="panel p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><FileCheck2 className="h-4 w-4 text-brand-600" /> Review State</div>
-            <div className="mt-4 grid gap-3">
-              <MetricTile label="Checklist" value={`${reviewComplete}/${Math.max(order.reviewItems.length, 1)} complete`} />
-              <MetricTile label="Reviewer" value={order.reviewer} />
-              <MetricTile label="Status" value={statusDefinitions[order.status].stage} />
-            </div>
-            <button className="secondary-button mt-4 w-full justify-center" onClick={() => onAddNote(order.id)}><MessageSquare className="h-4 w-4" /> Add review note</button>
-          </section>
-          <section className="panel p-5">
-            <RevisionWorkflowPanel
+            <ReportReviewPanel
               order={order}
-              revisions={revisionRequests}
-              documents={managedDocuments}
-              onUpdateRevisionStatus={onUpdateRevisionStatus}
-              onRespondToRevisionItem={onRespondToRevisionItem}
+              user={user}
+              organization={organization}
+              versions={reportVersions}
+              results={reportReviewResults}
+              onRunReview={onRunReportReview}
+              onUploadCorrectedReport={onUploadCorrectedReport}
+              onRespondToFinding={onRespondToReportFinding}
+              onUpdateFindingStatus={onUpdateReportFindingStatus}
+              onReleaseFindingToClient={onReleaseReportFindingToClient}
+              onMarkReadyForDelivery={onMarkReportReadyForDelivery}
             />
           </section>
         </div>

@@ -26,3 +26,21 @@ export function createDeliveryRecord(order: Order, user: PortalUser, documents: 
     emailHookStatus: "Development log"
   };
 }
+
+export function markDeliveredFilesClientVisible(documents: ManagedDocument[], delivery: DeliveryRecord) {
+  const deliveredFileIds = new Set(delivery.fileIds);
+  return documents.map((document) =>
+    deliveredFileIds.has(document.id)
+      ? {
+          ...document,
+          visibility: "Delivery recipient" as const,
+          status: document.category === "Appraisal report PDF" || document.category === "Appraisal XML" || document.category === "ENV file" ? "Final" as const : document.status,
+          auditMetadata: {
+            ...document.auditMetadata,
+            lastAction: "Delivered",
+            lastActionAt: "Just now"
+          }
+        }
+      : document
+  );
+}

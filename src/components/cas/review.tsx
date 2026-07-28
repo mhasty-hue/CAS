@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardCheck, FileCheck2, FileText, MessageSquare, Send, X } from "lucide-react";
-import { reviewers } from "@/data/demo";
 import { reviewTemplates } from "@/data/platform";
 import type { Order, PortalUser } from "@/types/domain";
+import type { ReportReviewResult } from "@/types/report-review";
 import { canDeliverReports, canReviewReports } from "@/lib/permissions";
 import { OperationalList } from "./dashboard";
 import { DueChip, InfoRow, ListOrEmpty, MetricTile, PriorityChip, SectionHeader, StatusChip, TableHeader } from "./shared";
@@ -11,22 +11,30 @@ import { cn } from "@/lib/utils";
 export function ReviewView({
   orderList,
   user,
+  reportReviewResults = [],
   onReviewAction,
   onCompleteReviewItem,
   onReviewerComment
 }: {
   orderList: Order[];
   user: PortalUser;
+  reportReviewResults?: ReportReviewResult[];
   onReviewAction: (orderId: string, action: "return" | "approve" | "deliver") => void;
   onCompleteReviewItem: (orderId: string, label: string) => void;
   onReviewerComment: (orderId: string) => void;
 }) {
   const reviewOrders = orderList.filter((order) => ["Submitted", "In Review", "Revisions Needed", "Ready for Delivery"].includes(order.status));
   const openFindings = reviewOrders.flatMap((order) => order.reviewItems.filter((item) => !item.complete).map((item) => ({ order, item }))).slice(0, 6);
+  const latestAutomatedResult = (orderId: string) =>
+    reportReviewResults
+      .filter((result) => result.orderId === orderId)
+      .sort((a, b) => Number(b.reportVersionId.match(/-v(\d+)/)?.[1] ?? 0) - Number(a.reportVersionId.match(/-v(\d+)/)?.[1] ?? 0))[0];
+  const automatedOpenFindings = reviewOrders.reduce((total, order) => total + (latestAutomatedResult(order.id)?.summary.openFindings ?? 0), 0);
   const canReview = canReviewReports(user);
   const canDeliver = canDeliverReports(user);
   const [selectedOrderId, setSelectedOrderId] = useState(reviewOrders[0]?.id ?? "");
   const selectedOrder = reviewOrders.find((order) => order.id === selectedOrderId) ?? null;
+  const selectedAutomatedResult = selectedOrder ? latestAutomatedResult(selectedOrder.id) : undefined;
 
   useEffect(() => {
     function onEscape(event: KeyboardEvent) {
@@ -55,14 +63,15 @@ export function ReviewView({
           <MetricTile label="Ready for review" value={String(reviewOrders.length)} />
           <MetricTile label="Needs revisions" value={String(orderList.filter((order) => order.status === "Revisions Needed").length)} />
           <MetricTile label="Open checklist items" value={String(openFindings.length)} />
-          <MetricTile label="Reviewers" value={String(reviewers.length)} />
+          <MetricTile label="Automated QC" value={`${automatedOpenFindings} open`} />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-left text-sm">
-            <thead className="border-y border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500"><tr><th className="px-5 py-3">File</th><th className="px-5 py-3">Borrower</th><th className="px-5 py-3">Appraiser</th><th className="px-5 py-3">Reviewer</th><th className="px-5 py-3">Due</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Checklist</th><th className="px-5 py-3">Priority</th><th className="px-5 py-3">Actions</th></tr></thead>
+            <thead className="border-y border-line bg-slate-50 text-xs uppercase tracking-normal text-slate-500"><tr><th className="px-5 py-3">File</th><th className="px-5 py-3">Borrower</th><th className="px-5 py-3">Appraiser</th><th className="px-5 py-3">Reviewer</th><th className="px-5 py-3">Due</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Checklist</th><th className="px-5 py-3">Auto QC</th><th className="px-5 py-3">Priority</th><th className="px-5 py-3">Actions</th></tr></thead>
             <tbody className="divide-y divide-line">
               {reviewOrders.map((order) => {
                 const complete = order.reviewItems.filter((item) => item.complete).length;
+                const automatedResult = latestAutomatedResult(order.id);
                 return (
                 <tr key={order.id} className={cn("cursor-pointer hover:bg-slate-50", selectedOrderId === order.id && "bg-brand-50/60")} onClick={() => setSelectedOrderId(order.id)}>
                   <td className="px-5 py-4 font-semibold text-slate-950">{order.fileNumber}</td>
@@ -72,6 +81,7 @@ export function ReviewView({
                   <td className="px-5 py-4"><DueChip date={order.dueDate} /></td>
                   <td className="px-5 py-4"><StatusChip status={order.status} /></td>
                   <td className="px-5 py-4 text-slate-700">{complete}/{Math.max(order.reviewItems.length, 1)}</td>
+                  <td className="px-5 py-4 text-slate-700">{automatedResult ? `${automatedResult.summary.openFindings} open` : "Not run"}</td>
                   <td className="px-5 py-4"><PriorityChip priority={order.priority} /></td>
                   <td className="px-5 py-4" onClick={(event) => event.stopPropagation()}>
                     <div className="flex flex-wrap gap-1.5">
@@ -150,6 +160,35 @@ export function ReviewView({
                         </div>
                       </div>
                     ))}
+                  </div>
+                </section>
+                <section>
+                  <div className="flex items-center gap-2">
+                    <FileCheck2 className="h-4 w-4 text-brand-600" />
+                    <h3 className="text-sm font-semibold text-slate-950">Automated QC</h3>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {selectedAutomatedResult ? (
+                      <>
+                        <div className="grid gap-2 sm:grid-cols-4">
+                          <MetricTile label="Open" value={String(selectedAutomatedResult.summary.openFindings)} />
+                          <MetricTile label="Critical" value={String(selectedAutomatedResult.summary.Critical)} />
+                          <MetricTile label="Warnings" value={String(selectedAutomatedResult.summary.Warning)} />
+                          <MetricTile label="Overall" value={selectedAutomatedResult.summary.overallStatus} />
+                        </div>
+                        {selectedAutomatedResult.findings.filter((finding) => finding.severity !== "Passed").slice(0, 4).map((finding) => (
+                          <div key={finding.id} className="rounded-md border border-line px-3 py-2 text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-medium text-slate-900">{finding.title}</span>
+                              <span className="chip border-slate-200 bg-slate-50 text-slate-700">{finding.severity}</span>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">{finding.suggestedResolution}</p>
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <div className="rounded-md border border-dashed border-line px-3 py-3 text-sm text-slate-500">Automated report checks have not been run for this order.</div>
+                    )}
                   </div>
                 </section>
                 <section>
