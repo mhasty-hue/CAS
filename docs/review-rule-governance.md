@@ -40,13 +40,17 @@ Findings use these severities:
 Findings use these statuses:
 
 - Open
+- Confirmed
 - Appraiser Responded
 - Corrected
 - Accepted Explanation
+- Clarification Requested
+- Not Applicable
 - Dismissed
 - Escalated
 - Revision Requested
 - Resolved
+- Reopened
 
 ## Governance Rules
 
@@ -76,3 +80,10 @@ Findings use these statuses:
 - Confirm fee fields are not introduced into review findings.
 - Confirm malformed/large/duplicate files are handled safely.
 - Document the rule source and effective date.
+
+## Phase 10.7 Workspace Governance
+
+- Reviewers can confirm, request clarification, request revision, mark not applicable, dismiss, resolve, or release a finding to the client.
+- Appraisers can respond to appraiser-visible findings and upload corrected immutable versions.
+- AI-assisted findings must retain human disposition and cannot become client-visible without reviewer action.
+- Delivery readiness is blocked by open critical findings, pending appraiser responses, and unresolved revision/clarification requests.

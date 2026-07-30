@@ -14,7 +14,7 @@ import type {
 } from "@/types/report-review";
 import { resolveAiReviewProvider } from "@/lib/report-review/ai-provider";
 import { selectReportProfile, selectReviewOverlays } from "@/lib/report-review/profiles";
-import { runDeterministicReview } from "@/lib/report-review/rules";
+import { runDeterministicReview, summarizeReviewFindings } from "@/lib/report-review/rules";
 
 const maxReportUploadBytes = 100 * 1024 * 1024;
 const demoCreatedAt = "2026-07-27T12:00:00Z";
@@ -349,13 +349,44 @@ export function ingestReportUpload(request: ReportIngestionRequest): ReportInges
     previousVersion: existingVersions[0],
     createdAt: demoCreatedAt
   });
-  const aiResult = resolveAiReviewProvider().analyze({ order: request.order, report, profile, overlays });
+  const aiResult = resolveAiReviewProvider(request.aiSettings).analyze({
+    order: request.order,
+    report,
+    reportVersion,
+    profile,
+    overlays,
+    settings: request.aiSettings
+  });
+  const allFindings = [...deterministicResult.findings, ...aiResult.findings];
   const reviewResult = {
     ...deterministicResult,
     runMode: request.runMode,
-    aiProviderStatus: aiResult.enabled ? "enabled" as const : "disabled" as const,
-    findings: [...deterministicResult.findings, ...aiResult.findings],
-    summary: deterministicResult.summary
+    aiProviderStatus: aiResult.status === "completed" ? "completed" as const : aiResult.status === "failed" || aiResult.status === "timeout" ? "unavailable" as const : aiResult.status,
+    aiRun: aiResult.metadata
+      ? {
+          ...aiResult.metadata,
+          reportVersionId: reportVersion.id,
+          reviewPackIds: deterministicResult.rulePackSummary.map((pack) => pack.id),
+          findingsAccepted: aiResult.findings.length,
+          findingsRejected: aiResult.rejectedFindings ?? 0
+        }
+      : {
+          providerId: request.aiSettings?.providerId ?? "disabled",
+          modelId: request.aiSettings?.modelId ?? "none",
+          promptTemplateVersion: request.aiSettings?.promptTemplateVersion ?? "cas-ai-review-pilot-disabled",
+          status: aiResult.status,
+          reportVersionId: reportVersion.id,
+          reviewPackIds: deterministicResult.rulePackSummary.map((pack) => pack.id),
+          categoriesRequested: request.aiSettings?.enabledCategories ?? [],
+          findingsAccepted: aiResult.findings.length,
+          findingsRejected: aiResult.rejectedFindings ?? 0,
+          message: aiResult.message,
+          startedAt: demoCreatedAt,
+          completedAt: demoCreatedAt
+        },
+    findings: allFindings,
+    summary: summarizeReviewFindings(allFindings),
+    auditSummary: `${deterministicResult.auditSummary} ${aiResult.message}`
   };
 
   return {

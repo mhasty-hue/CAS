@@ -42,7 +42,7 @@ type FindingDraft = {
   requiresHumanJudgment?: boolean;
 };
 
-const openStatuses = new Set<ReviewFindingStatus>(["Open", "Appraiser Responded", "Escalated", "Revision Requested"]);
+const openStatuses = new Set<ReviewFindingStatus>(["Open", "Confirmed", "Appraiser Responded", "Clarification Requested", "Escalated", "Revision Requested", "Reopened"]);
 
 function normalizeText(value: string | null | undefined) {
   return (value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -804,8 +804,20 @@ export function updateReviewFindingStatus(
           ...finding,
           status,
           severity: severity ?? finding.severity,
-          resolvedBy: ["Dismissed", "Resolved", "Accepted Explanation", "Corrected"].includes(status) ? actor : finding.resolvedBy,
+          resolvedBy: ["Dismissed", "Resolved", "Accepted Explanation", "Corrected", "Not Applicable"].includes(status) ? actor : finding.resolvedBy,
           reviewerResponse: `Reviewer marked finding ${status.toLowerCase()} in CAS.`,
+          aiMetadata: finding.aiMetadata
+            ? {
+                ...finding.aiMetadata,
+                humanDisposition: ["Dismissed", "Not Applicable"].includes(status)
+                  ? "dismissed"
+                  : ["Resolved", "Corrected", "Accepted Explanation"].includes(status)
+                    ? "accepted"
+                    : status === "Confirmed"
+                      ? "confirmed"
+                      : finding.aiMetadata.humanDisposition
+              }
+            : finding.aiMetadata,
           updatedAt: "Just now"
         }
       : finding

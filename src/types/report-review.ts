@@ -95,13 +95,17 @@ export type ReviewFindingCategory =
 export type ReviewSeverity = "Critical" | "Warning" | "Advisory" | "Passed";
 export type ReviewFindingStatus =
   | "Open"
+  | "Confirmed"
   | "Appraiser Responded"
   | "Corrected"
   | "Accepted Explanation"
+  | "Clarification Requested"
+  | "Not Applicable"
   | "Dismissed"
   | "Escalated"
   | "Revision Requested"
-  | "Resolved";
+  | "Resolved"
+  | "Reopened";
 export type ReviewFindingVisibility = "internal" | "appraiser" | "client";
 export type ReviewRunMode = "pre_submission" | "review_queue" | "revision_compare";
 export type ReviewProfileStatus = "draft" | "active" | "retired";
@@ -318,6 +322,21 @@ export type ReviewFindingEvidence = {
   xmlPath?: string;
 };
 
+export type AiEvidenceQuality = "high" | "medium" | "low" | "unverified";
+
+export type AiReviewFindingMetadata = {
+  providerId: string;
+  modelId: string;
+  promptTemplateVersion: string;
+  reportVersionId: string;
+  reviewPackIds: string[];
+  confidence: number;
+  evidenceQuality: AiEvidenceQuality;
+  category: string;
+  createdAt: string;
+  humanDisposition: "pending" | "confirmed" | "dismissed" | "accepted" | "rejected";
+};
+
 export type ReviewFinding = {
   id: string;
   organizationId: string;
@@ -340,6 +359,8 @@ export type ReviewFinding = {
   suggestedResolution: string;
   requiresHumanJudgment: boolean;
   deterministic: boolean;
+  aiAssisted?: boolean;
+  aiMetadata?: AiReviewFindingMetadata;
   visibility: ReviewFindingVisibility[];
   createdAt: string;
   updatedAt: string;
@@ -372,13 +393,61 @@ export type ReportReviewResult = {
   }>;
   runMode: ReviewRunMode;
   ruleRunVersion: string;
-  aiProviderStatus: "disabled" | "not_configured" | "enabled";
+  aiProviderStatus: "disabled" | "not_configured" | "enabled" | "completed" | "unavailable" | "failed";
+  aiRun?: AiReviewRunMetadata;
   safetyNotice: string;
   findings: ReviewFinding[];
   summary: ReviewResultSummary;
   createdAt: string;
   createdBy: string;
   auditSummary: string;
+};
+
+export type AiReviewCategory =
+  | "narrative_contradiction"
+  | "missing_explanation"
+  | "reconciliation_quality"
+  | "condition_inconsistency"
+  | "adjustment_support"
+  | "comparable_selection_explanation"
+  | "assignment_instruction_response"
+  | "retrospective_methodology";
+
+export type OrganizationAiReviewSettings = {
+  organizationId: string;
+  enabled: boolean;
+  providerId: "disabled" | "cas-demo-ai" | "external";
+  modelId: string;
+  promptTemplateVersion: string;
+  permittedReportProfileIds: ReportProfileId[];
+  preSubmissionAllowed: boolean;
+  reviewerOnlyMode: boolean;
+  dataRetention: "none" | "provider_default" | "temporary";
+  humanApprovalRequired: true;
+  enabledCategories: AiReviewCategory[];
+  maxContentBytes: number;
+  monthlyCostLimitUsd?: number;
+  clientVisibleAiWordingProhibited: true;
+};
+
+export type AiReviewRunMetadata = {
+  providerId: string;
+  modelId: string;
+  promptTemplateVersion: string;
+  status: "disabled" | "not_configured" | "completed" | "timeout" | "failed";
+  reportVersionId: string;
+  reviewPackIds: string[];
+  categoriesRequested: AiReviewCategory[];
+  findingsAccepted: number;
+  findingsRejected: number;
+  message: string;
+  startedAt: string;
+  completedAt: string;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    estimatedCostUsd?: number;
+  };
 };
 
 export type ReportIngestionRequest = {
@@ -389,6 +458,7 @@ export type ReportIngestionRequest = {
   runMode: ReviewRunMode;
   existingVersions?: AppraisalReportVersion[];
   scenarioHint?: string;
+  aiSettings?: OrganizationAiReviewSettings;
 };
 
 export type ReportIngestionResult = {
@@ -403,8 +473,10 @@ export type ReportIngestionResult = {
 
 export type AiReviewProviderResult = {
   enabled: boolean;
-  status: "disabled" | "not_configured" | "completed" | "failed";
+  status: "disabled" | "not_configured" | "completed" | "timeout" | "failed";
   findings: ReviewFinding[];
+  rejectedFindings?: number;
+  metadata?: Omit<AiReviewRunMetadata, "reportVersionId" | "reviewPackIds" | "findingsAccepted" | "findingsRejected">;
   message: string;
 };
 
@@ -414,8 +486,10 @@ export type AiReviewProvider = {
   analyze: (request: {
     order: Order;
     report: NormalizedAppraisalReport;
+    reportVersion: AppraisalReportVersion;
     profile: ReviewProfile;
     overlays: ReviewOverlay[];
+    settings?: OrganizationAiReviewSettings;
   }) => AiReviewProviderResult;
 };
 
