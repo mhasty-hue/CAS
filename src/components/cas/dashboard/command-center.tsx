@@ -5,151 +5,59 @@ import {
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
-  FileWarning,
   Gauge,
-  Landmark,
+  History,
   ListChecks,
-  ReceiptText,
+  MousePointer2,
   ShieldAlert,
   Sparkles,
   Target,
-  UserCheck,
   Users2
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { AccountingEntry, AppraiserProfile, Invoice, Order, Organization, PortalUser, VendorDocument, VendorProfile, WorkflowTask } from "@/types/domain";
-import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { roleLabel } from "../config";
-import { DueChip, SectionHeader, StatusChip } from "../shared";
-import {
-  buildCapacityInsights,
-  buildMissionItems,
-  buildRiskQueue,
-  buildSnapshotItems,
-  commandCenterDateLabel,
-  recommendAppraiser,
-  roleSummary,
-  type AppraiserRecommendation,
-  type CapacityInsight,
-  type CommandAction,
-  type MissionItem,
-  type MissionPriority,
-  type RiskInsight,
-  type RiskLevel,
-  type SnapshotItem
+import { SectionHeader, StatusChip } from "../shared";
+import type {
+  CapacityInsight,
+  CommandAction,
+  MissionItem,
+  MissionPriority,
+  OperationsCenterModel,
+  RiskLevel,
+  SnapshotItem
 } from "./command-center-data";
 
 export function CommandCenterView({
-  orderList,
-  appraisers,
-  user,
-  organization,
-  vendors,
-  vendorDocuments,
-  accountingEntries,
-  invoices,
-  tasks,
-  onOpenOrders,
-  onOpenTasks,
-  onPlaceOrder,
-  onInviteVendor,
-  onOpenReview,
-  onOpenAccounting,
-  onOpenClients,
-  onOpenVendors,
-  onOpenMessages,
-  onOpenDocuments,
-  onOpenCalendar
+  model,
+  actionMap
 }: {
-  orderList: Order[];
-  appraisers: AppraiserProfile[];
-  user: PortalUser;
-  organization: Organization;
-  vendors: VendorProfile[];
-  vendorDocuments: VendorDocument[];
-  accountingEntries: AccountingEntry[];
-  invoices: Invoice[];
-  tasks: WorkflowTask[];
-  onOpenOrders: () => void;
-  onOpenTasks: () => void;
-  onPlaceOrder: () => void;
-  onInviteVendor: () => void;
-  onOpenReview: () => void;
-  onOpenAccounting: () => void;
-  onOpenClients: () => void;
-  onOpenVendors: () => void;
-  onOpenMessages: () => void;
-  onOpenDocuments: () => void;
-  onOpenCalendar: () => void;
+  model: OperationsCenterModel;
+  actionMap: Record<CommandAction, () => void>;
 }) {
-  const capacityInsights = buildCapacityInsights(orderList, appraisers);
-  const missionItems = buildMissionItems({ orderList, accountingEntries, invoices, vendors, vendorDocuments, tasks, user });
-  const riskQueue = buildRiskQueue(orderList, capacityInsights);
-  const snapshots = buildSnapshotItems(orderList, accountingEntries, invoices, user);
-  const recommendation = recommendAppraiser(orderList, capacityInsights);
-  const criticalCount = missionItems.filter((item) => item.priority === "Critical" || item.priority === "High").length;
-  const actionMap: Record<CommandAction, () => void> = {
-    orders: onOpenOrders,
-    "new-order": onPlaceOrder,
-    review: onOpenReview,
-    accounting: onOpenAccounting,
-    clients: onOpenClients,
-    vendors: onOpenVendors,
-    messages: onOpenMessages,
-    documents: onOpenDocuments,
-    pay: onOpenAccounting,
-    calendar: onOpenCalendar,
-    tasks: onOpenTasks
-  };
-
   return (
     <section className="grid gap-5">
-      <CommandCenterHero
-        organization={organization}
-        user={user}
-        missionItems={missionItems}
-        summary={roleSummary(user, criticalCount, capacityInsights)}
-        actionMap={actionMap}
-      />
-
-      <ExecutiveSnapshot snapshots={snapshots} />
+      <CommandCenterHero model={model} actionMap={actionMap} />
+      <ExecutiveSnapshot snapshots={model.snapshots} />
 
       <section className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
-        <MissionPanel items={missionItems} actionMap={actionMap} />
-        <RiskPanel risks={riskQueue} onOpenOrders={onOpenOrders} />
+        <MissionPanel items={model.missionItems} actionMap={actionMap} emptyDetail={model.emptyState} />
+        <RiskPanel model={model} actionMap={actionMap} />
       </section>
 
-      <RoleAwareOperations
-        user={user}
-        orderList={orderList}
-        capacityInsights={capacityInsights}
-        recommendation={recommendation}
-        vendors={vendors}
-        vendorDocuments={vendorDocuments}
-        accountingEntries={accountingEntries}
-        onOpenOrders={onOpenOrders}
-        onInviteVendor={onInviteVendor}
-        onOpenVendors={onOpenVendors}
-        onOpenCalendar={onOpenCalendar}
-      />
+      <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
+        <UpcomingPanel model={model} actionMap={actionMap} />
+        <QuickActionPanel model={model} actionMap={actionMap} />
+      </section>
+
+      <RoleAwareOperations model={model} actionMap={actionMap} />
     </section>
   );
 }
 
-function CommandCenterHero({
-  organization,
-  user,
-  missionItems,
-  summary,
-  actionMap
-}: {
-  organization: Organization;
-  user: PortalUser;
-  missionItems: MissionItem[];
-  summary: string;
-  actionMap: Record<CommandAction, () => void>;
-}) {
-  const alerts = missionItems.slice(0, 5);
+function CommandCenterHero({ model, actionMap }: { model: OperationsCenterModel; actionMap: Record<CommandAction, () => void> }) {
+  const alerts = model.missionItems.slice(0, 5);
+  const urgentCount = alerts.filter((alert) => alert.priority === "Critical" || alert.priority === "High").length;
 
   return (
     <section className="panel overflow-hidden">
@@ -158,17 +66,19 @@ function CommandCenterHero({
           <div>
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-normal text-brand-700">
               <Target className="h-4 w-4" />
-              <span>{commandCenterDateLabel()}</span>
+              <span>{model.dateLabel}</span>
               <span className="text-slate-300">/</span>
-              <span>{organization.name}</span>
+              <span>{model.organizationName}</span>
             </div>
-            <h1 className="mt-3 text-2xl font-semibold text-slate-950 sm:text-3xl">Good morning, Matt</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{roleLabel(user.role)} command center: {summary}</p>
+            <h1 className="mt-3 text-2xl font-semibold text-slate-950 sm:text-3xl">{model.greeting}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              {roleLabelFromPersona(model)} operations center: {model.roleSummary}
+            </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <HeroStat icon={AlertTriangle} label="Urgent" value={String(alerts.filter((alert) => alert.priority === "Critical" || alert.priority === "High").length)} tone="bad" />
-            <HeroStat icon={CalendarClock} label="Due watch" value={String(alerts.filter((alert) => alert.category.includes("Due") || alert.category.includes("Past")).length)} tone="warn" />
-            <HeroStat icon={BadgeCheck} label="Role" value={roleLabel(user.role)} tone="neutral" />
+            <HeroStat icon={AlertTriangle} label="Urgent" value={String(urgentCount)} tone={urgentCount ? "bad" : "neutral"} />
+            <HeroStat icon={CalendarClock} label="Visible files" value={String(model.scope.orderCount)} tone="neutral" />
+            <HeroStat icon={BadgeCheck} label="Data scope" value={model.scope.financialPolicy.length ? "Authorized" : "Operational"} tone="neutral" />
           </div>
         </div>
 
@@ -177,7 +87,7 @@ function CommandCenterHero({
             alerts.map((item) => (
               <button
                 key={item.id}
-                className="group flex items-start justify-between gap-3 rounded-md border border-line bg-slate-50 px-4 py-3 text-left transition hover:border-brand-200 hover:bg-brand-50"
+                className="group flex items-start justify-between gap-3 rounded-md border border-line bg-slate-50 px-4 py-3 text-left transition hover:border-brand-200 hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-200"
                 onClick={actionMap[item.action]}
               >
                 <div className="min-w-0">
@@ -185,14 +95,14 @@ function CommandCenterHero({
                     <PriorityBadge priority={item.priority} />
                     <span className="text-xs font-medium uppercase tracking-normal text-slate-500">{item.category}</span>
                   </div>
-                  <div className="mt-2 truncate text-sm font-semibold text-slate-950">{item.target}</div>
+                  <div className="mt-2 truncate text-sm font-semibold text-slate-950">{item.title}</div>
                   <div className="mt-1 line-clamp-1 text-xs text-slate-500">{item.nextAction}</div>
                 </div>
                 <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-brand-700" />
               </button>
             ))
           ) : (
-            <EmptyState title="No urgent alerts" detail="The command center is clear for this role." />
+            <EmptyState title="You're caught up" detail={model.emptyState} />
           )}
         </div>
       </div>
@@ -226,7 +136,7 @@ function ExecutiveSnapshot({ snapshots }: { snapshots: SnapshotItem[] }) {
           bad: "border-rose-200 bg-rose-50"
         }[snapshot.tone];
         return (
-          <div key={snapshot.label} className={cn("rounded-md border px-4 py-3 shadow-sm", toneClass)}>
+          <div key={snapshot.id} className={cn("rounded-md border px-4 py-3 shadow-sm", toneClass)}>
             <div className="text-xs font-medium uppercase tracking-normal text-slate-500">{snapshot.label}</div>
             <div className="mt-2 truncate text-xl font-semibold text-slate-950">{snapshot.value}</div>
             <div className="mt-1 text-xs text-slate-500">{snapshot.detail}</div>
@@ -237,20 +147,28 @@ function ExecutiveSnapshot({ snapshots }: { snapshots: SnapshotItem[] }) {
   );
 }
 
-function MissionPanel({ items, actionMap }: { items: MissionItem[]; actionMap: Record<CommandAction, () => void> }) {
+function MissionPanel({
+  items,
+  actionMap,
+  emptyDetail
+}: {
+  items: MissionItem[];
+  actionMap: Record<CommandAction, () => void>;
+  emptyDetail: string;
+}) {
   return (
     <section className="panel overflow-hidden">
       <SectionHeader icon={ListChecks} title="Today's Mission" className="border-b border-line p-5" />
       <div className="divide-y divide-line">
         {items.length ? (
           items.map((item) => (
-            <div key={item.id} className="grid gap-3 p-4 md:grid-cols-[160px_1fr_auto] md:items-center">
+            <div key={item.id} className="grid gap-3 p-4 md:grid-cols-[170px_1fr_auto] md:items-center">
               <div className="flex flex-wrap items-center gap-2">
                 <PriorityBadge priority={item.priority} />
-                <span className="text-xs font-medium text-slate-500">{item.category}</span>
+                <span className="text-xs font-medium text-slate-500">{item.count} item{item.count === 1 ? "" : "s"}</span>
               </div>
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-slate-950">{item.target}</div>
+                <div className="truncate text-sm font-semibold text-slate-950">{item.title}</div>
                 <div className="mt-1 text-sm text-slate-600">{item.detail}</div>
                 <div className="mt-1 text-xs font-medium text-slate-500">Next: {item.nextAction}</div>
               </div>
@@ -260,84 +178,131 @@ function MissionPanel({ items, actionMap }: { items: MissionItem[]; actionMap: R
             </div>
           ))
         ) : (
-          <div className="p-5"><EmptyState title="No mission items" detail="There are no urgent operational actions for this role." /></div>
+          <div className="p-5"><EmptyState title="No mission items" detail={emptyDetail} /></div>
         )}
       </div>
     </section>
   );
 }
 
-function RiskPanel({ risks, onOpenOrders }: { risks: RiskInsight[]; onOpenOrders: () => void }) {
+function RiskPanel({ model, actionMap }: { model: OperationsCenterModel; actionMap: Record<CommandAction, () => void> }) {
+  const risks = model.riskQueue.slice(0, 7);
+
   return (
     <section className="panel overflow-hidden">
-      <SectionHeader icon={ShieldAlert} title="Order Risk Detection" action="Open orders" onAction={onOpenOrders} className="border-b border-line p-5" />
+      <SectionHeader icon={ShieldAlert} title="At-Risk Work" action="Open orders" onAction={actionMap.orders} className="border-b border-line p-5" />
       <div className="divide-y divide-line">
-        {risks.slice(0, 7).map((risk) => (
-          <div key={risk.order.id} className="p-4">
+        {risks.length ? risks.map((risk) => (
+          <button key={risk.id} className="block w-full p-4 text-left transition hover:bg-slate-50" onClick={actionMap.orders}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-slate-950">{risk.order.fileNumber}</span>
-                  <StatusChip status={risk.order.status} />
+                  <span className="font-semibold text-slate-950">{risk.fileNumber}</span>
+                  <StatusChip status={risk.status} />
                 </div>
-                <div className="mt-1 text-sm text-slate-500">{risk.order.borrower} · {risk.order.county} · {risk.order.appraiser}</div>
+                <div className="mt-1 text-sm text-slate-500">{risk.primaryLabel}</div>
+                <div className="mt-1 text-xs font-medium text-slate-500">Next: {risk.recommendedAction}</div>
               </div>
               <RiskBadge level={risk.level} />
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {risk.factors.map((factor) => <span key={factor} className="chip border-slate-200 bg-slate-50 text-slate-700">{factor}</span>)}
             </div>
-          </div>
-        ))}
+          </button>
+        )) : <div className="p-5"><EmptyState title="No at-risk work" detail={model.emptyState} /></div>}
       </div>
     </section>
   );
 }
 
-function RoleAwareOperations({
-  user,
-  orderList,
-  capacityInsights,
-  recommendation,
-  vendors,
-  vendorDocuments,
-  accountingEntries,
-  onOpenOrders,
-  onInviteVendor,
-  onOpenVendors,
-  onOpenCalendar
-}: {
-  user: PortalUser;
-  orderList: Order[];
-  capacityInsights: CapacityInsight[];
-  recommendation: AppraiserRecommendation;
-  vendors: VendorProfile[];
-  vendorDocuments: VendorDocument[];
-  accountingEntries: AccountingEntry[];
-  onOpenOrders: () => void;
-  onInviteVendor: () => void;
-  onOpenVendors: () => void;
-  onOpenCalendar: () => void;
-}) {
-  if (user.role === "client_user") return <ClientCommandPanel orderList={orderList} onOpenOrders={onOpenOrders} />;
-  if (user.role === "reviewer") return <ReviewerCommandPanel orderList={orderList} onOpenOrders={onOpenOrders} />;
-  if (user.role === "appraiser" || user.role === "solo_appraiser") return <AppraiserCommandPanel orderList={orderList} accountingEntries={accountingEntries} onOpenCalendar={onOpenCalendar} />;
-  if (user.role === "amc_admin" || user.role === "amc_staff") return <VendorCommandPanel vendors={vendors} vendorDocuments={vendorDocuments} onInviteVendor={onInviteVendor} onOpenVendors={onOpenVendors} />;
-
+function UpcomingPanel({ model, actionMap }: { model: OperationsCenterModel; actionMap: Record<CommandAction, () => void> }) {
   return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
-      <CapacityPanel insights={capacityInsights} />
-      <RecommendationPanel recommendation={recommendation} />
+    <section className="panel overflow-hidden">
+      <SectionHeader icon={CalendarClock} title="Upcoming Work" className="border-b border-line p-5" />
+      <div className="divide-y divide-line">
+        {model.upcoming.length ? model.upcoming.map((item) => (
+          <button key={item.id} className="grid w-full gap-3 p-4 text-left transition hover:bg-slate-50 md:grid-cols-[1fr_auto] md:items-center" onClick={actionMap[item.action]}>
+            <div>
+              <div className="font-semibold text-slate-950">{item.title}</div>
+              <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
+            </div>
+            <span className={cn("chip", upcomingTone(item.tone))}>{item.dueLabel}</span>
+          </button>
+        )) : <div className="p-5"><EmptyState title="No upcoming deadlines" detail="No visible inspections, due dates, revisions, or deliveries need attention." /></div>}
+      </div>
     </section>
   );
 }
 
-function CapacityPanel({ insights }: { insights: CapacityInsight[] }) {
+function QuickActionPanel({ model, actionMap }: { model: OperationsCenterModel; actionMap: Record<CommandAction, () => void> }) {
+  return (
+    <aside className="panel p-5">
+      <SectionHeader icon={MousePointer2} title="Quick Actions" />
+      <div className="mt-4 grid gap-2">
+        {model.quickActions.map((action) => (
+          <button key={action.id} className="group rounded-md border border-line bg-white px-3 py-3 text-left transition hover:border-brand-200 hover:bg-brand-50" onClick={actionMap[action.action]}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-950">{action.label}</span>
+              <ArrowRight className="h-4 w-4 text-slate-400 transition group-hover:text-brand-700" />
+            </div>
+            <div className="mt-1 text-xs text-slate-500">{action.detail}</div>
+          </button>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function RoleAwareOperations({ model, actionMap }: { model: OperationsCenterModel; actionMap: Record<CommandAction, () => void> }) {
+  if (model.persona === "property_owner") {
+    return <ActivityPanel model={model} actionMap={actionMap} title="Your Recent Updates" />;
+  }
+
+  if (model.persona === "reviewer") {
+    return (
+      <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
+        <ActivityPanel model={model} actionMap={actionMap} title="Review Activity" />
+        <ReviewFocusPanel model={model} />
+      </section>
+    );
+  }
+
+  if (model.persona === "individual_appraiser") {
+    return (
+      <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
+        <ActivityPanel model={model} actionMap={actionMap} title="My Activity" />
+        <CapacityPanel insights={model.capacityInsights} title="My Capacity" />
+      </section>
+    );
+  }
+
+  if (model.vendorScorecards.length) {
+    return (
+      <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
+        <VendorScorecardPanel model={model} actionMap={actionMap} />
+        <ActivityPanel model={model} actionMap={actionMap} title="Recent Activity" />
+      </section>
+    );
+  }
+
+  if (model.capacityInsights.length) {
+    return (
+      <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
+        <CapacityPanel insights={model.capacityInsights} title="Capacity Foundation" />
+        <RecommendationPanel model={model} />
+      </section>
+    );
+  }
+
+  return <ActivityPanel model={model} actionMap={actionMap} title="Recent Activity" />;
+}
+
+function CapacityPanel({ insights, title }: { insights: CapacityInsight[]; title: string }) {
   return (
     <section className="panel p-5">
-      <SectionHeader icon={Gauge} title="Capacity Intelligence" />
+      <SectionHeader icon={Gauge} title={title} />
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        {insights.map((insight) => (
+        {insights.length ? insights.map((insight) => (
           <div key={insight.appraiser.id} className="rounded-md border border-line bg-white p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -365,25 +330,27 @@ function CapacityPanel({ insights }: { insights: CapacityInsight[] }) {
               {insight.specialties.map((specialty) => <span key={specialty} className="chip border-slate-200 bg-slate-50 text-slate-700">{specialty}</span>)}
             </div>
             <div className="mt-3 text-xs text-slate-500">
-              {insight.capacityRemaining} capacity slots remaining · {insight.appraiser.avgTurnDays}d average turn · {insight.appraiser.revisionRate}% revision placeholder
+              {insight.explanation} Sample size: {insight.sampleSize}.
             </div>
           </div>
-        ))}
+        )) : <EmptyState title="No capacity visible" detail="Capacity appears only for authorized manager or personal appraiser views." />}
       </div>
     </section>
   );
 }
 
-function RecommendationPanel({ recommendation }: { recommendation: AppraiserRecommendation }) {
+function RecommendationPanel({ model }: { model: OperationsCenterModel }) {
+  const recommendation = model.recommendation;
+
   return (
     <aside className="panel p-5">
-      <SectionHeader icon={Sparkles} title="Recommended Assignment" />
+      <SectionHeader icon={Sparkles} title="Assignment Fit" />
       {recommendation.appraiser && recommendation.order ? (
         <div className="mt-4 grid gap-4">
           <div className="rounded-md border border-brand-200 bg-brand-50 p-4">
-            <div className="text-xs font-medium uppercase tracking-normal text-brand-700">Best match</div>
+            <div className="text-xs font-medium uppercase tracking-normal text-brand-700">Best explainable match</div>
             <div className="mt-2 text-xl font-semibold text-slate-950">{recommendation.appraiser.name}</div>
-            <div className="mt-1 text-sm text-slate-600">{recommendation.order.fileNumber} · {recommendation.order.county} · {recommendation.order.productType}</div>
+            <div className="mt-1 text-sm text-slate-600">{recommendation.order.fileNumber} - {recommendation.order.county} - {recommendation.order.productType}</div>
           </div>
           <div className="grid gap-2">
             {recommendation.reasons.map((reason) => (
@@ -402,107 +369,66 @@ function RecommendationPanel({ recommendation }: { recommendation: AppraiserReco
   );
 }
 
-function ClientCommandPanel({ orderList, onOpenOrders }: { orderList: Order[]; onOpenOrders: () => void }) {
+function VendorScorecardPanel({ model, actionMap }: { model: OperationsCenterModel; actionMap: Record<CommandAction, () => void> }) {
   return (
-    <section className="panel overflow-hidden">
-      <SectionHeader icon={Landmark} title="Client Order Status" action="Track orders" onAction={onOpenOrders} className="border-b border-line p-5" />
-      <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-4">
-        {orderList.slice(0, 4).map((order) => (
-          <div key={order.id} className="rounded-md border border-line p-4">
-            <div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-950">{order.fileNumber}</span><StatusChip status={order.status} /></div>
-            <div className="mt-2 text-sm text-slate-600">{order.borrower}</div>
-            <div className="mt-3"><DueChip date={order.dueDate} /></div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ReviewerCommandPanel({ orderList, onOpenOrders }: { orderList: Order[]; onOpenOrders: () => void }) {
-  const reviewOrders = orderList.filter((order) => order.status === "Submitted" || order.status === "In Review" || order.status.includes("Revision"));
-  return (
-    <section className="panel overflow-hidden">
-      <SectionHeader icon={ClipboardCheck} title="Review Command Queue" action="Open queue" onAction={onOpenOrders} className="border-b border-line p-5" />
-      <div className="divide-y divide-line">
-        {reviewOrders.slice(0, 6).map((order) => (
-          <div key={order.id} className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
-            <div>
-              <div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-slate-950">{order.fileNumber}</span><StatusChip status={order.status} /></div>
-              <div className="mt-1 text-sm text-slate-500">{order.reviewItems.filter((item) => !item.complete).length} checklist items open · {order.productType}</div>
-            </div>
-            <RiskBadge level={order.status.includes("Revision") ? "High Risk" : "Medium Risk"} />
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function AppraiserCommandPanel({ orderList, accountingEntries, onOpenCalendar }: { orderList: Order[]; accountingEntries: AccountingEntry[]; onOpenCalendar: () => void }) {
-  const inspections = orderList.filter((order) => order.inspectionDate);
-  const payout = accountingEntries.reduce((total, entry) => total + entry.appraiserSplit, 0);
-  return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
-      <section className="panel overflow-hidden">
-        <SectionHeader icon={CalendarClock} title="My Inspection and Due Lane" action="Calendar" onAction={onOpenCalendar} className="border-b border-line p-5" />
-        <div className="divide-y divide-line">
-          {orderList.slice(0, 6).map((order) => (
-            <div key={order.id} className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
+    <section className="panel p-5">
+      <SectionHeader icon={Users2} title="Vendor Scorecard Foundation" action="Vendors" onAction={actionMap.vendors} />
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {model.vendorScorecards.map((scorecard) => (
+          <div key={scorecard.id} className="rounded-md border border-line bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-slate-950">{order.fileNumber}</span><StatusChip status={order.status} /></div>
-                <div className="mt-1 text-sm text-slate-500">{order.address}, {order.city} · {order.nextAction}</div>
+                <div className="font-semibold text-slate-950">{scorecard.vendorName}</div>
+                <div className="mt-1 text-xs text-slate-500">{scorecard.coverage}</div>
               </div>
-              <DueChip date={order.dueDate} />
+              <span className="chip border-slate-200 bg-slate-50 text-slate-700">{scorecard.status}</span>
             </div>
-          ))}
-        </div>
-      </section>
-      <aside className="panel p-5">
-        <SectionHeader icon={ReceiptText} title="Pay and Calendar" />
-        <div className="mt-4 grid gap-3">
-          <MiniStat label="Projected pay" value={formatCurrency(payout)} />
-          <MiniStat label="Inspections scheduled" value={String(inspections.length)} />
-          <MiniStat label="Revisions pending" value={String(orderList.filter((order) => order.status.includes("Revision")).length)} />
-        </div>
-      </aside>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <MiniStat label="Acceptance" value={scorecard.acceptanceRate} />
+              <MiniStat label="Turn time" value={scorecard.averageTurnTime} />
+              <MiniStat label="On time" value={scorecard.onTimeRate} />
+              <MiniStat label="Due soon" value={String(scorecard.dueSoon)} />
+            </div>
+            <div className="mt-3 text-xs text-slate-500">{scorecard.compliance}</div>
+            <div className="mt-1 text-xs text-slate-500">{scorecard.caveat}</div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
 
-function VendorCommandPanel({ vendors, vendorDocuments, onInviteVendor, onOpenVendors }: { vendors: VendorProfile[]; vendorDocuments: VendorDocument[]; onInviteVendor: () => void; onOpenVendors: () => void }) {
+function ReviewFocusPanel({ model }: { model: OperationsCenterModel }) {
+  const reviewItems = model.riskQueue.filter((risk) => risk.status === "Submitted" || risk.status === "In Review" || risk.status.includes("Revision")).slice(0, 5);
+
   return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_360px]">
-      <section className="panel p-5">
-        <SectionHeader icon={Users2} title="Vendor Capacity and Compliance" action="Vendors" onAction={onOpenVendors} />
-        <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          {vendors.map((vendor) => (
-            <div key={vendor.id} className="rounded-md border border-line p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div><div className="font-semibold text-slate-950">{vendor.company}</div><div className="mt-1 text-xs text-slate-500">{vendor.coverage.join(", ")}</div></div>
-                <span className={cn("chip", vendor.status === "Approved" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800")}>{vendor.status}</span>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <MiniStat label="Turn" value={`${vendor.turnTime}d`} />
-                <MiniStat label="Capacity" value={String(vendor.capacity)} />
-                <MiniStat label="Workload" value={String(vendor.workload ?? 0)} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-      <aside className="panel p-5">
-        <SectionHeader icon={FileWarning} title="Document Watch" />
-        <div className="mt-4 grid gap-2">
-          {vendorDocuments.filter((document) => document.status !== "Approved").map((document) => (
-            <div key={document.id} className="rounded-md border border-line px-3 py-2 text-sm">
-              <div className="font-medium text-slate-900">{document.type} · {document.status}</div>
-              <div className="mt-1 text-xs text-slate-500">{document.expiresAt ? `Expires ${formatDate(document.expiresAt)}` : "No expiration date"}</div>
-            </div>
-          ))}
-        </div>
-        <button className="primary-button mt-4 w-full justify-center" onClick={onInviteVendor}><UserCheck className="h-4 w-4" /> Invite vendor</button>
-      </aside>
+    <aside className="panel p-5">
+      <SectionHeader icon={ClipboardCheck} title="Review Focus" />
+      <div className="mt-4 grid gap-2">
+        {reviewItems.length ? reviewItems.map((risk) => (
+          <div key={risk.id} className="rounded-md border border-line px-3 py-2 text-sm">
+            <div className="font-semibold text-slate-950">{risk.fileNumber}</div>
+            <div className="mt-1 text-xs text-slate-500">{risk.recommendedAction}</div>
+          </div>
+        )) : <EmptyState title="No review blockers" detail="No visible submitted or revision work is at risk." />}
+      </div>
+    </aside>
+  );
+}
+
+function ActivityPanel({ model, actionMap, title }: { model: OperationsCenterModel; actionMap: Record<CommandAction, () => void>; title: string }) {
+  return (
+    <section className="panel overflow-hidden">
+      <SectionHeader icon={History} title={title} className="border-b border-line p-5" />
+      <div className="divide-y divide-line">
+        {model.activity.length ? model.activity.map((item) => (
+          <button key={item.id} className="block w-full p-4 text-left transition hover:bg-slate-50" onClick={actionMap[item.action]}>
+            <div className="font-semibold text-slate-950">{item.title}</div>
+            <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
+            <div className="mt-2 text-xs text-slate-400">{item.at}</div>
+          </button>
+        )) : <div className="p-5"><EmptyState title="No recent activity" detail="Visible activity will appear after the next order update." /></div>}
+      </div>
     </section>
   );
 }
@@ -530,11 +456,22 @@ function RiskBadge({ level }: { level: RiskLevel }) {
 function CapacityBadge({ status }: { status: CapacityInsight["status"] }) {
   const tone = {
     Available: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    Balanced: "border-sky-200 bg-sky-50 text-sky-800",
-    Busy: "border-amber-200 bg-amber-50 text-amber-800",
-    Overloaded: "border-rose-200 bg-rose-50 text-rose-700"
+    Moderate: "border-sky-200 bg-sky-50 text-sky-800",
+    "Near Capacity": "border-amber-200 bg-amber-50 text-amber-800",
+    "At Capacity": "border-rose-200 bg-rose-50 text-rose-700",
+    Unavailable: "border-slate-300 bg-slate-100 text-slate-600",
+    Unknown: "border-slate-200 bg-white text-slate-600"
   }[status];
   return <span className={cn("chip", tone)}>{status}</span>;
+}
+
+function upcomingTone(tone: "neutral" | "warn" | "bad" | "good") {
+  return {
+    neutral: "border-slate-200 bg-slate-50 text-slate-700",
+    warn: "border-amber-200 bg-amber-50 text-amber-800",
+    bad: "border-rose-200 bg-rose-50 text-rose-700",
+    good: "border-emerald-200 bg-emerald-50 text-emerald-700"
+  }[tone];
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {
@@ -553,4 +490,22 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
       <div className="mt-1 text-sm text-slate-500">{detail}</div>
     </div>
   );
+}
+
+function roleLabelFromPersona(model: OperationsCenterModel) {
+  const personaLabels: Record<OperationsCenterModel["persona"], string> = {
+    amc_admin: "AMC Admin",
+    amc_staff: "AMC Staff",
+    lender_amc: "Lender Client",
+    internal_lender: "Internal Lender",
+    hybrid_lender: "Hybrid Lender",
+    appraisal_owner: "Company Owner",
+    appraisal_staff: "Office Staff",
+    individual_appraiser: "Appraiser",
+    reviewer: "Reviewer",
+    private_professional_client: "Professional Client",
+    property_owner: "Private Customer"
+  };
+
+  return personaLabels[model.persona] ?? roleLabel("client_user");
 }

@@ -39,7 +39,8 @@ export const organizations: Organization[] = [
     primaryContact: "Nora Fields",
     email: "ops@caavaluation.example",
     phone: "(404) 555-0100",
-    address: "1100 Circle 75 Pkwy, Atlanta, GA"
+    address: "1100 Circle 75 Pkwy, Atlanta, GA",
+    timezone: "America/New_York"
   },
   {
     id: "org-amc-1",
@@ -50,7 +51,8 @@ export const organizations: Organization[] = [
     primaryContact: "Derek Sloan",
     email: "vendors@nationalvaluation.example",
     phone: "(404) 555-0191",
-    address: "2555 Cumberland Pkwy, Atlanta, GA"
+    address: "2555 Cumberland Pkwy, Atlanta, GA",
+    timezone: "America/New_York"
   },
   {
     id: "org-client-1",
@@ -61,7 +63,8 @@ export const organizations: Organization[] = [
     primaryContact: "Claire Moon",
     email: "orders@harborpoint.example",
     phone: "(404) 555-0144",
-    address: "200 Market Street, Savannah, GA"
+    address: "200 Market Street, Savannah, GA",
+    timezone: "America/New_York"
   },
   {
     id: "org-vendor-1",
@@ -72,7 +75,8 @@ export const organizations: Organization[] = [
     primaryContact: "Renee Walker",
     email: "renee@northmetro.example",
     phone: "(678) 555-0185",
-    address: "44 Church Street, Marietta, GA"
+    address: "44 Church Street, Marietta, GA",
+    timezone: "America/New_York"
   },
   {
     id: "org-solo-1",
@@ -83,7 +87,8 @@ export const organizations: Organization[] = [
     primaryContact: "Talia Morris",
     email: "talia@appraisals.example",
     phone: "(770) 555-0168",
-    address: "88 West Paces Ferry, Atlanta, GA"
+    address: "88 West Paces Ferry, Atlanta, GA",
+    timezone: "America/New_York"
   },
   {
     id: "org-client-2",
@@ -94,7 +99,8 @@ export const organizations: Organization[] = [
     primaryContact: "Iris Coleman",
     email: "appraisals@firstcarolina.example",
     phone: "(864) 555-0127",
-    address: "410 River Street, Greenville, SC"
+    address: "410 River Street, Greenville, SC",
+    timezone: "America/New_York"
   },
   {
     id: "org-firm-2",
@@ -105,7 +111,8 @@ export const organizations: Organization[] = [
     primaryContact: "Renee Walker",
     email: "connected@blueridgevaluation.example",
     phone: "(828) 555-0164",
-    address: "118 Maple Walk, Asheville, NC"
+    address: "118 Maple Walk, Asheville, NC",
+    timezone: "America/New_York"
   },
   {
     id: "org-private-attorney",
@@ -116,7 +123,8 @@ export const organizations: Organization[] = [
     primaryContact: "Elise Rowan",
     email: "orders@rowanlegal.example",
     phone: "(919) 555-0188",
-    address: "75 Court Square, Raleigh, NC"
+    address: "75 Court Square, Raleigh, NC",
+    timezone: "America/New_York"
   },
   {
     id: "org-private-owner",
@@ -127,7 +135,8 @@ export const organizations: Organization[] = [
     primaryContact: "Elena Park",
     email: "elena.park@example.com",
     phone: "(704) 555-0173",
-    address: "12 Garden Lane, Charlotte, NC"
+    address: "12 Garden Lane, Charlotte, NC",
+    timezone: "America/New_York"
   },
   {
     id: "org-private-estate",
@@ -138,7 +147,8 @@ export const organizations: Organization[] = [
     primaryContact: "Grant Hollis",
     email: "grant.hollis@example.com",
     phone: "(803) 555-0136",
-    address: "240 Oak Registry, Columbia, SC"
+    address: "240 Oak Registry, Columbia, SC",
+    timezone: "America/New_York"
   }
 ];
 
@@ -146,6 +156,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-admin",
     name: "Nora Fields",
+    firstName: "Nora",
+    preferredName: "Nora",
+    timezone: "America/New_York",
     email: "nora@caavaluation.example",
     role: "company_admin",
     organizationId: "org-firm-1",
@@ -154,6 +167,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-office",
     name: "Mina Patel",
+    firstName: "Mina",
+    preferredName: "Mina",
+    timezone: "America/New_York",
     email: "mina@caavaluation.example",
     role: "office_staff",
     organizationId: "org-firm-1",
@@ -162,6 +178,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-appraiser",
     name: "Jordan Lee",
+    firstName: "Jordan",
+    preferredName: "Jordan",
+    timezone: "America/New_York",
     email: "jordan@caavaluation.example",
     role: "appraiser",
     organizationId: "org-firm-1",
@@ -171,6 +190,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-reviewer",
     name: "Maya Chen",
+    firstName: "Maya",
+    preferredName: "Maya",
+    timezone: "America/New_York",
     email: "maya@caavaluation.example",
     role: "reviewer",
     organizationId: "org-firm-1",
@@ -179,6 +201,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-amc",
     name: "Derek Sloan",
+    firstName: "Derek",
+    preferredName: "Derek",
+    timezone: "America/New_York",
     email: "derek@nationalvaluation.example",
     role: "amc_admin",
     organizationId: "org-amc-1",
@@ -187,6 +212,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-client",
     name: "Claire Moon",
+    firstName: "Claire",
+    preferredName: "Claire",
+    timezone: "America/New_York",
     email: "claire@harborpoint.example",
     role: "client_user",
     organizationId: "org-client-1",
@@ -196,6 +224,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-solo",
     name: "Talia Morris",
+    firstName: "Talia",
+    preferredName: "Talia",
+    timezone: "America/New_York",
     email: "talia@appraisals.example",
     role: "solo_appraiser",
     organizationId: "org-solo-1",
@@ -205,6 +236,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-amc-staff",
     name: "Riley Ortiz",
+    firstName: "Riley",
+    preferredName: "Riley",
+    timezone: "America/New_York",
     email: "riley@nationalvaluation.example",
     role: "amc_staff",
     organizationId: "org-amc-1",
@@ -213,6 +247,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-lender-internal",
     name: "Iris Coleman",
+    firstName: "Iris",
+    preferredName: "Iris",
+    timezone: "America/New_York",
     email: "iris@firstcarolina.example",
     role: "client_user",
     organizationId: "org-client-2",
@@ -222,6 +259,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-hybrid-lender",
     name: "Theo Barnes",
+    firstName: "Theo",
+    preferredName: "Theo",
+    timezone: "America/New_York",
     email: "theo@harborpoint.example",
     role: "client_user",
     organizationId: "org-client-1",
@@ -231,6 +271,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-attorney",
     name: "Elise Rowan",
+    firstName: "Elise",
+    preferredName: "Elise",
+    timezone: "America/New_York",
     email: "elise@rowanlegal.example",
     role: "client_user",
     organizationId: "org-private-attorney",
@@ -240,6 +283,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-property-owner",
     name: "Elena Park",
+    firstName: "Elena",
+    preferredName: "Elena",
+    timezone: "America/New_York",
     email: "elena.park@example.com",
     role: "client_user",
     organizationId: "org-private-owner",
@@ -249,6 +295,9 @@ export const portalUsers: PortalUser[] = [
   {
     id: "user-connected-renee",
     name: "Renee Walker",
+    firstName: "Renee",
+    preferredName: "Renee",
+    timezone: "America/New_York",
     email: "renee@blueridgevaluation.example",
     role: "solo_appraiser",
     organizationId: "org-firm-2",

@@ -2,25 +2,17 @@ import type { LucideIcon } from "lucide-react";
 import { CalendarDays, ClipboardCheck, Clock3, Search, ShieldCheck, UserCheck, Users2 } from "lucide-react";
 import { appraisers as demoAppraisers } from "@/data/demo";
 import { reviewQueue } from "@/data/platform";
-import type { AccountingEntry, AppraiserProfile, Invoice, Order, Organization, PortalUser, VendorDocument, VendorProfile, WorkflowTask } from "@/types/domain";
+import type { AppraiserProfile, Order, VendorProfile } from "@/types/domain";
 import { cn, daysUntil, formatCurrency, formatDate } from "@/lib/utils";
 import { CommandCenterView } from "./dashboard/command-center";
+import type { CommandAction, OperationsCenterModel } from "@/lib/operations-center/service";
 import { MetricTile, SectionHeader, StatusChip, TableHeader } from "./shared";
 
 export function DashboardView({
-  orderList,
-  appraisers,
-  user,
-  organization,
-  vendors,
-  vendorDocuments,
-  accountingEntries,
-  invoices,
-  tasks,
+  model,
   onOpenOrders,
   onOpenTasks,
   onPlaceOrder,
-  onInviteVendor,
   onOpenReview,
   onOpenAccounting,
   onOpenClients,
@@ -29,19 +21,10 @@ export function DashboardView({
   onOpenDocuments,
   onOpenCalendar
 }: {
-  orderList: Order[];
-  appraisers: AppraiserProfile[];
-  user: PortalUser;
-  organization: Organization;
-  vendors: VendorProfile[];
-  vendorDocuments: VendorDocument[];
-  accountingEntries: AccountingEntry[];
-  invoices: Invoice[];
-  tasks: WorkflowTask[];
+  model: OperationsCenterModel;
   onOpenOrders: () => void;
   onOpenTasks: () => void;
   onPlaceOrder: () => void;
-  onInviteVendor: () => void;
   onOpenReview: () => void;
   onOpenAccounting: () => void;
   onOpenClients: () => void;
@@ -50,28 +33,24 @@ export function DashboardView({
   onOpenDocuments: () => void;
   onOpenCalendar: () => void;
 }) {
+  const actionMap: Record<CommandAction, () => void> = {
+    orders: onOpenOrders,
+    "new-order": onPlaceOrder,
+    review: onOpenReview,
+    accounting: onOpenAccounting,
+    clients: onOpenClients,
+    vendors: onOpenVendors,
+    messages: onOpenMessages,
+    documents: onOpenDocuments,
+    pay: onOpenAccounting,
+    calendar: onOpenCalendar,
+    tasks: onOpenTasks
+  };
+
   return (
     <CommandCenterView
-      orderList={orderList}
-      appraisers={appraisers}
-      user={user}
-      organization={organization}
-      vendors={vendors}
-      vendorDocuments={vendorDocuments}
-      accountingEntries={accountingEntries}
-      invoices={invoices}
-      tasks={tasks}
-      onOpenOrders={onOpenOrders}
-      onOpenTasks={onOpenTasks}
-      onPlaceOrder={onPlaceOrder}
-      onInviteVendor={onInviteVendor}
-      onOpenReview={onOpenReview}
-      onOpenAccounting={onOpenAccounting}
-      onOpenClients={onOpenClients}
-      onOpenVendors={onOpenVendors}
-      onOpenMessages={onOpenMessages}
-      onOpenDocuments={onOpenDocuments}
-      onOpenCalendar={onOpenCalendar}
+      model={model}
+      actionMap={{ ...actionMap, vendors: onOpenVendors }}
     />
   );
 }
