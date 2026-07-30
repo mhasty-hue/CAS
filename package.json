@@ -18,6 +18,7 @@
     "test:fee-visibility": "node scripts/phase10-3c1-fee-regression.mjs",
     "test:public-demo": "node scripts/public-demo-regression.mjs",
     "test:report-review": "node scripts/phase10-4-report-review-regression.mjs",
+    "test:operations-center": "node scripts/phase10-5-operations-center-regression.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

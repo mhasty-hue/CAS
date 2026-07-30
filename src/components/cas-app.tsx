@@ -40,6 +40,7 @@ import { createDeliveryRecord, markDeliveredFilesClientVisible } from "@/lib/del
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
 import { canCreateOrders, canViewOwnOrdersOnly } from "@/lib/permissions";
 import { canTransitionOrderStatus, filterOrdersForWorkflow, resolveLegacyOrderQueue } from "@/lib/orders/workflow";
+import { buildOperationsCenterModel, commandCenterToday } from "@/lib/operations-center/service";
 import { clonePublicDemoFixture, getPublicDemoDefaultUserId, getPublicDemoRoleByUserId } from "@/lib/demo/public-demo";
 import { createDemoOrderStatuses, statusUsageCount } from "@/lib/orders/status-config";
 import { applyAwardedVendorFee, sanitizeOrdersForUser } from "@/lib/orders/fees";
@@ -118,6 +119,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
   const [demoNotice, setDemoNotice] = useState("");
   const [commandOpen, setCommandOpen] = useState(false);
   const [globalQuery, setGlobalQuery] = useState("");
+  const [operationsNow, setOperationsNow] = useState<Date | null>(null);
   const publicDemoActive = publicDemoEnabled && demoMode;
   const demoActiveUser = portalUsers.find((user) => user.id === activeUserId) ?? portalUsers[0];
   const activeUser = demoMode ? demoActiveUser : runtimeUser ?? demoActiveUser;
@@ -128,6 +130,18 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
   const visibleOrders = filterOrdersForWorkflow(orderList, activeUser, activeOrganization);
   const selectedOrder = visibleOrders.find((order) => order.id === selectedOrderId) ?? visibleOrders[0] ?? orderList[0];
   const activeOrderQueue = resolveLegacyOrderQueue(activeView, activeUser, activeOrganization);
+  const operationsCenterModel = buildOperationsCenterModel({
+    orders: orderList,
+    appraisers: appraiserList,
+    user: activeUser,
+    organization: activeOrganization,
+    vendors: vendorList,
+    vendorDocuments: vendorDocumentList,
+    accountingEntries: accountingList,
+    invoices: invoiceList,
+    tasks: taskList,
+    now: operationsNow ?? commandCenterToday
+  });
 
   function openView(preferred: NavId, fallback: NavId = "dashboard") {
     const navigation = roleNavigation[activeUser.role];
@@ -209,6 +223,10 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     setPublicDemoStarted(false);
     setDemoNotice("Demo reset. Original fictional data, statuses, assignments, bids, and fees were restored.");
   }
+
+  useEffect(() => {
+    setOperationsNow(new Date());
+  }, [activeUserId]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1878,19 +1896,10 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
         <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
           {activeView === "dashboard" && (
             <DashboardView
-              orderList={visibleOrders}
-              appraisers={appraiserList}
-              user={activeUser}
-              organization={activeOrganization}
-              vendors={vendorList}
-              vendorDocuments={vendorDocumentList}
-              accountingEntries={accountingList}
-              invoices={invoiceList}
-              tasks={taskList}
+              model={operationsCenterModel}
               onOpenOrders={() => setActiveView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders")}
               onOpenTasks={() => openView("tasks", "dashboard")}
               onPlaceOrder={() => setActiveView(["amc_admin", "amc_staff", "client_user", "solo_appraiser"].includes(activeUser.role) ? "place-order" : canCreateOrders(activeUser) ? "new-order" : "orders")}
-              onInviteVendor={handleInviteVendor}
               onOpenReview={() => openView(activeUser.role === "reviewer" ? "review-queue" : "review", "orders")}
               onOpenAccounting={() => openView(activeUser.role === "appraiser" || activeUser.role === "solo_appraiser" ? "pay" : "accounting", "dashboard")}
               onOpenClients={() => openView("clients", "orders")}

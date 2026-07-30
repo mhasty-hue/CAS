@@ -100,11 +100,15 @@ export type Organization = {
   address: string;
   logoUrl?: string;
   brandColor?: string;
+  timezone?: string;
 };
 
 export type PortalUser = {
   id: string;
   name: string;
+  firstName?: string;
+  preferredName?: string;
+  timezone?: string;
   email: string;
   role: UserRole;
   organizationId: string;
