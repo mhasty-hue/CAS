@@ -20,6 +20,7 @@
     "test:report-review": "node scripts/phase10-4-report-review-regression.mjs",
     "test:operations-center": "node scripts/phase10-5-operations-center-regression.mjs",
     "test:phase10-6": "node scripts/phase10-6-secure-ops-review-packs-regression.mjs",
+    "test:phase10-7": "node scripts/phase10-7-review-workspace-regression.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

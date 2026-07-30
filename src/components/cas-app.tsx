@@ -49,6 +49,7 @@ import { simulateOrderDocumentUpload } from "@/lib/storage/paths";
 import { createOrderMessage } from "@/lib/messaging/service";
 import { applyPayrollSnapshot, calculatePayrollSnapshot } from "@/lib/accounting/payroll";
 import { ingestReportUpload } from "@/lib/report-review/ingestion";
+import { demoAiReviewSettings } from "@/lib/report-review/ai-settings";
 import { releaseFindingToClient, respondToReviewFinding, updateReviewFindingStatus } from "@/lib/report-review/rules";
 import { getCasRepository } from "@/lib/repositories";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
@@ -1791,7 +1792,11 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
         ...currentOrder.auditTrail
       ]
     }));
-    recordDemoSimulation("Demo report review ran locally using deterministic checks. No external AI provider or production document parser was called.");
+    recordDemoSimulation(
+      result.reviewResult.aiProviderStatus === "completed"
+        ? "Demo report review ran locally using deterministic checks and the fictional CAS demo AI pilot. No external AI provider or production document parser was called."
+        : "Demo report review ran locally using deterministic checks. No external AI provider or production document parser was called."
+    );
   }
 
   function handleRunReportReview(orderId: string) {
@@ -1803,7 +1808,8 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
       user: activeUser,
       sourceFiles: getReportReviewSourceFiles(order),
       runMode: "pre_submission",
-      existingVersions: reportVersionList.filter((version) => version.orderId === order.id)
+      existingVersions: reportVersionList.filter((version) => version.orderId === order.id),
+      aiSettings: demoMode ? demoAiReviewSettings(activeOrganization.id) : undefined
     });
     recordReportReviewResult(order, result, "Report QC checks run");
   }
@@ -1818,7 +1824,8 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
       sourceFiles: getReportReviewSourceFiles(order, true),
       runMode: "revision_compare",
       existingVersions: reportVersionList.filter((version) => version.orderId === order.id),
-      scenarioHint: "revised corrected"
+      scenarioHint: "revised corrected",
+      aiSettings: demoMode ? demoAiReviewSettings(activeOrganization.id) : undefined
     });
     recordReportReviewResult(order, result, "Corrected report version reviewed");
   }

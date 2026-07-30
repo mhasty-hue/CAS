@@ -1,5 +1,6 @@
 import { orders } from "@/data/demo";
 import { organizations, portalUsers } from "@/data/platform";
+import { demoAiReviewSettings } from "@/lib/report-review/ai-settings";
 import { ingestReportUpload } from "@/lib/report-review/ingestion";
 import type { AppraisalReportVersion, IngestionSourceFile, ReportIngestionResult, ReportReviewResult } from "@/types/report-review";
 
@@ -33,7 +34,8 @@ function runScenario(orderId: string, fileName: string, mimeType: string, checks
     sourceFiles: [sourceFile(order.id, fileName, mimeType, checksum)],
     runMode: "review_queue",
     existingVersions,
-    scenarioHint
+    scenarioHint,
+    aiSettings: /clean|ready/i.test(scenarioHint) ? undefined : demoAiReviewSettings(demoOrganization.id)
   });
   return hasPayload(result) ? result : null;
 }

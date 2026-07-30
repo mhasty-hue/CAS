@@ -15,3 +15,11 @@ CAS has an AI provider interface, but deterministic checks remain the trusted co
 - Client visibility controlled by reviewer approval
 
 The app must work fully when no external AI provider is configured.
+
+## Phase 10.7 Additions
+
+- `cas-demo-ai` is a deterministic mock provider for fictional demo data only.
+- External or unconfigured providers return an unavailable state while deterministic checks still complete.
+- Structured AI findings carry provider, model, prompt version, report version, review-pack context, confidence, evidence quality, and human disposition.
+- Evidence-free AI proposals are rejected before display.
+- Production remains disabled unless organization settings explicitly opt in.
