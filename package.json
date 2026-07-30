@@ -19,6 +19,7 @@
     "test:public-demo": "node scripts/public-demo-regression.mjs",
     "test:report-review": "node scripts/phase10-4-report-review-regression.mjs",
     "test:operations-center": "node scripts/phase10-5-operations-center-regression.mjs",
+    "test:phase10-6": "node scripts/phase10-6-secure-ops-review-packs-regression.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

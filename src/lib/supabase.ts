@@ -58,3 +58,26 @@ export function createSupabaseBrowserClient(): CasSupabaseClient | null {
 
   return browserClient;
 }
+
+export function createSupabaseServerClient(accessToken?: string): CasSupabaseClient | null {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = getSupabasePublishableKey();
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return null;
+  }
+
+  return createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    },
+    global: accessToken
+      ? {
+          headers: {
+            Authorization: `Bearer ${accessToken}`
+          }
+        }
+      : undefined
+  });
+}

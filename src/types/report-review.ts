@@ -83,7 +83,11 @@ export type ReviewFindingCategory =
   | "Property data"
   | "Comparable data"
   | "Adjustment math"
+  | "Reconciliation"
   | "Program overlay"
+  | "FHA"
+  | "VA"
+  | "Retrospective"
   | "Client instruction"
   | "Revision comparison"
   | "Extraction"
@@ -110,8 +114,17 @@ export type ReviewRuleDefinition = {
   deterministic: boolean;
   requiresHumanJudgment: boolean;
   source: string;
+  sourceType?: "internal_qc" | "program_guidance" | "client_instruction" | "organization_policy" | "order_instruction";
+  sourceReference?: string;
+  version?: string;
   effectiveFrom: string;
   effectiveTo?: string;
+  applicableProfiles?: ReportProfileId[];
+  applicableOverlays?: ReviewOverlayId[];
+  whyItMatters?: string;
+  suggestedNextStep?: string;
+  clientVisibleDefault?: boolean;
+  testFixtures?: string[];
   status: ReviewProfileStatus;
 };
 
@@ -321,8 +334,12 @@ export type ReviewFinding = {
   evidence: ReviewFindingEvidence[];
   orderEvidence: ReviewFindingEvidence[];
   ruleSource: string;
+  ruleVersion: string;
+  ruleSourceReference?: string;
+  whyItMatters: string;
   suggestedResolution: string;
   requiresHumanJudgment: boolean;
+  deterministic: boolean;
   visibility: ReviewFindingVisibility[];
   createdAt: string;
   updatedAt: string;
@@ -347,6 +364,12 @@ export type ReportReviewResult = {
   reportVersionId: string;
   profileId: ReportProfileId;
   overlayIds: ReviewOverlayId[];
+  rulePackSummary: Array<{
+    id: string;
+    name: string;
+    version: string;
+    ruleCount: number;
+  }>;
   runMode: ReviewRunMode;
   ruleRunVersion: string;
   aiProviderStatus: "disabled" | "not_configured" | "enabled";

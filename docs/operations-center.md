@@ -10,7 +10,7 @@ Phase 10.5 upgrades the dashboard into a role-aware Operations Center. The dashb
 - Mission items, risk cards, upcoming work, activity, capacity, vendor scorecards, and quick actions are built only from scoped data.
 - The dashboard component receives only the sanitized model.
 
-This pattern is the production API boundary: Supabase mode should return the same sanitized model from a server-side repository/API path rather than sending raw tenant data to the browser and hiding fields in React.
+Phase 10.6 implements that production API boundary through `/api/operations-center`. Supabase mode returns the same sanitized model from a server-side repository/API path rather than sending raw tenant data to the browser and hiding fields in React.
 
 ## Greeting
 

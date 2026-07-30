@@ -40,7 +40,7 @@ import { createDeliveryRecord, markDeliveredFilesClientVisible } from "@/lib/del
 import { buildInvoiceFromOrder } from "@/lib/invoicing/service";
 import { canCreateOrders, canViewOwnOrdersOnly } from "@/lib/permissions";
 import { canTransitionOrderStatus, filterOrdersForWorkflow, resolveLegacyOrderQueue } from "@/lib/orders/workflow";
-import { buildOperationsCenterModel, commandCenterToday } from "@/lib/operations-center/service";
+import { buildOperationsCenterModel, commandCenterToday, type OperationsCenterModel } from "@/lib/operations-center/service";
 import { clonePublicDemoFixture, getPublicDemoDefaultUserId, getPublicDemoRoleByUserId } from "@/lib/demo/public-demo";
 import { createDemoOrderStatuses, statusUsageCount } from "@/lib/orders/status-config";
 import { applyAwardedVendorFee, sanitizeOrdersForUser } from "@/lib/orders/fees";
@@ -51,7 +51,7 @@ import { applyPayrollSnapshot, calculatePayrollSnapshot } from "@/lib/accounting
 import { ingestReportUpload } from "@/lib/report-review/ingestion";
 import { releaseFindingToClient, respondToReviewFinding, updateReviewFindingStatus } from "@/lib/report-review/rules";
 import { getCasRepository } from "@/lib/repositories";
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 import { AccountingView, AnalyticsView } from "./cas/accounting";
 import { AutomationCenterView, NotificationQueueView, TaskCenterView } from "./cas/automation";
 import { ProductionAccessGate } from "./cas/auth";
@@ -120,6 +120,8 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
   const [commandOpen, setCommandOpen] = useState(false);
   const [globalQuery, setGlobalQuery] = useState("");
   const [operationsNow, setOperationsNow] = useState<Date | null>(null);
+  const [productionOperationsCenterModel, setProductionOperationsCenterModel] = useState<OperationsCenterModel | null>(null);
+  const [operationsCenterError, setOperationsCenterError] = useState("");
   const publicDemoActive = publicDemoEnabled && demoMode;
   const demoActiveUser = portalUsers.find((user) => user.id === activeUserId) ?? portalUsers[0];
   const activeUser = demoMode ? demoActiveUser : runtimeUser ?? demoActiveUser;
@@ -130,18 +132,21 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
   const visibleOrders = filterOrdersForWorkflow(orderList, activeUser, activeOrganization);
   const selectedOrder = visibleOrders.find((order) => order.id === selectedOrderId) ?? visibleOrders[0] ?? orderList[0];
   const activeOrderQueue = resolveLegacyOrderQueue(activeView, activeUser, activeOrganization);
-  const operationsCenterModel = buildOperationsCenterModel({
-    orders: orderList,
-    appraisers: appraiserList,
-    user: activeUser,
-    organization: activeOrganization,
-    vendors: vendorList,
-    vendorDocuments: vendorDocumentList,
-    accountingEntries: accountingList,
-    invoices: invoiceList,
-    tasks: taskList,
-    now: operationsNow ?? commandCenterToday
-  });
+  const operationsCenterModel = demoMode
+    ? buildOperationsCenterModel({
+        orders: orderList,
+        appraisers: appraiserList,
+        user: activeUser,
+        organization: activeOrganization,
+        vendors: vendorList,
+        vendorDocuments: vendorDocumentList,
+        accountingEntries: accountingList,
+        invoices: invoiceList,
+        tasks: taskList,
+        now: operationsNow ?? commandCenterToday,
+        source: "demo"
+      })
+    : productionOperationsCenterModel;
 
   function openView(preferred: NavId, fallback: NavId = "dashboard") {
     const navigation = roleNavigation[activeUser.role];
@@ -325,6 +330,55 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
       canceled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (demoMode || authState !== "ready" || !runtimeUser || !runtimeOrganization) return;
+    let canceled = false;
+
+    async function loadAuthorizedOperationsCenter() {
+      setOperationsCenterError("");
+
+      try {
+        const client = createSupabaseBrowserClient();
+        if (!client) throw new Error("Supabase is not configured. CAS cannot load the production Operations Center.");
+
+        const {
+          data: { session }
+        } = await client.auth.getSession();
+
+        if (!session?.access_token) throw new Error("Sign in again before loading the Operations Center.");
+
+        const response = await fetch("/api/operations-center", {
+          cache: "no-store",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`
+          }
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(typeof payload.error === "string" ? payload.error : "CAS could not load the authorized Operations Center.");
+        }
+
+        if (!payload.model) {
+          throw new Error("Operations Center response did not include an authorized dashboard model.");
+        }
+
+        if (!canceled) setProductionOperationsCenterModel(payload.model as OperationsCenterModel);
+      } catch (error) {
+        if (!canceled) {
+          setProductionOperationsCenterModel(null);
+          setOperationsCenterError(error instanceof Error ? error.message : "CAS could not load the authorized Operations Center.");
+        }
+      }
+    }
+
+    void loadAuthorizedOperationsCenter();
+
+    return () => {
+      canceled = true;
+    };
+  }, [authState, runtimeOrganization, runtimeUser]);
 
   useEffect(() => {
     if (!roleNavigation[activeUser.role].includes(activeView) && !resolveLegacyOrderQueue(activeView, activeUser, activeOrganization) && activeView !== "connected" && activeView !== "order-detail") {
@@ -1894,7 +1948,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
           showRoleSwitcher={!publicDemoActive}
         />
         <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-          {activeView === "dashboard" && (
+          {activeView === "dashboard" && operationsCenterModel && (
             <DashboardView
               model={operationsCenterModel}
               onOpenOrders={() => setActiveView(canViewOwnOrdersOnly(activeUser) ? "my-orders" : "orders")}
@@ -1908,6 +1962,9 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
               onOpenDocuments={() => openView("documents", "orders")}
               onOpenCalendar={() => openView("calendar", "orders")}
             />
+          )}
+          {activeView === "dashboard" && !operationsCenterModel && (
+            <ProductionAccessGate state={operationsCenterError ? "error" : "loading"} detail={operationsCenterError || "Loading authorized Operations Center."} />
           )}
           {activeView === "connected" && (
             <ConnectedOverviewView

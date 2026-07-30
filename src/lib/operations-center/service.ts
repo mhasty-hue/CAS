@@ -17,6 +17,7 @@ export type CommandAction = "orders" | "new-order" | "review" | "accounting" | "
 export type MissionPriority = "Critical" | "High" | "Medium" | "Low";
 export type RiskLevel = "Low Risk" | "Medium Risk" | "High Risk" | "Critical";
 export type CapacityStatus = "Available" | "Moderate" | "Near Capacity" | "At Capacity" | "Unavailable" | "Unknown";
+export type OperationsCenterDataSource = "demo" | "supabase";
 export type OperationsPersona =
   | "amc_admin"
   | "amc_staff"
@@ -133,10 +134,35 @@ export type VendorScorecard = {
   caveat: string;
 };
 
+export type OperationsCenterFreshness = {
+  source: OperationsCenterDataSource;
+  generatedAt: string;
+  capped: boolean;
+  limits: {
+    missionItems: number;
+    riskQueue: number;
+    upcoming: number;
+    activity: number;
+    capacityInsights: number;
+    vendorScorecards: number;
+  };
+  note: string;
+};
+
 export type OperationsCenterModel = {
   greeting: string;
   dateLabel: string;
   organizationName: string;
+  activeUser: {
+    id: string;
+    displayName: string;
+    role: PortalUser["role"];
+  };
+  activeOrganization: {
+    id: string;
+    name: string;
+    type: Organization["type"];
+  };
   persona: OperationsPersona;
   roleSummary: string;
   scope: {
@@ -154,6 +180,8 @@ export type OperationsCenterModel = {
   recommendation: AppraiserRecommendation;
   vendorScorecards: VendorScorecard[];
   emptyState: string;
+  generatedAt: string;
+  freshness: OperationsCenterFreshness;
 };
 
 export type BuildOperationsCenterInput = {
@@ -167,6 +195,8 @@ export type BuildOperationsCenterInput = {
   invoices: Invoice[];
   tasks: WorkflowTask[];
   now?: Date;
+  source?: OperationsCenterDataSource;
+  limits?: Partial<OperationsCenterFreshness["limits"]>;
 };
 
 export const commandCenterToday = new Date("2026-07-09T09:00:00-04:00");
@@ -231,6 +261,16 @@ export function getOperationsPersona(user: PortalUser, organization: Organizatio
 
 export function buildOperationsCenterModel(input: BuildOperationsCenterInput): OperationsCenterModel {
   const now = input.now ?? new Date();
+  const generatedAt = now.toISOString();
+  const limits = {
+    missionItems: 8,
+    riskQueue: 12,
+    upcoming: 8,
+    activity: 8,
+    capacityInsights: 12,
+    vendorScorecards: 10,
+    ...input.limits
+  };
   const persona = getOperationsPersona(input.user, input.organization);
   const scopedOrders = filterOrdersForWorkflow(input.orders, input.user, input.organization);
   const sanitizedOrders = scopedOrders.map((order) => sanitizeOrderFeesForUser(order, input.user, input.organization));
@@ -256,11 +296,28 @@ export function buildOperationsCenterModel(input: BuildOperationsCenterInput): O
   const quickActions = buildQuickActions(input.user, persona);
   const recommendation = recommendAppraiser(scopedOrders, capacityInsights);
   const vendorScorecards = buildVendorScorecards(scopedOrders, input.vendors, input.vendorDocuments, input.user);
+  const capped =
+    missionItems.length > limits.missionItems ||
+    riskQueue.length > limits.riskQueue ||
+    upcoming.length > limits.upcoming ||
+    activity.length > limits.activity ||
+    capacityInsights.length > limits.capacityInsights ||
+    vendorScorecards.length > limits.vendorScorecards;
 
   return {
     greeting: resolveGreeting({ user: input.user, organization: input.organization, now }),
     dateLabel: commandCenterDateLabel(now),
     organizationName: input.organization.name,
+    activeUser: {
+      id: input.user.id,
+      displayName: input.user.preferredName ?? input.user.firstName ?? input.user.name,
+      role: input.user.role
+    },
+    activeOrganization: {
+      id: input.organization.id,
+      name: input.organization.name,
+      type: input.organization.type
+    },
     persona,
     roleSummary: roleSummary(input.user, persona, missionItems.filter((item) => item.priority === "Critical" || item.priority === "High").length, capacityInsights),
     scope: {
@@ -268,16 +325,26 @@ export function buildOperationsCenterModel(input: BuildOperationsCenterInput): O
       orderCount: sanitizedOrders.length,
       financialPolicy: describeFinancialPolicy(scopedOrders, input.user, input.organization)
     },
-    missionItems,
+    missionItems: missionItems.slice(0, limits.missionItems),
     snapshots,
-    riskQueue,
-    upcoming,
-    activity,
+    riskQueue: riskQueue.slice(0, limits.riskQueue),
+    upcoming: upcoming.slice(0, limits.upcoming),
+    activity: activity.slice(0, limits.activity),
     quickActions,
-    capacityInsights,
+    capacityInsights: capacityInsights.slice(0, limits.capacityInsights),
     recommendation,
-    vendorScorecards,
-    emptyState: persona === "property_owner" ? "Your appraisal is on track. No action is needed right now." : "You're caught up. No urgent items require your attention right now."
+    vendorScorecards: vendorScorecards.slice(0, limits.vendorScorecards),
+    emptyState: persona === "property_owner" ? "Your appraisal is on track. No action is needed right now." : "You're caught up. No urgent items require your attention right now.",
+    generatedAt,
+    freshness: {
+      source: input.source ?? "demo",
+      generatedAt,
+      capped,
+      limits,
+      note: capped
+        ? "Preview lists are capped. Counts and scoped mission totals are calculated before capping."
+        : "Model contains authorized dashboard data calculated from the active role scope."
+    }
   };
 }
 

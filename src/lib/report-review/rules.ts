@@ -12,6 +12,7 @@ import type {
   ReviewProfile,
   ReviewSeverity
 } from "@/types/report-review";
+import { getReviewRulePacks } from "@/lib/report-review/rule-packs";
 import { getActiveReviewRules, getReviewRule } from "@/lib/report-review/profiles";
 
 const reviewRunVersion = "cas-deterministic-qc-1.0";
@@ -113,8 +114,12 @@ function createFinding(context: RuleContext, draft: FindingDraft): ReviewFinding
     evidence: draft.evidence ?? [],
     orderEvidence: draft.orderEvidence ?? [],
     ruleSource: rule?.source ?? "CAS deterministic review",
+    ruleVersion: rule?.version ?? "1.0",
+    ruleSourceReference: rule?.sourceReference,
+    whyItMatters: rule?.whyItMatters ?? "This check helps the reviewer confirm the report is complete, consistent, and aligned with the assignment before delivery.",
     suggestedResolution: draft.suggestedResolution,
     requiresHumanJudgment: draft.requiresHumanJudgment ?? rule?.requiresHumanJudgment ?? true,
+    deterministic: rule?.deterministic ?? true,
     visibility,
     createdAt: context.createdAt ?? "2026-07-27T12:00:00Z",
     updatedAt: context.createdAt ?? "2026-07-27T12:00:00Z"
@@ -429,6 +434,55 @@ export function runDeterministicReview(context: RuleContext): ReportReviewResult
     });
   });
 
+  add("certifications-signed", () => {
+    if (report.certifications.signedCertification.value && report.certifications.limitingConditions.value) {
+      return pass(context, "certifications-signed", "Signed certification and limiting conditions were detected.", [
+        evidenceFromField("Signed certification", report.certifications.signedCertification),
+        evidenceFromField("Limiting conditions", report.certifications.limitingConditions)
+      ]);
+    }
+    return createFinding(context, {
+      ruleId: "certifications-signed",
+      severity: "Critical",
+      description: "The report package does not appear to include a complete signed certification and limiting conditions.",
+      evidence: [
+        evidenceFromField("Signed certification", report.certifications.signedCertification),
+        evidenceFromField("Limiting conditions", report.certifications.limitingConditions)
+      ],
+      suggestedResolution: "Upload the signed certification pages or confirm the extraction result before delivery.",
+      requiresHumanJudgment: false
+    });
+  });
+
+  add("reconciliation-commentary-present", () => {
+    const commentary = normalizeText(report.reconciliation.commentary.value);
+    if (commentary.length >= 24) {
+      return pass(context, "reconciliation-commentary-present", "Reconciliation commentary is present for reviewer consideration.", [evidenceFromField("Reconciliation commentary", report.reconciliation.commentary)]);
+    }
+    return createFinding(context, {
+      ruleId: "reconciliation-commentary-present",
+      severity: "Warning",
+      description: "The report does not appear to include enough reconciliation commentary to support the final conclusion.",
+      evidence: [evidenceFromField("Reconciliation commentary", report.reconciliation.commentary)],
+      suggestedResolution: "Reviewer should confirm whether reconciliation explains comparable weighting and final value selection.",
+      requiresHumanJudgment: true
+    });
+  });
+
+  add("adjustment-grid-balanced", () => {
+    if (report.adjustments.adjustmentGridBalanced.value) {
+      return pass(context, "adjustment-grid-balanced", "Adjustment grid balance flag is clear.", [evidenceFromField("Adjustment grid balanced", report.adjustments.adjustmentGridBalanced)]);
+    }
+    return createFinding(context, {
+      ruleId: "adjustment-grid-balanced",
+      severity: "Warning",
+      description: "The adjustment grid balance flag suggests the sales comparison grid needs reviewer attention.",
+      evidence: [evidenceFromField("Adjustment grid balanced", report.adjustments.adjustmentGridBalanced)],
+      suggestedResolution: "Check the adjustment rows and calculated indications. Treat this as a review prompt, not a value conclusion.",
+      requiresHumanJudgment: true
+    });
+  });
+
   add("comparable-sale-adjusted-values", () => {
     const missing = report.comparableSales.filter((sale) => sale.salePrice.value === null || sale.adjustedValue.value === null);
     if (!missing.length) {
@@ -522,6 +576,46 @@ export function runDeterministicReview(context: RuleContext): ReportReviewResult
     });
   });
 
+  add("fha-case-identifier-present", () => {
+    const identifier = normalizeText(report.reportIdentity.loanNumber?.value);
+    if (identifier.includes("fha") || identifier.length >= 6) {
+      return pass(context, "fha-case-identifier-present", "FHA case or assignment identifier is present where extractable.", [evidenceFromField("FHA/loan identifier", report.reportIdentity.loanNumber)]);
+    }
+    return createFinding(context, {
+      ruleId: "fha-case-identifier-present",
+      overlayId: "fha",
+      severity: "Warning",
+      description: "CAS could not identify an FHA case or assignment identifier in the extracted report data.",
+      evidence: [evidenceFromField("FHA/loan identifier", report.reportIdentity.loanNumber)],
+      suggestedResolution: "Confirm the case identifier in the report or order package before delivery.",
+      requiresHumanJudgment: true
+    });
+  });
+
+  add("fha-subject-to-consistency", () => {
+    const commentary = normalizeText(report.improvements.conditionCommentary?.value);
+    const finalCommentary = normalizeText(report.reconciliation.commentary.value);
+    const repairLanguage = commentary.includes("repair") || commentary.includes("subjectto") || finalCommentary.includes("subjectto");
+    if (repairLanguage && commentary.includes("photo")) {
+      return pass(context, "fha-subject-to-consistency", "FHA repair commentary and support appear internally consistent.", [
+        evidenceFromField("Condition commentary", report.improvements.conditionCommentary),
+        evidenceFromField("Reconciliation commentary", report.reconciliation.commentary)
+      ]);
+    }
+    return createFinding(context, {
+      ruleId: "fha-subject-to-consistency",
+      overlayId: "fha",
+      severity: "Warning",
+      description: "Review may be warranted because FHA repair, subject-to, or condition support is not clearly reconciled.",
+      evidence: [
+        evidenceFromField("Condition commentary", report.improvements.conditionCommentary),
+        evidenceFromField("Reconciliation commentary", report.reconciliation.commentary)
+      ],
+      suggestedResolution: "Confirm whether repairs are required, whether the conclusion is as-is or subject-to, and whether photo/addendum support is present.",
+      requiresHumanJudgment: true
+    });
+  });
+
   add("va-program-exhibits", () => {
     const hasPhotos = report.photos.some((photo) => photo.present.value);
     const hasMap = report.maps.some((map) => map.present.value);
@@ -535,6 +629,65 @@ export function runDeterministicReview(context: RuleContext): ReportReviewResult
       description: "VA placeholder exhibit check needs reviewer attention.",
       evidence: [{ label: "Photos", value: hasPhotos ? "Present" : "Missing" }, { label: "Map", value: hasMap ? "Present" : "Missing" }],
       suggestedResolution: "Confirm the required VA exhibits are included before delivery.",
+      requiresHumanJudgment: true
+    });
+  });
+
+  add("va-case-identifier-present", () => {
+    const identifier = normalizeText(report.reportIdentity.loanNumber?.value);
+    if (identifier.includes("va") || identifier.length >= 6) {
+      return pass(context, "va-case-identifier-present", "VA case or assignment identifier is present where extractable.", [evidenceFromField("VA/loan identifier", report.reportIdentity.loanNumber)]);
+    }
+    return createFinding(context, {
+      ruleId: "va-case-identifier-present",
+      overlayId: "va",
+      severity: "Warning",
+      description: "CAS could not identify a VA case or assignment identifier in the extracted report data.",
+      evidence: [evidenceFromField("VA/loan identifier", report.reportIdentity.loanNumber)],
+      suggestedResolution: "Confirm the VA assignment identifier in the report or order package before delivery.",
+      requiresHumanJudgment: true
+    });
+  });
+
+  add("va-mpr-review-question", () => {
+    const commentary = normalizeText(report.improvements.conditionCommentary?.value);
+    const concernTerms = ["mpr", "repair", "roof", "water", "sewage", "access", "heating", "safety", "structure"];
+    const hasConcern = concernTerms.some((term) => commentary.includes(term));
+    if (!hasConcern) {
+      return pass(context, "va-mpr-review-question", "No VA MPR-related review question was detected from extracted condition commentary.", [evidenceFromField("Condition commentary", report.improvements.conditionCommentary)]);
+    }
+    return createFinding(context, {
+      ruleId: "va-mpr-review-question",
+      overlayId: "va",
+      severity: "Advisory",
+      description: "Potential VA MPR-related language was detected. Human judgment required; CAS is routing this as a reviewer question.",
+      evidence: [evidenceFromField("Condition commentary", report.improvements.conditionCommentary)],
+      suggestedResolution: "Reviewer should confirm whether the observation is adequately addressed and whether any repair conclusion is consistent.",
+      requiresHumanJudgment: true
+    });
+  });
+
+  add("va-repair-conclusion-consistency", () => {
+    const commentary = normalizeText(report.improvements.conditionCommentary?.value);
+    const reconciliation = normalizeText(report.reconciliation.commentary.value);
+    const mentionsRepair = commentary.includes("repair") || commentary.includes("subjectto");
+    const reconciled = reconciliation.includes("repair") || reconciliation.includes("subjectto") || reconciliation.includes("asis");
+    if (!mentionsRepair || reconciled) {
+      return pass(context, "va-repair-conclusion-consistency", "VA repair observations appear consistent with the conclusion language.", [
+        evidenceFromField("Condition commentary", report.improvements.conditionCommentary),
+        evidenceFromField("Reconciliation commentary", report.reconciliation.commentary)
+      ]);
+    }
+    return createFinding(context, {
+      ruleId: "va-repair-conclusion-consistency",
+      overlayId: "va",
+      severity: "Warning",
+      description: "Repair-related VA commentary does not appear to be reconciled with the final conclusion language.",
+      evidence: [
+        evidenceFromField("Condition commentary", report.improvements.conditionCommentary),
+        evidenceFromField("Reconciliation commentary", report.reconciliation.commentary)
+      ],
+      suggestedResolution: "Confirm whether the report is as-is or subject-to and whether the repair observation is addressed before release.",
       requiresHumanJudgment: true
     });
   });
@@ -558,6 +711,48 @@ export function runDeterministicReview(context: RuleContext): ReportReviewResult
     });
   });
 
+  add("retrospective-date-separation", () => {
+    const effectiveDate = report.valueDates.effectiveDate.value;
+    const signatureDate = report.valueDates.signatureDate.value;
+    const retrospectiveDate = report.valueDates.retrospectiveDate?.value;
+    if (retrospectiveDate && effectiveDate && signatureDate && !sameDay(retrospectiveDate, signatureDate)) {
+      return pass(context, "retrospective-date-separation", "Report date and retrospective effective date are distinguishable.", [
+        evidenceFromField("Retrospective date", report.valueDates.retrospectiveDate),
+        evidenceFromField("Signature date", report.valueDates.signatureDate)
+      ]);
+    }
+    return createFinding(context, {
+      ruleId: "retrospective-date-separation",
+      overlayId: "estate",
+      severity: "Warning",
+      description: "The report date and retrospective effective date are not clearly distinguishable in the extracted fields.",
+      evidence: [
+        evidenceFromField("Retrospective date", report.valueDates.retrospectiveDate),
+        evidenceFromField("Effective date", report.valueDates.effectiveDate),
+        evidenceFromField("Signature date", report.valueDates.signatureDate)
+      ],
+      suggestedResolution: "Confirm the date-of-death or retrospective valuation date is clearly stated apart from the report/signature date.",
+      requiresHumanJudgment: true
+    });
+  });
+
+  add("post-effective-date-data-disclosure", () => {
+    const assumptions = report.extraordinaryAssumptions.value ?? [];
+    const referencesRetrospectiveData = assumptions.some((item) => normalizeText(item).includes("retrospective") || normalizeText(item).includes("dateofdeath"));
+    if (referencesRetrospectiveData) {
+      return pass(context, "post-effective-date-data-disclosure", "Retrospective data handling is identified in assumptions or addenda.", [evidenceFromField("Extraordinary assumptions", report.extraordinaryAssumptions)]);
+    }
+    return createFinding(context, {
+      ruleId: "post-effective-date-data-disclosure",
+      overlayId: "estate",
+      severity: "Advisory",
+      description: "The report does not appear to explain how retrospective or post-effective-date data was handled.",
+      evidence: [evidenceFromField("Extraordinary assumptions", report.extraordinaryAssumptions)],
+      suggestedResolution: "Reviewer should confirm whether data after the effective date is identified and appropriately discussed.",
+      requiresHumanJudgment: true
+    });
+  });
+
   add("litigation-purpose-disclosure", () => {
     const intendedUse = normalizeText(report.reportIdentity.intendedUser.value);
     if (intendedUse.includes("attorney") || intendedUse.includes("litigation") || intendedUse.includes("court") || intendedUse.includes("divorce")) {
@@ -575,6 +770,7 @@ export function runDeterministicReview(context: RuleContext): ReportReviewResult
   });
 
   const summary = summarizeReviewFindings(findings);
+  const rulePacks = getReviewRulePacks(profile, overlays);
   return {
     id: `${context.reportVersion.id}-review`,
     organizationId: context.organization.id,
@@ -582,6 +778,7 @@ export function runDeterministicReview(context: RuleContext): ReportReviewResult
     reportVersionId: context.reportVersion.id,
     profileId: profile.id,
     overlayIds: overlays.map((overlay) => overlay.id),
+    rulePackSummary: rulePacks.map((pack) => ({ id: pack.id, name: pack.name, version: pack.version, ruleCount: pack.ruleIds.length })),
     runMode: "review_queue",
     ruleRunVersion: reviewRunVersion,
     aiProviderStatus: "disabled",
@@ -590,7 +787,7 @@ export function runDeterministicReview(context: RuleContext): ReportReviewResult
     summary,
     createdAt: context.createdAt ?? "2026-07-27T12:00:00Z",
     createdBy: context.user.name,
-    auditSummary: `Ran ${findings.length} deterministic report checks against ${profile.name} ${profile.version}. Final value ${numberText(report.reconciliation.finalValue.value)} was not changed.`
+    auditSummary: `Ran ${findings.length} deterministic report checks against ${profile.name} ${profile.version} using ${rulePacks.map((pack) => `${pack.name} ${pack.version}`).join(", ")}. Final value ${numberText(report.reconciliation.finalValue.value)} was not changed.`
   };
 }
 
