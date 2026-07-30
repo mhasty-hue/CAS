@@ -93,7 +93,7 @@ function ingest(orderId, scenarioHint, sourceFile = null, existingVersions = [])
   });
 }
 
-assert.equal(demoReportReviewScenarios.length, 5, "Expected the five requested demo review scenarios.");
+assert.equal(demoReportReviewScenarios.length, 6, "Expected the requested demo review scenarios, including VA and revised-version examples.");
 assert(demoReportVersions.length >= 5, "Demo report versions should exist.");
 assert(demoReportReviewResults.length >= 5, "Demo review results should exist.");
 assert(demoReportVersions.every((version) => version.immutable && version.storagePreserved), "Report versions must be immutable and preserve original files.");
@@ -115,10 +115,18 @@ assert(conventional.reportVersion.normalizedReport.reconciliation.finalValue.con
 const fha = ingest("ord-1002", "fha condition");
 assert(fha.reviewResult.findings.some((finding) => finding.ruleId === "fha-condition-commentary" && finding.severity === "Critical"), "FHA condition issue should be critical.");
 assert(fha.reviewResult.overlayIds.includes("fha"), "FHA review should include the FHA overlay.");
+assert(fha.reviewResult.rulePackSummary.some((pack) => pack.id === "pack-fha-single-family-overlay-v1"), "FHA review should include the FHA rule pack summary.");
+
+const va = ingest("ord-1004", "va mpr review question");
+assert(va.reviewResult.overlayIds.includes("va"), "VA review should include the VA overlay.");
+assert(va.reviewResult.rulePackSummary.some((pack) => pack.id === "pack-va-single-family-overlay-v1"), "VA review should include the VA rule pack summary.");
+assert(va.reviewResult.findings.some((finding) => finding.ruleId === "va-mpr-review-question" && finding.requiresHumanJudgment), "VA MPR concerns should be reviewer questions.");
+assert(!va.reviewResult.findings.some((finding) => /reject|failure/i.test(finding.description)), "VA findings should not automatically reject the report.");
 
 const estate = ingest("ord-demo-private", "estate retrospective");
 assert(estate.reviewResult.findings.some((finding) => finding.ruleId === "estate-retrospective-effective-date" && finding.severity === "Critical"), "Estate date mismatch should be critical.");
 assert(estate.reviewResult.overlayIds.includes("estate"), "Estate review should include estate overlay.");
+assert(estate.reviewResult.rulePackSummary.some((pack) => pack.id === "pack-estate-retrospective-v1"), "Estate review should include the estate retrospective rule pack.");
 
 const clean = ingest("ord-demo-ready", "clean");
 assert.equal(clean.status, "ready", "Clean demo report should be ready.");

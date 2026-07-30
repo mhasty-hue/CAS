@@ -130,6 +130,7 @@ function scenarioForRequest(request: ReportIngestionRequest) {
   const text = `${request.scenarioHint ?? ""} ${request.order.id} ${request.order.productType} ${request.order.loanType} ${request.sourceFiles.map((file) => file.fileName).join(" ")}`.toLowerCase();
   if (text.includes("revised") || text.includes("corrected") || request.existingVersions?.length) return "revised";
   if (text.includes("fha")) return "fha-condition";
+  if (/\bva\b/.test(text) || text.includes("va 1004")) return "va-condition";
   if (text.includes("estate") || text.includes("retrospective")) return "estate-effective-date";
   if (text.includes("desktop") || text.includes("clean") || text.includes("ready")) return "clean";
   if (text.includes("uad 3.6")) return "uad36";
@@ -142,10 +143,11 @@ function buildDemoNormalizedReport(request: ReportIngestionRequest, profile: Rev
   const order = request.order;
   const isClean = scenario === "clean" || scenario === "uad36" || scenario === "revised";
   const isFha = scenario === "fha-condition";
+  const isVa = scenario === "va-condition";
   const isEstate = scenario === "estate-effective-date";
   const finalValue = isClean ? 560000 : isEstate ? 550000 : 580000;
   const indicatedValue = isClean ? finalValue : isEstate ? 550000 : 585000;
-  const reportType = isFha ? "FHA 1004" : isEstate ? "Estate appraisal" : profile.name.includes("UAD") ? "UAD 3.6 URAR" : order.productType;
+  const reportType = isFha ? "FHA 1004" : isVa ? "VA 1004" : isEstate ? "Estate appraisal" : profile.name.includes("UAD") ? "UAD 3.6 URAR" : order.productType;
   const inspectionDate = order.inspectionDate ?? order.inspection?.scheduledDate ?? "2026-07-07";
   const signatureDate = isEstate ? "2026-07-25" : "2026-07-10";
   const effectiveDate = isEstate ? inspectionDate : inspectionDate;
@@ -172,7 +174,7 @@ function buildDemoNormalizedReport(request: ReportIngestionRequest, profile: Rev
       clientName: extracted("identity.clientName", "Client", order.client, source, { sourcePage: 1, verificationStatus: "matched_order" }),
       intendedUser: extracted("identity.intendedUser", "Intended user", isEstate ? order.client : `${order.client} and assigns`, source, { sourcePage: 1 }),
       reportType: extracted("identity.reportType", "Report type", reportType, source, { sourcePage: 1 }),
-      loanNumber: extracted("identity.loanNumber", "Loan number", `${order.fileNumber}-LN`, source, { sourcePage: 1 })
+      loanNumber: extracted("identity.loanNumber", "Loan number", isFha ? `FHA-${order.fileNumber}` : isVa ? `VA-${order.fileNumber}` : `${order.fileNumber}-LN`, source, { sourcePage: 1 })
     },
     subject: {
       borrowerName: extracted("subject.borrower", "Borrower", order.borrower, source, { sourcePage: 1, verificationStatus: "matched_order" }),
@@ -197,7 +199,13 @@ function buildDemoNormalizedReport(request: ReportIngestionRequest, profile: Rev
       baths: extracted("improvements.baths", "Baths", baths, source, { sourcePage: 2 }),
       sketchBedrooms: extracted("improvements.sketchBedrooms", "Sketch bedrooms", sketchBedrooms, source, { sourcePage: 9 }),
       sketchBaths: extracted("improvements.sketchBaths", "Sketch baths", sketchBaths, source, { sourcePage: 9 }),
-      conditionCommentary: extracted("improvements.conditionCommentary", "Condition commentary", isFha ? "Utilities appeared on at inspection." : "Condition, repairs, and observed physical characteristics are addressed.", source, { sourcePage: 3, confidence: isFha ? 0.55 : 0.88 })
+      conditionCommentary: extracted(
+        "improvements.conditionCommentary",
+        "Condition commentary",
+        isFha ? "Utilities appeared on at inspection." : isVa ? "Roof repair observation noted for reviewer follow-up. Human review should confirm VA repair consistency." : "Condition, repairs, and observed physical characteristics are addressed.",
+        source,
+        { sourcePage: 3, confidence: isFha ? 0.55 : 0.88 }
+      )
     },
     zoning: {
       zoningCode: extracted("zoning.code", "Zoning", "R-20", source, { sourcePage: 2 }),

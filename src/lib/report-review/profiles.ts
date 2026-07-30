@@ -1,7 +1,7 @@
 import type { Order, Organization } from "@/types/domain";
 import type { ReportFileKind, ReportProfileId, ReviewOverlay, ReviewOverlayId, ReviewProfile, ReviewRuleDefinition } from "@/types/report-review";
 
-export const reviewRuleDefinitions: ReviewRuleDefinition[] = [
+const baseReviewRuleDefinitions: ReviewRuleDefinition[] = [
   {
     id: "address-match",
     title: "Subject address matches the order",
@@ -254,8 +254,154 @@ export const reviewRuleDefinitions: ReviewRuleDefinition[] = [
     source: "CAS litigation overlay v1.0",
     effectiveFrom: "2026-07-01",
     status: "active"
+  },
+  {
+    id: "certifications-signed",
+    title: "Required certifications are signed",
+    category: "Signature",
+    severityDefault: "Critical",
+    deterministic: true,
+    requiresHumanJudgment: false,
+    source: "CAS conventional single-family review pack v1.0",
+    effectiveFrom: "2026-07-01",
+    applicableProfiles: ["legacy-conventional-single-family"],
+    status: "active"
+  },
+  {
+    id: "reconciliation-commentary-present",
+    title: "Reconciliation commentary supports the final value",
+    category: "Reconciliation",
+    severityDefault: "Warning",
+    deterministic: true,
+    requiresHumanJudgment: true,
+    source: "CAS conventional single-family review pack v1.0",
+    effectiveFrom: "2026-07-01",
+    applicableProfiles: ["legacy-conventional-single-family"],
+    status: "active"
+  },
+  {
+    id: "adjustment-grid-balanced",
+    title: "Adjustment grid balance flag is clear",
+    category: "Adjustment math",
+    severityDefault: "Warning",
+    deterministic: true,
+    requiresHumanJudgment: true,
+    source: "CAS conventional single-family review pack v1.0",
+    effectiveFrom: "2026-07-01",
+    applicableProfiles: ["legacy-conventional-single-family"],
+    status: "active"
+  },
+  {
+    id: "fha-case-identifier-present",
+    title: "FHA case or assignment identifier is present",
+    category: "FHA",
+    severityDefault: "Warning",
+    deterministic: true,
+    requiresHumanJudgment: true,
+    source: "CAS FHA overlay v1.0",
+    sourceType: "program_guidance",
+    sourceReference: "Organization-maintained FHA review interpretation, effective 2026-07-01",
+    effectiveFrom: "2026-07-01",
+    applicableOverlays: ["fha"],
+    status: "active"
+  },
+  {
+    id: "fha-subject-to-consistency",
+    title: "FHA repair commentary and conclusion are consistent",
+    category: "FHA",
+    severityDefault: "Warning",
+    deterministic: true,
+    requiresHumanJudgment: true,
+    source: "CAS FHA overlay v1.0",
+    sourceType: "program_guidance",
+    sourceReference: "Organization-maintained FHA review interpretation, effective 2026-07-01",
+    effectiveFrom: "2026-07-01",
+    applicableOverlays: ["fha"],
+    status: "active"
+  },
+  {
+    id: "va-case-identifier-present",
+    title: "VA case or assignment identifier is present",
+    category: "VA",
+    severityDefault: "Warning",
+    deterministic: true,
+    requiresHumanJudgment: true,
+    source: "CAS VA overlay v1.0",
+    sourceType: "program_guidance",
+    sourceReference: "Organization-maintained VA review interpretation, effective 2026-07-01",
+    effectiveFrom: "2026-07-01",
+    applicableOverlays: ["va"],
+    status: "active"
+  },
+  {
+    id: "va-mpr-review-question",
+    title: "VA MPR-related observations are routed as reviewer questions",
+    category: "VA",
+    severityDefault: "Advisory",
+    deterministic: true,
+    requiresHumanJudgment: true,
+    source: "CAS VA overlay v1.0",
+    sourceType: "program_guidance",
+    sourceReference: "Organization-maintained VA review interpretation, effective 2026-07-01",
+    effectiveFrom: "2026-07-01",
+    applicableOverlays: ["va"],
+    status: "active"
+  },
+  {
+    id: "va-repair-conclusion-consistency",
+    title: "VA repair observations align with the conclusion",
+    category: "VA",
+    severityDefault: "Warning",
+    deterministic: true,
+    requiresHumanJudgment: true,
+    source: "CAS VA overlay v1.0",
+    sourceType: "program_guidance",
+    sourceReference: "Organization-maintained VA review interpretation, effective 2026-07-01",
+    effectiveFrom: "2026-07-01",
+    applicableOverlays: ["va"],
+    status: "active"
+  },
+  {
+    id: "retrospective-date-separation",
+    title: "Report date and retrospective effective date are clearly distinguished",
+    category: "Retrospective",
+    severityDefault: "Warning",
+    deterministic: true,
+    requiresHumanJudgment: true,
+    source: "CAS estate retrospective review pack v1.0",
+    sourceType: "internal_qc",
+    sourceReference: "Private-client retrospective assignment checks, effective 2026-07-01",
+    effectiveFrom: "2026-07-01",
+    applicableProfiles: ["estate-retrospective"],
+    applicableOverlays: ["estate"],
+    status: "active"
+  },
+  {
+    id: "post-effective-date-data-disclosure",
+    title: "Post-effective-date data is identified for retrospective assignments",
+    category: "Retrospective",
+    severityDefault: "Advisory",
+    deterministic: true,
+    requiresHumanJudgment: true,
+    source: "CAS estate retrospective review pack v1.0",
+    sourceType: "internal_qc",
+    sourceReference: "Private-client retrospective assignment checks, effective 2026-07-01",
+    effectiveFrom: "2026-07-01",
+    applicableProfiles: ["estate-retrospective"],
+    applicableOverlays: ["estate"],
+    status: "active"
   }
 ];
+
+export const reviewRuleDefinitions: ReviewRuleDefinition[] = baseReviewRuleDefinitions.map((rule) => ({
+  sourceType: "internal_qc",
+  version: rule.source.match(/v(\d+(?:\.\d+)?)/i)?.[1] ?? "1.0",
+  clientVisibleDefault: false,
+  whyItMatters: "Reviewers need a traceable, explainable check before clearing the report for delivery.",
+  suggestedNextStep: "Review the cited evidence, decide whether a revision is needed, and keep client visibility internal unless approved.",
+  testFixtures: [rule.id],
+  ...rule
+}));
 
 const universalRuleIds = [
   "address-match",
@@ -279,6 +425,16 @@ const universalRuleIds = [
   "revised-version-compare"
 ];
 
+const conventionalSingleFamilyRuleIds = [
+  "certifications-signed",
+  "reconciliation-commentary-present",
+  "adjustment-grid-balanced"
+];
+
+const fhaRuleIds = ["fha-case-identifier-present", "fha-condition-commentary", "fha-subject-to-consistency"];
+const vaRuleIds = ["va-case-identifier-present", "va-program-exhibits", "va-mpr-review-question", "va-repair-conclusion-consistency"];
+const estateRuleIds = ["estate-retrospective-effective-date", "retrospective-date-separation", "post-effective-date-data-disclosure"];
+
 export const reviewProfiles: ReviewProfile[] = [
   {
     id: "legacy-conventional-single-family",
@@ -289,7 +445,7 @@ export const reviewProfiles: ReviewProfile[] = [
     productMatches: ["1004", "conventional", "urar", "single family"],
     requiredSections: ["Subject", "Contract", "Neighborhood", "Site", "Improvements", "Sales Comparison", "Reconciliation", "Certifications"],
     requiredExhibits: ["photo", "sketch", "map", "xml", "certification"],
-    ruleIds: universalRuleIds,
+    ruleIds: [...universalRuleIds, ...conventionalSingleFamilyRuleIds],
     aiReviewCategories: ["Professional judgment", "Client instruction", "Comparable data"],
     overlayIds: ["universal", "legacy-conventional"],
     effectiveFrom: "2026-07-01",
@@ -409,7 +565,7 @@ export const reviewProfiles: ReviewProfile[] = [
     productMatches: ["estate", "retrospective", "date-of-death"],
     requiredSections: ["Assignment", "Subject", "Effective Date", "Market", "Sales Comparison", "Reconciliation", "Certifications"],
     requiredExhibits: ["photo", "map", "certification"],
-    ruleIds: [...universalRuleIds, "estate-retrospective-effective-date"],
+    ruleIds: [...universalRuleIds, ...estateRuleIds],
     aiReviewCategories: ["Professional judgment", "Client instruction"],
     overlayIds: ["universal", "private-client", "estate"],
     effectiveFrom: "2026-07-01",
@@ -484,7 +640,7 @@ export const reviewOverlays: ReviewOverlay[] = [
     scope: "program",
     version: "0.1",
     description: "FHA condition and repair commentary placeholder overlay.",
-    ruleIds: ["fha-condition-commentary"],
+    ruleIds: fhaRuleIds,
     effectiveFrom: "2026-07-01",
     status: "active"
   },
@@ -494,7 +650,7 @@ export const reviewOverlays: ReviewOverlay[] = [
     scope: "program",
     version: "0.1",
     description: "VA exhibit and program note placeholder overlay.",
-    ruleIds: ["va-program-exhibits"],
+    ruleIds: vaRuleIds,
     effectiveFrom: "2026-07-01",
     status: "active"
   },
@@ -514,7 +670,7 @@ export const reviewOverlays: ReviewOverlay[] = [
     scope: "program",
     version: "1.0",
     description: "Retrospective effective-date expectations for estate work.",
-    ruleIds: ["estate-retrospective-effective-date"],
+    ruleIds: estateRuleIds,
     effectiveFrom: "2026-07-01",
     status: "active"
   },

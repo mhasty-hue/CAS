@@ -40,6 +40,7 @@ function runScenario(orderId: string, fileName: string, mimeType: string, checks
 
 const conventional = runScenario("ord-1001", "CAA-26-1048-report-v1.pdf", "application/pdf", "sha256-report-review-1001-v1", "conventional inconsistency");
 const fha = runScenario("ord-1002", "CAA-26-1049-fha-report.pdf", "application/pdf", "sha256-report-review-1002-fha", "fha condition");
+const va = runScenario("ord-1004", "CAA-26-1051-va-report.pdf", "application/pdf", "sha256-report-review-1004-va", "va mpr review question");
 const estate = runScenario("ord-demo-private", "CAS-PRIVATE-2601-estate-report.pdf", "application/pdf", "sha256-report-review-estate", "estate retrospective");
 const clean = runScenario("ord-demo-ready", "CAA-26-1061-clean-desktop.pdf", "application/pdf", "sha256-report-review-clean", "clean");
 const priorRevision = runScenario("ord-1012", "CAA-26-1059-report-v1.pdf", "application/pdf", "sha256-report-review-1012-v1", "conventional inconsistency");
@@ -47,11 +48,12 @@ const revised = priorRevision
   ? runScenario("ord-1012", "CAA-26-1059-revised-report-v2.pdf", "application/pdf", "sha256-report-review-1012-v2", "revised clean", [priorRevision.reportVersion])
   : null;
 
-const scenarioResults = [conventional, fha, estate, clean, priorRevision, revised].filter((result): result is ReportIngestionResult & { reportVersion: AppraisalReportVersion; reviewResult: ReportReviewResult } => Boolean(result));
+const scenarioResults = [conventional, fha, va, estate, clean, priorRevision, revised].filter((result): result is ReportIngestionResult & { reportVersion: AppraisalReportVersion; reviewResult: ReportReviewResult } => Boolean(result));
 
 export const demoReportReviewScenarios = [
   "Conventional report with calculation inconsistencies",
   "FHA report with missing or conflicting condition commentary",
+  "VA report with MPR-related reviewer question and repair consistency check",
   "Estate retrospective appraisal with effective-date conflict",
   "Clean report with mostly passed checks",
   "Revised report resolving prior findings"

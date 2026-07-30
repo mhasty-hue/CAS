@@ -1,6 +1,6 @@
 import { defaultOrderFormTemplate } from "@/data/demo";
 import { getPermissions } from "@/lib/permissions";
-import { createSupabaseBrowserClient } from "@/lib/supabase";
+import { createSupabaseBrowserClient, type CasSupabaseClient } from "@/lib/supabase";
 import type {
   AccountingEntry,
   AppraiserProfile,
@@ -85,12 +85,26 @@ function toUserRole(role: string | null | undefined): UserRole {
   return roles.includes(normalized as UserRole) ? (normalized as UserRole) : "office_staff";
 }
 
-function requireSupabaseClient() {
-  const client = createSupabaseBrowserClient();
+function requireSupabaseClient(configuredClient?: CasSupabaseClient) {
+  const client = configuredClient ?? createSupabaseBrowserClient();
   if (!client) {
     throw new Error("Supabase is not configured. Set Supabase environment keys or enable demo mode.");
   }
   return client;
+}
+
+async function getAuthenticatedUser(client: CasSupabaseClient) {
+  const {
+    data: { session }
+  } = await client.auth.getSession();
+
+  if (session?.user) return session.user;
+
+  const {
+    data: { user }
+  } = await client.auth.getUser();
+
+  return user ?? null;
 }
 
 function readRows<T>(label: string, result: { data: T[] | null; error: { message: string } | null }) {
@@ -322,8 +336,14 @@ function mapCompanyUser(profile: UserProfileRow, member: OrganizationMemberRow, 
 export class SupabaseCasRepository implements CasRepository {
   mode = "supabase" as const;
 
+  constructor(private readonly configuredClient?: CasSupabaseClient) {}
+
+  private getClient() {
+    return requireSupabaseClient(this.configuredClient);
+  }
+
   async loadBootstrapData(organizationId?: string): Promise<CasBootstrapData> {
-    const client = requireSupabaseClient();
+    const client = this.getClient();
 
     const orgId = organizationId ?? (await this.resolveActiveOrganizationId());
     if (!orgId) {
@@ -488,13 +508,10 @@ export class SupabaseCasRepository implements CasRepository {
   }
 
   async loadAuthContext(): Promise<CasAuthContext> {
-    const client = requireSupabaseClient();
+    const client = this.getClient();
+    const authUser = await getAuthenticatedUser(client);
 
-    const {
-      data: { session }
-    } = await client.auth.getSession();
-
-    if (!session?.user) {
+    if (!authUser) {
       return {
         mode: "supabase",
         isDemo: false,
@@ -506,8 +523,8 @@ export class SupabaseCasRepository implements CasRepository {
     }
 
     const [profileResult, membersResult] = await Promise.all([
-      client.from("user_profiles").select("*").eq("id", session.user.id).maybeSingle(),
-      client.from("organization_members").select("*").eq("user_id", session.user.id)
+      client.from("user_profiles").select("*").eq("id", authUser.id).maybeSingle(),
+      client.from("organization_members").select("*").eq("user_id", authUser.id)
     ]);
 
     const profile = readMaybe("current user profile", profileResult);
@@ -534,9 +551,9 @@ export class SupabaseCasRepository implements CasRepository {
     const activeMembership = memberships.find((membership) => membership.status === "active") ?? memberships[0];
     const role = activeMembership?.role ?? "office_staff";
     const fallbackPermissions = getPermissions({
-      id: session.user.id,
-      name: profile?.full_name ?? session.user.email ?? "CAS user",
-      email: session.user.email ?? profile?.email ?? "",
+      id: authUser.id,
+      name: profile?.full_name ?? authUser.email ?? "CAS user",
+      email: authUser.email ?? profile?.email ?? "",
       role,
       organizationId: activeMembership?.organization.id ?? "",
       title: role.replaceAll("_", " ")
@@ -547,9 +564,9 @@ export class SupabaseCasRepository implements CasRepository {
       mode: "supabase",
       isDemo: false,
       user: {
-        id: session.user.id,
-        name: profile?.full_name ?? session.user.email ?? "CAS user",
-        email: profile?.email ?? session.user.email ?? "",
+        id: authUser.id,
+        name: profile?.full_name ?? authUser.email ?? "CAS user",
+        email: profile?.email ?? authUser.email ?? "",
         role,
         organizationId: activeMembership?.organization.id ?? "",
         title: role.replaceAll("_", " ")
@@ -561,15 +578,12 @@ export class SupabaseCasRepository implements CasRepository {
   }
 
   private async resolveActiveOrganizationId() {
-    const client = requireSupabaseClient();
+    const client = this.getClient();
+    const authUser = await getAuthenticatedUser(client);
 
-    const {
-      data: { session }
-    } = await client.auth.getSession();
+    if (!authUser) return null;
 
-    if (!session?.user) return null;
-
-    const result = await client.from("organization_members").select("organization_id").eq("user_id", session.user.id).eq("status", "active").limit(1);
+    const result = await client.from("organization_members").select("organization_id").eq("user_id", authUser.id).eq("status", "active").limit(1);
     return readRows("active organization", result)[0]?.organization_id ?? null;
   }
 }
