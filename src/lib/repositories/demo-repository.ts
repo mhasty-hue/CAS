@@ -1,4 +1,5 @@
 import { appraisers, calendarPreferences, clientProfiles, companyUsers, defaultOrderFormTemplate, orders, vendors } from "@/data/demo";
+import { demoReportVersions } from "@/data/report-review";
 import {
   accountingEntries,
   automationRules,
@@ -60,6 +61,7 @@ export class DemoCasRepository implements CasRepository {
       orderMessages,
       revisionRequests,
       reportSubmissions,
+      reportVersions: demoReportVersions,
       deliveryRecords,
       documentAuditEvents,
       orderFormTemplate: defaultOrderFormTemplate,

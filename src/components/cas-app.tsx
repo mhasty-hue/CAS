@@ -33,7 +33,7 @@ import {
   webhookEvents,
   workflowTasks
 } from "@/data/platform";
-import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationTemplate, Order, OrderFormTemplate, OrderIntakePrefill, OrderStatus, Organization, OrganizationInvitation, OrganizationOrderStatus, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, DocumentVisibility, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationTemplate, Order, OrderFormTemplate, OrderIntakePrefill, OrderStatus, Organization, OrganizationInvitation, OrganizationOrderStatus, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
 import type { AppraisalReportVersion, IngestionSourceFile, ReportReviewResult, ReviewFindingStatus, ReviewSeverity } from "@/types/report-review";
 import { loadCasAuthContext } from "@/lib/auth/context";
 import { createDeliveryRecord, markDeliveredFilesClientVisible } from "@/lib/delivery/service";
@@ -45,7 +45,8 @@ import { clonePublicDemoFixture, getPublicDemoDefaultUserId, getPublicDemoRoleBy
 import { createDemoOrderStatuses, statusUsageCount } from "@/lib/orders/status-config";
 import { applyAwardedVendorFee, sanitizeOrdersForUser } from "@/lib/orders/fees";
 import { publicRequestToOrderSeed } from "@/lib/public-intake/service";
-import { simulateOrderDocumentUpload } from "@/lib/storage/paths";
+import { categoryForFileName, isReportCategory, simulateOrderDocumentUpload } from "@/lib/storage/paths";
+import { deliverOrderReportFromSupabase, requestDocumentSignedUrl, submitReportPackageToSupabase, uploadOrderDocumentToSupabase } from "@/lib/storage/provider";
 import { createOrderMessage } from "@/lib/messaging/service";
 import { applyPayrollSnapshot, calculatePayrollSnapshot } from "@/lib/accounting/payroll";
 import { ingestReportUpload } from "@/lib/report-review/ingestion";
@@ -118,6 +119,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
   const [selectedOrderId, setSelectedOrderId] = useState(orders[0].id);
   const [publicDemoStarted, setPublicDemoStarted] = useState(!publicDemoEnabled);
   const [demoNotice, setDemoNotice] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
   const [commandOpen, setCommandOpen] = useState(false);
   const [globalQuery, setGlobalQuery] = useState("");
   const [operationsNow, setOperationsNow] = useState<Date | null>(null);
@@ -305,7 +307,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
         setOrderMessageList(bootstrap.orderMessages);
         setRevisionRequestList(bootstrap.revisionRequests);
         setReportSubmissionList(bootstrap.reportSubmissions);
-        setReportVersionList([]);
+        setReportVersionList(bootstrap.reportVersions);
         setReportReviewResultList([]);
         setDeliveryRecordList(bootstrap.deliveryRecords);
         setDocumentAuditEventList(bootstrap.documentAuditEvents);
@@ -1588,9 +1590,74 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     setDocumentAuditEventList((current) => [event, ...current]);
   }
 
-  function handleUploadDocument(orderId: string, category: DocumentCategory) {
+  function upsertManagedDocuments(documents: ManagedDocument[]) {
+    if (!documents.length) return;
+    const nextIds = new Set(documents.map((document) => document.id));
+    setManagedDocumentList((current) => {
+      const existingById = new Map(current.map((document) => [document.id, document]));
+      const mergedDocuments = documents.map((document) => ({
+        ...document,
+        versions: document.versions.length ? document.versions : existingById.get(document.id)?.versions ?? []
+      }));
+      return [...mergedDocuments, ...current.filter((document) => !nextIds.has(document.id))];
+    });
+  }
+
+  function sourceFilesFromDocuments(documents: ManagedDocument[]): IngestionSourceFile[] {
+    return documents.map((document) => ({
+      id: document.versions[0]?.id ?? document.id,
+      fileName: document.fileName,
+      mimeType: document.fileType,
+      sizeBytes: document.fileSizeBytes,
+      storagePath: document.storagePath,
+      checksum: document.checksum,
+      uploadedBy: document.uploaderName,
+      uploadedAt: document.uploadedAt
+    }));
+  }
+
+  async function uploadProductionFiles(order: Order, files: File[], category?: DocumentCategory, visibility?: DocumentVisibility) {
+    const uploaded: ManagedDocument[] = [];
+    for (const file of files) {
+      const uploadCategory = category ?? categoryForFileName(file.name);
+      const result = await uploadOrderDocumentToSupabase({
+        orderId: order.id,
+        category: uploadCategory,
+        file,
+        visibility,
+        createReportVersion: isReportCategory(uploadCategory)
+      });
+      uploaded.push(result.document);
+    }
+    upsertManagedDocuments(uploaded);
+    if (uploaded.length) {
+      updateOrder(order.id, (currentOrder) => ({
+        ...currentOrder,
+        documents: currentOrder.documents + uploaded.length,
+        lastUpdate: `${uploaded.length} document${uploaded.length === 1 ? "" : "s"} uploaded`,
+        timeline: [{ label: "Document uploaded", detail: uploaded.map((document) => document.displayName).join(", "), at: "Just now", actor: activeUser.name }, ...currentOrder.timeline]
+      }));
+      setActionNotice(`${uploaded.length} file${uploaded.length === 1 ? "" : "s"} stored in private Supabase Storage.`);
+    }
+    return uploaded;
+  }
+
+  async function handleUploadDocument(orderId: string, category: DocumentCategory, files: File[] = [], visibility?: DocumentVisibility) {
     const order = orderList.find((item) => item.id === orderId);
     if (!order) return;
+    if (!demoMode) {
+      if (!files.length) {
+        setActionNotice("Choose one or more files before uploading to production storage.");
+        return;
+      }
+      try {
+        setActionNotice("Uploading file bytes to private Supabase Storage...");
+        await uploadProductionFiles(order, files, category, visibility);
+      } catch (error) {
+        setActionNotice(error instanceof Error ? error.message : "CAS could not upload that file.");
+      }
+      return;
+    }
     const extension = category === "Appraisal XML" ? "xml" : category === "ENV file" ? "env" : "pdf";
     const fileName = `${order.fileNumber}-${category.toLowerCase().replaceAll(" ", "-")}.${extension}`;
     const document = simulateOrderDocumentUpload({ organization: activeOrganization, order, user: activeUser, category, fileName });
@@ -1636,7 +1703,50 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, documentId, event: "Restored", actor: activeUser.name, at: "Just now", detail: "Document restored from archive." });
   }
 
-  function handleReplaceDocumentVersion(documentId: string) {
+  async function handleOpenSignedUrl(documentId: string, versionId?: string) {
+    if (demoMode) {
+      setActionNotice("This demo document does not contain stored production bytes. Signed downloads are active only in Supabase mode.");
+      return;
+    }
+    try {
+      const signedUrl = await requestDocumentSignedUrl(documentId, versionId);
+      window.open(signedUrl, "_blank", "noopener,noreferrer");
+      setActionNotice("A short-lived signed download was created for the authorized document.");
+    } catch (error) {
+      setActionNotice(error instanceof Error ? error.message : "CAS could not create a signed download.");
+    }
+  }
+
+  async function handleReplaceDocumentVersion(documentId: string, files: File[] = []) {
+    if (!demoMode) {
+      const document = managedDocumentList.find((item) => item.id === documentId);
+      if (!document?.orderId) {
+        setActionNotice("CAS could not find the order for that document version.");
+        return;
+      }
+      const file = files[0];
+      if (!file) {
+        setActionNotice("Choose a replacement file before creating a new production version.");
+        return;
+      }
+      try {
+        setActionNotice("Uploading immutable replacement version to private storage...");
+        const result = await uploadOrderDocumentToSupabase({
+          orderId: document.orderId,
+          category: document.category,
+          file,
+          documentId,
+          visibility: document.visibility,
+          createReportVersion: isReportCategory(document.category)
+        });
+        upsertManagedDocuments([result.document]);
+        addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, documentId, event: "Version replaced", actor: activeUser.name, at: "Just now", detail: "New production document version uploaded." });
+        setActionNotice(`${file.name} is now stored as version ${result.document.versionNumber}.`);
+      } catch (error) {
+        setActionNotice(error instanceof Error ? error.message : "CAS could not upload the replacement version.");
+      }
+      return;
+    }
     setManagedDocumentList((current) =>
       current.map((document) => {
         if (document.id !== documentId) return document;
@@ -1668,8 +1778,23 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     recordDemoSimulation("Demo report version replaced locally. No production storage object was overwritten.");
   }
 
-  function handleSubmitReport(orderId: string) {
+  async function handleSubmitReport(orderId: string) {
     const submittedOrder = orderList.find((order) => order.id === orderId);
+    if (!submittedOrder) return;
+
+    if (!demoMode) {
+      try {
+        setActionNotice("Submitting stored report package for review...");
+        const result = await submitReportPackageToSupabase(orderId);
+        setReportSubmissionList((current) => [result.submission, ...current.filter((submission) => submission.id !== result.submission.id)]);
+        handleStatusChange(orderId, "Submitted");
+        setActionNotice(result.message);
+      } catch (error) {
+        setActionNotice(error instanceof Error ? error.message : "CAS could not submit that report package.");
+      }
+      return;
+    }
+
     const orderDocuments = managedDocumentList.filter((document) => document.orderId === orderId);
     const submission: ReportSubmission = {
       id: `submission-${Date.now()}`,
@@ -1688,61 +1813,53 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     setReportSubmissionList((current) => [submission, ...current]);
     handleStatusChange(orderId, "Submitted");
     setOrderMessageList((current) => [createOrderMessage(orderList.find((order) => order.id === orderId) ?? orderList[0], activeUser, "System activity", "Final report package submitted for review."), ...current]);
-    if (submittedOrder) {
-      const taskId = `task-review-${Date.now()}`;
-      addWorkflowTask({
-        id: taskId,
-        organizationId: activeOrganization.id,
-        relatedOrderId: submittedOrder.id,
-        relatedClient: submittedOrder.client,
-        title: `Review submitted report ${submittedOrder.fileNumber}`,
-        description: "Complete the report review checklist, request revisions if needed, or approve for delivery.",
-        assignedTo: submittedOrder.reviewer,
-        assignedRole: "reviewer",
-        createdBy: "Report submitted review routing",
-        dueDate: "2026-07-09",
-        priority: submittedOrder.priority === "Rush" ? "Rush" : "High",
-        status: "Open",
-        source: "Automation",
-        automationRuleId: "auto-report-submitted",
-        auditHistory: [{ id: `${taskId}-audit`, action: "Review task created from submitted report", actor: "CAS Automation", at: "Just now" }]
-      });
-      queueNotification({
-        id: `notifq-review-${Date.now()}`,
-        organizationId: activeOrganization.id,
-        recipient: submittedOrder.reviewer,
-        recipientRole: "reviewer",
-        eventType: "report_submitted",
-        channel: "In-app",
-        status: "Pending",
-        attemptCount: 0,
-        relatedOrderId: submittedOrder.id,
-        relatedTaskId: taskId,
-        digestGroup: "review-desk",
-        queuedAt: "Just now",
-        subject: "Report ready for review",
-        preview: `${submittedOrder.fileNumber} was submitted and needs review routing.`
-      });
-    }
+    const taskId = `task-review-${Date.now()}`;
+    addWorkflowTask({
+      id: taskId,
+      organizationId: activeOrganization.id,
+      relatedOrderId: submittedOrder.id,
+      relatedClient: submittedOrder.client,
+      title: `Review submitted report ${submittedOrder.fileNumber}`,
+      description: "Complete the report review checklist, request revisions if needed, or approve for delivery.",
+      assignedTo: submittedOrder.reviewer,
+      assignedRole: "reviewer",
+      createdBy: "Report submitted review routing",
+      dueDate: "2026-07-09",
+      priority: submittedOrder.priority === "Rush" ? "Rush" : "High",
+      status: "Open",
+      source: "Automation",
+      automationRuleId: "auto-report-submitted",
+      auditHistory: [{ id: `${taskId}-audit`, action: "Review task created from submitted report", actor: "CAS Automation", at: "Just now" }]
+    });
+    queueNotification({
+      id: `notifq-review-${Date.now()}`,
+      organizationId: activeOrganization.id,
+      recipient: submittedOrder.reviewer,
+      recipientRole: "reviewer",
+      eventType: "report_submitted",
+      channel: "In-app",
+      status: "Pending",
+      attemptCount: 0,
+      relatedOrderId: submittedOrder.id,
+      relatedTaskId: taskId,
+      digestGroup: "review-desk",
+      queuedAt: "Just now",
+      subject: "Report ready for review",
+      preview: `${submittedOrder.fileNumber} was submitted and needs review routing.`
+    });
     recordDemoSimulation("Demo report submitted locally. No reviewer email, LOS callback, or production document delivery was sent.");
   }
 
-  function getReportReviewSourceFiles(order: Order, corrected = false): IngestionSourceFile[] {
-    const reviewDocuments = managedDocumentList.filter((document) =>
+  function getReportReviewSourceFiles(order: Order, corrected = false, sourceDocuments?: ManagedDocument[]): IngestionSourceFile[] {
+    const reviewDocuments = sourceDocuments ?? managedDocumentList.filter((document) =>
       document.orderId === order.id &&
       ["Appraisal report PDF", "Appraisal XML", "UAD 3.6 data package", "Photos", "Sketch", "Map", "Addenda"].includes(document.category)
     );
-    if (reviewDocuments.length && !corrected) {
-      return reviewDocuments.map((document) => ({
-        id: document.id,
-        fileName: document.fileName,
-        mimeType: document.fileType,
-        sizeBytes: document.fileSizeBytes,
-        storagePath: document.storagePath,
-        checksum: document.checksum,
-        uploadedBy: document.uploaderName,
-        uploadedAt: document.uploadedAt
-      }));
+    if (reviewDocuments.length && (!corrected || !demoMode || sourceDocuments?.length)) {
+      return sourceFilesFromDocuments(reviewDocuments);
+    }
+    if (!demoMode) {
+      return [];
     }
 
     const nextVersion = Math.max(0, ...reportVersionList.filter((version) => version.orderId === order.id).map((version) => version.versionNumber)) + 1;
@@ -1792,16 +1909,46 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
         ...currentOrder.auditTrail
       ]
     }));
-    recordDemoSimulation(
-      result.reviewResult.aiProviderStatus === "completed"
-        ? "Demo report review ran locally using deterministic checks and the fictional CAS demo AI pilot. No external AI provider or production document parser was called."
-        : "Demo report review ran locally using deterministic checks. No external AI provider or production document parser was called."
-    );
+    if (demoMode) {
+      recordDemoSimulation(
+        result.reviewResult.aiProviderStatus === "completed"
+          ? "Demo report review ran locally using deterministic checks and the fictional CAS demo AI pilot. No external AI provider or production document parser was called."
+          : "Demo report review ran locally using deterministic checks. No external AI provider or production document parser was called."
+      );
+    } else {
+      setActionNotice(`${actionLabel}: ${result.reviewResult.summary.openFindings} open finding(s) from stored report file metadata.`);
+    }
   }
 
-  function handleRunReportReview(orderId: string) {
+  async function handleRunReportReview(orderId: string, files: File[] = []) {
     const order = orderList.find((candidate) => candidate.id === orderId);
     if (!order) return;
+    let sourceDocuments: ManagedDocument[] | undefined;
+    if (!demoMode) {
+      try {
+        if (files.length) {
+          setActionNotice("Uploading report file bytes before running checks...");
+          sourceDocuments = await uploadProductionFiles(order, files, undefined, "Reviewer");
+        }
+        const sourceFiles = getReportReviewSourceFiles(order, false, sourceDocuments);
+        if (!sourceFiles.length) {
+          setActionNotice("Upload a stored report PDF, XML, ENV, or package before running production review checks.");
+          return;
+        }
+        const result = ingestReportUpload({
+          order,
+          organization: activeOrganization,
+          user: activeUser,
+          sourceFiles,
+          runMode: "pre_submission",
+          existingVersions: reportVersionList.filter((version) => version.orderId === order.id)
+        });
+        recordReportReviewResult(order, result, "Report QC checks run");
+      } catch (error) {
+        setActionNotice(error instanceof Error ? error.message : "CAS could not run report checks.");
+      }
+      return;
+    }
     const result = ingestReportUpload({
       order,
       organization: activeOrganization,
@@ -1814,9 +1961,33 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     recordReportReviewResult(order, result, "Report QC checks run");
   }
 
-  function handleUploadCorrectedReport(orderId: string) {
+  async function handleUploadCorrectedReport(orderId: string, files: File[] = []) {
     const order = orderList.find((candidate) => candidate.id === orderId);
     if (!order) return;
+    let sourceDocuments: ManagedDocument[] | undefined;
+    if (!demoMode) {
+      try {
+        if (!files.length) {
+          setActionNotice("Choose the corrected report package before creating the next production version.");
+          return;
+        }
+        setActionNotice("Uploading corrected report version to private storage...");
+        sourceDocuments = await uploadProductionFiles(order, files, undefined, "Reviewer");
+        const result = ingestReportUpload({
+          order,
+          organization: activeOrganization,
+          user: activeUser,
+          sourceFiles: getReportReviewSourceFiles(order, true, sourceDocuments),
+          runMode: "revision_compare",
+          existingVersions: reportVersionList.filter((version) => version.orderId === order.id),
+          scenarioHint: "revised corrected"
+        });
+        recordReportReviewResult(order, result, "Corrected report version reviewed");
+      } catch (error) {
+        setActionNotice(error instanceof Error ? error.message : "CAS could not upload the corrected report.");
+      }
+      return;
+    }
     const result = ingestReportUpload({
       order,
       organization: activeOrganization,
@@ -1848,9 +2019,22 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     recordDemoSimulation("Demo finding marked client-visible locally. Nothing was delivered until the reviewer releases the report.");
   }
 
-  function handleDeliverReport(orderId: string) {
+  async function handleDeliverReport(orderId: string) {
     const order = orderList.find((item) => item.id === orderId);
     if (!order) return;
+    if (!demoMode) {
+      try {
+        setActionNotice("Creating secure delivery from private Supabase Storage...");
+        const result = await deliverOrderReportFromSupabase(orderId);
+        setDeliveryRecordList((current) => [result.delivery, ...current.filter((delivery) => delivery.id !== result.delivery.id)]);
+        upsertManagedDocuments(result.documents);
+        handleStatusChange(orderId, "Delivered");
+        setActionNotice(result.message);
+      } catch (error) {
+        setActionNotice(error instanceof Error ? error.message : "CAS could not release that report.");
+      }
+      return;
+    }
     const delivery = createDeliveryRecord(order, activeUser, managedDocumentList);
     setDeliveryRecordList((current) => [delivery, ...current]);
     setManagedDocumentList((current) => markDeliveredFilesClientVisible(current, delivery));
@@ -1955,6 +2139,11 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
           showRoleSwitcher={!publicDemoActive}
         />
         <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+          {actionNotice && (
+            <div className="rounded-md border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+              {actionNotice}
+            </div>
+          )}
           {activeView === "dashboard" && operationsCenterModel && (
             <DashboardView
               model={operationsCenterModel}
@@ -2001,10 +2190,12 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
               reportVersions={reportVersionList}
               reportReviewResults={reportReviewResultList}
               deliveryRecords={deliveryRecordList}
+              realUploadsEnabled={!demoMode}
               onUploadDocument={handleUploadDocument}
               onArchiveDocument={handleArchiveDocument}
               onRestoreDocument={handleRestoreDocument}
               onReplaceDocumentVersion={handleReplaceDocumentVersion}
+              onOpenSignedUrl={handleOpenSignedUrl}
               onSubmitReport={handleSubmitReport}
               onDeliverReport={handleDeliverReport}
               onSendMessage={handleSendOrderMessage}

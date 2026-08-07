@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Archive, CheckCircle2, Download, Eye, FileArchive, FileCheck2, FileSearch, History, RotateCcw, ShieldCheck, Tags, UploadCloud } from "lucide-react";
-import type { DeliveryRecord, DocumentCategory, ManagedDocument, Order, PortalUser, RequiredDocumentRule } from "@/types/domain";
+import type { DeliveryRecord, DocumentCategory, DocumentVisibility, ManagedDocument, Order, PortalUser, RequiredDocumentRule } from "@/types/domain";
 import { canArchiveDocuments, canDeleteDocuments, canDownloadXML, canManageDocumentVisibility, canUploadOrderDocuments, canViewClientDocuments, canViewInternalDocuments, canViewWorkfileDocuments } from "@/lib/permissions";
 import { requiredDocumentChecklist, searchableDocumentText } from "@/lib/documents/rules";
 import { validateUploadFile } from "@/lib/storage/paths";
@@ -51,10 +51,12 @@ export function OrderDocumentWorkspace({
   documents,
   requiredRules,
   deliveryRecords,
+  realUploadsEnabled,
   onUploadDocument,
   onArchiveDocument,
   onRestoreDocument,
   onReplaceDocumentVersion,
+  onOpenSignedUrl,
   onSubmitReport,
   onDeliverReport
 }: {
@@ -63,10 +65,12 @@ export function OrderDocumentWorkspace({
   documents: ManagedDocument[];
   requiredRules: RequiredDocumentRule[];
   deliveryRecords: DeliveryRecord[];
-  onUploadDocument: (orderId: string, category: DocumentCategory) => void;
+  realUploadsEnabled?: boolean;
+  onUploadDocument: (orderId: string, category: DocumentCategory, files?: File[], visibility?: DocumentVisibility) => void;
   onArchiveDocument: (documentId: string) => void;
   onRestoreDocument: (documentId: string) => void;
-  onReplaceDocumentVersion: (documentId: string) => void;
+  onReplaceDocumentVersion: (documentId: string, files?: File[]) => void;
+  onOpenSignedUrl?: (documentId: string, versionId?: string) => void;
   onSubmitReport: (orderId: string) => void;
   onDeliverReport: (orderId: string) => void;
 }) {
@@ -74,6 +78,8 @@ export function OrderDocumentWorkspace({
   const [categoryFilter, setCategoryFilter] = useState("All categories");
   const [visibilityFilter, setVisibilityFilter] = useState("All visibility");
   const [selectedCategory, setSelectedCategory] = useState<DocumentCategory>("Appraisal report PDF");
+  const [selectedVisibility, setSelectedVisibility] = useState<DocumentVisibility>("Organization internal");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const canUpload = canUploadOrderDocuments(user);
   const canArchive = canArchiveDocuments(user);
   const canDelete = canDeleteDocuments(user);
@@ -92,33 +98,87 @@ export function OrderDocumentWorkspace({
       .filter((document) => searchableDocumentText(document).includes(needle))
       .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
   }, [categoryFilter, documents, order.id, search, user, visibilityFilter]);
-  const validation = validateUploadFile(selectedCategory === "Appraisal XML" ? "demo-upload.xml" : "demo-upload.pdf", 480000);
+  const validations = selectedFiles.length
+    ? selectedFiles.map((file) => validateUploadFile(file.name, file.size, file.type))
+    : [validateUploadFile(selectedCategory === "Appraisal XML" ? "demo-upload.xml" : "demo-upload.pdf", 480000)];
+  const validation = validations.find((item) => !item.ok) ?? validations[0];
   const currentDelivery = deliveryRecords.find((delivery) => delivery.orderId === order.id);
+  const uploadDisabled = !canUpload || !validation.ok || Boolean(realUploadsEnabled && !selectedFiles.length);
+
+  function addFiles(files: FileList | File[]) {
+    setSelectedFiles(Array.from(files));
+  }
 
   return (
     <div className="grid gap-4">
-      <div className="rounded-md border border-dashed border-brand-200 bg-brand-50 p-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div
+        className="rounded-md border border-dashed border-brand-200 bg-brand-50 p-4"
+        onDragOver={(event) => {
+          if (!realUploadsEnabled) return;
+          event.preventDefault();
+        }}
+        onDrop={(event) => {
+          if (!realUploadsEnabled) return;
+          event.preventDefault();
+          addFiles(event.dataTransfer.files);
+        }}
+      >
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-brand-900">
               <UploadCloud className="h-4 w-4" />
               Secure upload workspace
             </div>
             <p className="mt-1 text-sm text-brand-800">
-              Files stay private by default. CAS checks file type, keeps versions organized, and limits downloads to the right people.
+              {realUploadsEnabled
+                ? "Drop files here or browse. CAS stores bytes in private Supabase Storage and keeps metadata, versions, and downloads permission controlled."
+                : "Files stay private by default. Demo mode creates fictional upload metadata without using production storage."}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <select className="control h-9" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value as DocumentCategory)}>
               {categoryOptions.map((category) => <option key={category}>{category}</option>)}
             </select>
-            <button className="primary-button disabled:opacity-50" disabled={!canUpload || !validation.ok} onClick={() => onUploadDocument(order.id, selectedCategory)}>
+            {realUploadsEnabled && (
+              <select className="control h-9" value={selectedVisibility} onChange={(event) => setSelectedVisibility(event.target.value as DocumentVisibility)}>
+                <option>Organization internal</option>
+                <option>Assigned appraiser</option>
+                <option>Reviewer</option>
+                <option>Lender/client</option>
+              </select>
+            )}
+            {realUploadsEnabled && (
+              <label className="secondary-button h-9 cursor-pointer">
+                <UploadCloud className="h-4 w-4" />
+                Browse
+                <input className="hidden" type="file" multiple onChange={(event) => addFiles(event.target.files ?? [])} />
+              </label>
+            )}
+            <button
+              className="primary-button disabled:opacity-50"
+              disabled={uploadDisabled}
+              onClick={() => {
+                onUploadDocument(order.id, selectedCategory, selectedFiles, selectedVisibility);
+                if (realUploadsEnabled) setSelectedFiles([]);
+              }}
+            >
               <UploadCloud className="h-4 w-4" />
-              Simulate upload
+              {realUploadsEnabled ? "Upload" : "Simulate upload"}
             </button>
           </div>
         </div>
-        <div className="mt-3 text-xs text-brand-700">{validation.message}</div>
+        <div className="mt-3 grid gap-2 text-xs text-brand-700">
+          <div>{validation.message}</div>
+          {selectedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {selectedFiles.map((file) => (
+                <span key={`${file.name}-${file.size}`} className="rounded-full border border-brand-200 bg-white px-2 py-1">
+                  {file.name} - {bytesLabel(file.size)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-2 sm:grid-cols-4">
@@ -180,9 +240,21 @@ export function OrderDocumentWorkspace({
                 <div className="mt-2 text-xs text-slate-500">{document.visibility} - {document.source} - uploaded {formatDate(document.uploadedAt)} by {document.uploaderName}</div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button className="secondary-button h-8 px-2 text-xs"><Eye className="h-4 w-4" /> Preview</button>
-                <button className="secondary-button h-8 px-2 text-xs"><Download className="h-4 w-4" /> Signed URL</button>
-                <button className="secondary-button h-8 px-2 text-xs" onClick={() => onReplaceDocumentVersion(document.id)}><History className="h-4 w-4" /> New version</button>
+                <button className="secondary-button h-8 px-2 text-xs" onClick={() => onOpenSignedUrl?.(document.id)}><Eye className="h-4 w-4" /> Preview</button>
+                <button className="secondary-button h-8 px-2 text-xs" onClick={() => onOpenSignedUrl?.(document.id)}><Download className="h-4 w-4" /> Signed URL</button>
+                {realUploadsEnabled ? (
+                  <label className="secondary-button h-8 cursor-pointer px-2 text-xs">
+                    <History className="h-4 w-4" />
+                    New version
+                    <input className="hidden" type="file" onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) onReplaceDocumentVersion(document.id, [file]);
+                      event.currentTarget.value = "";
+                    }} />
+                  </label>
+                ) : (
+                  <button className="secondary-button h-8 px-2 text-xs" onClick={() => onReplaceDocumentVersion(document.id)}><History className="h-4 w-4" /> New version</button>
+                )}
                 {document.status === "Archived" ? (
                   <button className="secondary-button h-8 px-2 text-xs" onClick={() => onRestoreDocument(document.id)}><RotateCcw className="h-4 w-4" /> Restore</button>
                 ) : (

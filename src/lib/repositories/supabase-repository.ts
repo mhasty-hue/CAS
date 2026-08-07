@@ -25,16 +25,27 @@ import type {
   ClientContactRow,
   ClientFeeDefaultRow,
   ClientRow,
+  DocumentAuditEventRow,
+  DocumentRow,
+  DocumentVersionRow,
+  AppraisalReportVersionRow,
   InvoiceRow,
   OrderFormTemplateRow,
   OrderRow,
   OrganizationMemberRow,
   OrganizationRow,
+  ReportDeliveryRow,
+  ReportSubmissionRow,
+  RequiredDocumentRuleRow,
   RolePermissionRow,
   RoleRow,
   UserProfileRow,
   VendorProfileRow
 } from "@/types/database";
+import { buildDemoNormalizedReport, identifyReportFileKind } from "@/lib/report-review/ingestion";
+import { selectReportProfile } from "@/lib/report-review/profiles";
+import { mapDeliveryRecord, mapDocumentAuditEvent, mapManagedDocument, mapReportSubmission, mapRequiredDocumentRule } from "@/lib/storage/mappers";
+import type { AppraisalReportVersion, IngestionSourceFile, ReviewOverlayId } from "@/types/report-review";
 import type { CasAuthContext, CasBootstrapData, CasRepository } from "./types";
 
 const orderStatuses: OrderStatus[] = [
@@ -321,6 +332,74 @@ function mapOrderFormTemplate(row: OrderFormTemplateRow | undefined): OrderFormT
   };
 }
 
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function sourceFilesFromReportRow(row: AppraisalReportVersionRow): IngestionSourceFile[] {
+  const sourceFiles = Array.isArray(row.source_files) ? row.source_files : [];
+  return sourceFiles.flatMap((item, index) => {
+    const record = jsonRecord(item);
+    const fileName = typeof record.fileName === "string" ? record.fileName : `report-source-${index + 1}.pdf`;
+    const mimeType = typeof record.mimeType === "string" ? record.mimeType : "application/pdf";
+    const storagePath = typeof record.storagePath === "string" ? record.storagePath : "";
+    if (!storagePath) return [];
+    return [{
+      id: typeof record.documentVersionId === "string" ? record.documentVersionId : typeof record.id === "string" ? record.id : `${row.id}-source-${index + 1}`,
+      fileName,
+      mimeType,
+      sizeBytes: typeof record.sizeBytes === "number" ? record.sizeBytes : 0,
+      storagePath,
+      checksum: typeof record.checksum === "string" ? record.checksum : undefined,
+      uploadedBy: typeof record.uploadedBy === "string" ? record.uploadedBy : row.uploaded_by_name ?? "CAS",
+      uploadedAt: typeof record.uploadedAt === "string" ? record.uploadedAt : row.uploaded_at,
+      kind: identifyReportFileKind(fileName, mimeType)
+    }];
+  });
+}
+
+function reportVersionStatus(status: string): AppraisalReportVersion["status"] {
+  if (status === "extracted") return "Extracted";
+  if (status === "extraction_failed") return "Extraction Failed";
+  if (status === "under_review") return "Under Review";
+  if (status === "approved") return "Approved";
+  if (status === "superseded") return "Superseded";
+  return "Uploaded";
+}
+
+function mapAppraisalReportVersion(row: AppraisalReportVersionRow, order: Order, organization: Organization): AppraisalReportVersion {
+  const sourceFiles = sourceFilesFromReportRow(row);
+  const profile = selectReportProfile(order.productType, sourceFiles[0]?.fileName, sourceFiles[0]?.kind);
+  const systemUser = {
+    id: row.uploaded_by ?? "system",
+    name: row.uploaded_by_name ?? "CAS",
+    email: "",
+    role: "reviewer" as const,
+    organizationId: organization.id,
+    title: "Review workspace"
+  };
+
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    orderId: row.order_id,
+    reportSubmissionId: row.report_submission_id ?? undefined,
+    versionNumber: row.version_number,
+    profileId: profile.id,
+    overlayIds: row.overlay_keys as ReviewOverlayId[],
+    sourceFiles,
+    storagePreserved: true,
+    immutable: true,
+    uploadedBy: row.uploaded_by_name ?? row.uploaded_by ?? "CAS",
+    uploadedAt: row.uploaded_at,
+    createdAt: row.created_at,
+    replacedByVersionId: row.supersedes_report_version_id ?? undefined,
+    status: reportVersionStatus(row.status),
+    extractionSummary: row.extraction_summary ?? "Stored report source files are available for review.",
+    normalizedReport: buildDemoNormalizedReport({ order, organization, user: systemUser, sourceFiles, runMode: "review_queue" }, profile, sourceFiles)
+  };
+}
+
 function mapCompanyUser(profile: UserProfileRow, member: OrganizationMemberRow, role: RoleRow | undefined, permissions: PermissionKey[]): CompanyUser {
   return {
     id: member.id,
@@ -372,6 +451,7 @@ export class SupabaseCasRepository implements CasRepository {
         orderMessages: [],
         revisionRequests: [],
         reportSubmissions: [],
+        reportVersions: [],
         deliveryRecords: [],
         documentAuditEvents: [],
         orderFormTemplate: defaultOrderFormTemplate,
@@ -448,7 +528,7 @@ export class SupabaseCasRepository implements CasRepository {
       return map;
     }, new Map());
 
-    const mappedOrders = orderRows.map((row) => {
+    let mappedOrders = orderRows.map((row) => {
       const order = mapOrder(row, clientsById, appraisersById);
       ordersById.set(order.id, order);
       return order;
@@ -462,8 +542,60 @@ export class SupabaseCasRepository implements CasRepository {
       return [mapCompanyUser(profile, member, role, permissions)];
     });
 
+    const [
+      documentsResult,
+      documentVersionsResult,
+      requiredRulesResult,
+      reportSubmissionsResult,
+      reportVersionsResult,
+      reportDeliveriesResult,
+      documentAuditResult
+    ] = await Promise.all([
+      client.from("documents").select("*").eq("organization_id", orgId),
+      client.from("document_versions").select("*").eq("organization_id", orgId),
+      client.from("required_document_rules").select("*").eq("organization_id", orgId).eq("active", true),
+      client.from("report_submissions").select("*").eq("organization_id", orgId),
+      client.from("appraisal_report_versions").select("*").eq("organization_id", orgId),
+      client.from("report_deliveries").select("*").eq("organization_id", orgId),
+      client.from("document_audit_events").select("*").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(250)
+    ]);
+
+    const documentRows = readRows("documents", documentsResult) as DocumentRow[];
+    const versionRows = readRows("document versions", documentVersionsResult) as DocumentVersionRow[];
+    const managedDocuments = documentRows.map((row) => mapManagedDocument(row, versionRows));
+    const documentsByOrder = managedDocuments.reduce<Map<string, typeof managedDocuments>>((map, document) => {
+      if (!document.orderId) return map;
+      const list = map.get(document.orderId) ?? [];
+      list.push(document);
+      map.set(document.orderId, list);
+      return map;
+    }, new Map());
+    mappedOrders = mappedOrders.map((order) => {
+      const orderDocuments = documentsByOrder.get(order.id) ?? [];
+      return {
+        ...order,
+        documents: orderDocuments.length,
+        documentsList: orderDocuments.map((document) => ({
+          id: document.id,
+          name: document.fileName,
+          type: document.category,
+          status: document.status === "Archived" ? "Missing" : document.status === "Failed upload" ? "Needs review" : "Ready",
+          uploadedBy: document.uploaderName,
+          uploadedAt: document.uploadedAt
+        }))
+      };
+    });
+    const mappedOrganizations = organizationRows.map(mapOrganization);
+    const activeOrganization = mappedOrganizations.find((organization) => organization.id === orgId) ?? mappedOrganizations[0];
+    const reportVersions = activeOrganization
+      ? (readRows("appraisal report versions", reportVersionsResult) as AppraisalReportVersionRow[]).flatMap((row) => {
+          const order = ordersById.get(row.order_id);
+          return order ? [mapAppraisalReportVersion(row, order, activeOrganization)] : [];
+        })
+      : [];
+
     return {
-      organizations: organizationRows.map(mapOrganization),
+      organizations: mappedOrganizations,
       users: companyUsers.map((user) => ({
         id: user.id,
         name: user.name,
@@ -489,13 +621,14 @@ export class SupabaseCasRepository implements CasRepository {
       emailDeliveryRecords: [],
       integrations: [],
       integrationLogs: [],
-      managedDocuments: [],
-      requiredDocumentRules: [],
+      managedDocuments,
+      requiredDocumentRules: (readRows("required document rules", requiredRulesResult) as RequiredDocumentRuleRow[]).map(mapRequiredDocumentRule),
       orderMessages: [],
       revisionRequests: [],
-      reportSubmissions: [],
-      deliveryRecords: [],
-      documentAuditEvents: [],
+      reportSubmissions: (readRows("report submissions", reportSubmissionsResult) as ReportSubmissionRow[]).map(mapReportSubmission),
+      reportVersions,
+      deliveryRecords: (readRows("report deliveries", reportDeliveriesResult) as ReportDeliveryRow[]).map(mapDeliveryRecord),
+      documentAuditEvents: (readRows("document audit events", documentAuditResult) as DocumentAuditEventRow[]).map(mapDocumentAuditEvent),
       orderFormTemplate: mapOrderFormTemplate(templateRows[0]),
       calendarPreferences: calendarRows.map((row) => mapCalendarPreference(row, appraisersById)),
       automationRules: [],

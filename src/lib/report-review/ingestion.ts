@@ -137,7 +137,7 @@ function scenarioForRequest(request: ReportIngestionRequest) {
   return "conventional-inconsistency";
 }
 
-function buildDemoNormalizedReport(request: ReportIngestionRequest, profile: ReviewProfile, sourceFiles: IngestionSourceFile[]): NormalizedAppraisalReport {
+export function buildDemoNormalizedReport(request: ReportIngestionRequest, profile: ReviewProfile, sourceFiles: IngestionSourceFile[]): NormalizedAppraisalReport {
   const source = sourceOrDefault(sourceFiles);
   const scenario = scenarioForRequest(request);
   const order = request.order;

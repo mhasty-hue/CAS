@@ -21,6 +21,7 @@
     "test:operations-center": "node scripts/phase10-5-operations-center-regression.mjs",
     "test:phase10-6": "node scripts/phase10-6-secure-ops-review-packs-regression.mjs",
     "test:phase10-7": "node scripts/phase10-7-review-workspace-regression.mjs",
+    "test:phase10-8": "node scripts/phase10-8-storage-regression.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
