@@ -21,12 +21,16 @@ import {
   XCircle
 } from "lucide-react";
 import type {
+  CommunicationEvent,
   DeliveryRecord,
+  DocumentAuditEvent,
   DocumentCategory,
   DocumentVisibility,
+  EmailDeliveryRecord,
   InspectionInfo,
   ManagedDocument,
   MessageChannel,
+  NotificationQueueItem,
   Order,
   OrderMessage,
   OrderStatus,
@@ -64,6 +68,7 @@ import {
 import { statusDefinitions } from "@/lib/orders/workflow";
 import { getAuthorizedOrderFees, getOrderFinancials } from "@/lib/orders/fees";
 import { canUseCustomerTrackingView, clientTrackingStages, getClientTrackingStage, getOrganizationStatusLabel } from "@/lib/orders/status-config";
+import { buildCommunicationHistory } from "@/lib/notifications/communication-history";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { DetailSection, DueChip, InfoRow, ListOrEmpty, MetricTile, PriorityChip, StatusChip, SummaryItem } from "./shared";
 import { OrderDocumentWorkspace, RequiredDocumentSummary } from "./documents/workspace";
@@ -92,6 +97,10 @@ type OrderDetailPageProps = {
   reportVersions: AppraisalReportVersion[];
   reportReviewResults: ReportReviewResult[];
   deliveryRecords: DeliveryRecord[];
+  notificationQueue: NotificationQueueItem[];
+  emailDeliveryRecords: EmailDeliveryRecord[];
+  communicationEvents: CommunicationEvent[];
+  documentAuditEvents: DocumentAuditEvent[];
   realUploadsEnabled?: boolean;
   onUploadDocument: (orderId: string, category: DocumentCategory, files?: File[], visibility?: DocumentVisibility) => void;
   onArchiveDocument: (documentId: string) => void;
@@ -730,6 +739,10 @@ export function OrderDetailPage({
   reportVersions,
   reportReviewResults,
   deliveryRecords,
+  notificationQueue,
+  emailDeliveryRecords,
+  communicationEvents,
+  documentAuditEvents,
   realUploadsEnabled,
   onUploadDocument,
   onArchiveDocument,
@@ -760,6 +773,19 @@ export function OrderDetailPage({
   const primaryAction = getPrimaryOrderAction(order, user, organization, bids);
   const alert = getOrderDetailAlert(order, user, bids);
   const historyItems = buildPlainOrderHistory(order, user, relationships);
+  const communicationHistory = useMemo(
+    () => buildCommunicationHistory({
+      orderId: order.id,
+      user,
+      communicationEvents,
+      notificationQueue,
+      emailDeliveries: emailDeliveryRecords,
+      messages: orderMessages,
+      deliveries: deliveryRecords,
+      documentAuditEvents
+    }),
+    [communicationEvents, deliveryRecords, documentAuditEvents, emailDeliveryRecords, notificationQueue, order.id, orderMessages, user]
+  );
   const reviewComplete = order.reviewItems.filter((item) => item.complete).length;
   const authorizedFees = getAuthorizedOrderFees(order, user, organization);
   const financials = getOrderFinancials(order);
@@ -998,29 +1024,56 @@ export function OrderDetailPage({
       )}
 
       {activeSection === "delivery" && (
-        <section className="panel p-5">
-          <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
-            <DetailSection icon={UploadCloud} title="Delivery Package">
-              <div className="grid gap-3">
-                <ListOrEmpty
-                  empty="No delivery records yet."
-                  items={deliveryRecords.filter((record) => record.orderId === order.id).map((record) => `${record.deliveredAt} - ${record.recipientName}: ${record.status}`)}
-                />
-                <div className="flex flex-wrap gap-2">
-                  <button className="secondary-button" onClick={() => onSubmitReport(order.id)}><UploadCloud className="h-4 w-4" /> Submit report</button>
-                  <button className="primary-button" onClick={() => onDeliverReport(order.id)}><Send className="h-4 w-4" /> Deliver report</button>
-                  <button className="secondary-button" onClick={() => onStatusChange(order.id, "Completed", "Order administratively completed from delivery tab.")}><CheckCircle2 className="h-4 w-4" /> Complete order</button>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <section className="panel p-5">
+            <div className="grid gap-5">
+              <DetailSection icon={UploadCloud} title="Delivery Package">
+                <div className="grid gap-3">
+                  <ListOrEmpty
+                    empty="No delivery records yet."
+                    items={deliveryRecords.filter((record) => record.orderId === order.id).map((record) => `${record.deliveredAt} - ${record.recipientName}: ${record.status}`)}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button className="secondary-button" onClick={() => onSubmitReport(order.id)}><UploadCloud className="h-4 w-4" /> Submit report</button>
+                    <button className="primary-button" onClick={() => onDeliverReport(order.id)}><Send className="h-4 w-4" /> Deliver report</button>
+                    <button className="secondary-button" onClick={() => onStatusChange(order.id, "Completed", "Order administratively completed from delivery tab.")}><CheckCircle2 className="h-4 w-4" /> Complete order</button>
+                  </div>
                 </div>
-              </div>
-            </DetailSection>
-            <aside className="rounded-md border border-line bg-slate-50 p-4">
-              <div className="text-sm font-semibold text-slate-950">Delivery Recipients</div>
-              <div className="mt-3 grid gap-2">
-                {relationships.filter((item) => item.label === "Delivery recipient" || item.label === "Ordered by").map((item) => <MetricTile key={item.label} label={item.label} value={item.value} />)}
-              </div>
-            </aside>
-          </div>
-        </section>
+              </DetailSection>
+              <DetailSection icon={Mail} title="Communication History">
+                {communicationHistory.length ? (
+                  <div className="divide-y divide-line rounded-md border border-line">
+                    {communicationHistory.slice(0, 12).map((item) => (
+                      <div key={item.id} className="grid gap-2 p-3 text-sm md:grid-cols-[140px_1fr]">
+                        <div className="text-xs text-slate-500">{formatDate(item.at)}</div>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-slate-950">{item.event}</span>
+                            <SoftChip tone={item.deliveryStatus === "failed" ? "bad" : item.deliveryStatus === "delivered" || item.deliveryStatus === "sent" ? "good" : "neutral"}>{item.deliveryStatus}</SoftChip>
+                            <SoftChip>{item.channel.replaceAll("_", " ")}</SoftChip>
+                          </div>
+                          <div className="mt-1 text-slate-600">{item.relatedAction}</div>
+                          <div className="mt-1 text-xs text-slate-500">To {item.recipient}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed border-line p-4 text-sm text-slate-500">No communication history is visible for this order yet.</div>
+                )}
+              </DetailSection>
+            </div>
+          </section>
+          <aside className="panel p-5">
+            <div className="text-sm font-semibold text-slate-950">Delivery Recipients</div>
+            <div className="mt-3 grid gap-2">
+              {relationships.filter((item) => item.label === "Delivery recipient" || item.label === "Ordered by").map((item) => <MetricTile key={item.label} label={item.label} value={item.value} />)}
+            </div>
+            <div className="mt-4 rounded-md border border-line bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+              Delivery emails use secure CAS links. Signed file URLs are generated only after the recipient is authorized.
+            </div>
+          </aside>
+        </div>
       )}
 
       {activeSection === "accounting" && canViewOrderAccounting(order, user) && (

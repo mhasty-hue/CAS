@@ -26,6 +26,7 @@ import type {
   AutomationRule,
   AutomationRun,
   NotificationQueueItem,
+  OrganizationNotificationSettings,
   Order,
   PortalUser,
   ScheduledJob,
@@ -45,10 +46,11 @@ import {
   canViewNotificationLogs
 } from "@/lib/permissions";
 import { cn, formatDate, priorityTone } from "@/lib/utils";
+import { notificationCenterCategories } from "@/lib/notifications/catalog";
 import { InfoRow, MetricTile, SectionHeader } from "./shared";
 
 const taskViews = ["My Tasks", "Team Tasks", "Overdue", "Due Today", "Due This Week", "Automated Follow-Ups"] as const;
-const queueViews = ["All", "Pending", "Failed", "Sent", "Read"] as const;
+const queueViews = ["All", "Pending", "Queued", "Configuration required", "Failed", "Sent", "Delivered", "Read"] as const;
 const demoToday = new Date("2026-07-09T12:00:00-04:00");
 
 function daysFromDemoToday(value: string) {
@@ -74,9 +76,13 @@ function taskStatusTone(status: WorkflowTaskStatus) {
 function queueStatusTone(status: NotificationQueueItem["status"]) {
   return {
     Pending: "border-amber-200 bg-amber-50 text-amber-800",
+    Queued: "border-sky-200 bg-sky-50 text-sky-700",
+    "Configuration required": "border-orange-200 bg-orange-50 text-orange-800",
     Sent: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    Delivered: "border-emerald-200 bg-emerald-50 text-emerald-700",
     Failed: "border-rose-200 bg-rose-50 text-rose-700",
-    Read: "border-slate-200 bg-slate-50 text-slate-600"
+    Read: "border-slate-200 bg-slate-50 text-slate-600",
+    Dismissed: "border-slate-200 bg-slate-50 text-slate-500"
   }[status];
 }
 
@@ -492,20 +498,38 @@ export function NotificationQueueView({
   queue,
   orderList,
   user,
-  onRetry
+  settings,
+  reminderStateCount = 0,
+  onRetry,
+  onMarkRead,
+  onDismiss,
+  onMarkAllRead
 }: {
   queue: NotificationQueueItem[];
   orderList: Order[];
   user: PortalUser;
+  settings?: OrganizationNotificationSettings;
+  reminderStateCount?: number;
   onRetry: (notificationId: string) => void;
+  onMarkRead: (notificationId: string) => void;
+  onDismiss: (notificationId: string) => void;
+  onMarkAllRead: () => void;
 }) {
   const [activeView, setActiveView] = useState<(typeof queueViews)[number]>("All");
+  const [activeCategory, setActiveCategory] = useState<(typeof notificationCenterCategories)[number]>("all");
   const canViewLogs = canViewNotificationLogs(user);
   const canRetry = canRetryFailedNotifications(user);
   const visibleQueue = canViewLogs ? queue : queue.filter((item) => item.recipient === user.name || item.recipientRole === user.role);
-  const filteredQueue = activeView === "All" ? visibleQueue : visibleQueue.filter((item) => item.status === activeView);
+  const filteredQueue = visibleQueue.filter((item) => {
+    const statusMatch = activeView === "All" || item.status === activeView;
+    const categoryMatch = activeCategory === "all" || item.category === activeCategory || item.digestGroup === activeCategory;
+    return statusMatch && categoryMatch;
+  });
   const failedCount = visibleQueue.filter((item) => item.status === "Failed").length;
   const pendingCount = visibleQueue.filter((item) => item.status === "Pending").length;
+  const unreadCount = visibleQueue.filter((item) => !["Read", "Dismissed"].includes(item.status)).length;
+  const actionRequiredCount = visibleQueue.filter((item) => item.requiresAction && !["Read", "Dismissed"].includes(item.status)).length;
+  const emailUnavailableCount = visibleQueue.filter((item) => item.status === "Configuration required").length;
 
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -517,15 +541,16 @@ export function NotificationQueueView({
                 <BellRing className="h-4 w-4" />
                 Notification Queue
               </div>
-              <h1 className="mt-2 text-2xl font-semibold text-slate-950">Demo delivery log and retry queue</h1>
+              <h1 className="mt-2 text-2xl font-semibold text-slate-950">Notification center and delivery queue</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                See in-app, email, and digest notifications that CAS would send, with failed delivery retry controls for permitted roles.
+                See in-app, email, and digest notifications CAS has created, with privacy-aware retry controls and communication history for permitted roles.
               </p>
             </div>
-            <div className="grid min-w-[260px] grid-cols-3 gap-2">
+            <div className="grid min-w-[320px] grid-cols-4 gap-2">
+              <MetricTile label="Unread" value={String(unreadCount)} />
+              <MetricTile label="Action" value={String(actionRequiredCount)} />
               <MetricTile label="Pending" value={String(pendingCount)} />
-              <MetricTile label="Failed" value={String(failedCount)} />
-              <MetricTile label="Visible" value={String(visibleQueue.length)} />
+              <MetricTile label="Failed" value={String(failedCount + emailUnavailableCount)} />
             </div>
           </div>
         </section>
@@ -533,17 +558,32 @@ export function NotificationQueueView({
         <section className="panel overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
             <SectionHeader icon={Send} title="Queue" />
-            <div className="flex flex-wrap gap-2">
-              {queueViews.map((view) => (
-                <button
-                  key={view}
-                  type="button"
-                  className={cn("secondary-button h-9 px-3", activeView === view && "border-brand-200 bg-brand-50 text-brand-700")}
-                  onClick={() => setActiveView(view)}
-                >
-                  {view}
-                </button>
-              ))}
+            <div className="grid gap-2">
+              <div className="flex flex-wrap gap-2">
+                {queueViews.map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    className={cn("secondary-button h-9 px-3", activeView === view && "border-brand-200 bg-brand-50 text-brand-700")}
+                    onClick={() => setActiveView(view)}
+                  >
+                    {view}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {notificationCenterCategories.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    className={cn("secondary-button h-8 px-2 text-xs capitalize", activeCategory === category && "border-brand-200 bg-brand-50 text-brand-700")}
+                    onClick={() => setActiveCategory(category)}
+                  >
+                    {category === "all" ? "All categories" : category}
+                  </button>
+                ))}
+                <button type="button" className="secondary-button h-8 px-2 text-xs" onClick={onMarkAllRead}>Mark all read</button>
+              </div>
             </div>
           </div>
           <div className="divide-y divide-line">
@@ -551,21 +591,37 @@ export function NotificationQueueView({
               filteredQueue.map((item) => {
                 const order = item.relatedOrderId ? orderList.find((candidate) => candidate.id === item.relatedOrderId) : undefined;
                 return (
-                  <div key={item.id} className="grid gap-3 p-4 lg:grid-cols-[150px_1fr_auto] lg:items-center">
+                  <div key={item.id} className={cn("grid gap-3 p-4 lg:grid-cols-[190px_1fr_auto] lg:items-center", item.priority === "critical" && "bg-rose-50/40", item.requiresAction && item.priority !== "critical" && "bg-amber-50/35")}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={cn("chip", queueStatusTone(item.status))}>{item.status}</span>
                       <span className="chip border-slate-200 bg-slate-50 text-slate-600">{item.channel}</span>
+                      {item.priority && <span className={cn("chip", item.priority === "critical" ? "border-rose-200 bg-rose-50 text-rose-700" : item.priority === "high" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-slate-600")}>{item.priority}</span>}
                     </div>
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-slate-950">{item.subject}</div>
                       <div className="mt-1 text-sm text-slate-600">{item.preview}</div>
                       <div className="mt-1 text-xs text-slate-500">
-                        To {item.recipient} - {order ? `${order.fileNumber} - ${order.borrower}` : item.relatedInvoiceId ?? item.relatedTaskId ?? "Workflow"} - attempts {item.attemptCount}
+                        To {item.recipient} - {order ? `${order.fileNumber} - ${order.borrower}` : item.relatedInvoiceId ?? item.relatedTaskId ?? item.relatedEntityType ?? "Workflow"} - {displayDate(item.sentAt ?? item.queuedAt)} - attempts {item.attemptCount}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-slate-500">
+                        {item.category && <span className="chip border-slate-200 bg-white text-slate-600">{item.category}</span>}
+                        {item.requiresAction && <span className="chip border-amber-200 bg-amber-50 text-amber-800">Action required</span>}
+                        {item.visibilityClassification && <span className="chip border-slate-200 bg-white text-slate-600">{item.visibilityClassification.replaceAll("_", " ")}</span>}
                       </div>
                       {item.failureReason && <div className="mt-2 text-xs font-medium text-rose-700">{item.failureReason}</div>}
                     </div>
-                    <div className="flex justify-start lg:justify-end">
-                      {item.status === "Failed" && (
+                    <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
+                      {!["Read", "Dismissed"].includes(item.status) && (
+                        <button type="button" className="secondary-button h-9 px-3 text-xs" onClick={() => onMarkRead(item.id)}>
+                          Mark read
+                        </button>
+                      )}
+                      {item.status !== "Dismissed" && (
+                        <button type="button" className="secondary-button h-9 px-3 text-xs" onClick={() => onDismiss(item.id)}>
+                          Dismiss
+                        </button>
+                      )}
+                      {(item.status === "Failed" || item.status === "Configuration required") && (
                         <button type="button" className="primary-button h-9 px-3" disabled={!canRetry} onClick={() => onRetry(item.id)}>
                           <RefreshCcw className="h-4 w-4" />
                           Retry
@@ -591,6 +647,9 @@ export function NotificationQueueView({
             </div>
             <InfoRow label="Role visibility" value={canViewLogs ? "Full org queue" : "Own notifications only"} />
             <InfoRow label="Retry permission" value={canRetry ? "Allowed" : "Restricted"} />
+            <InfoRow label="Email delivery" value={settings?.emailEnabled ? "Provider enabled" : "Configuration required"} />
+            <InfoRow label="Escalation role" value={settings?.escalationRecipientRole ?? "company_admin"} />
+            <InfoRow label="Reminder dedupe" value={`${reminderStateCount} tracked`} />
           </div>
         </section>
 

@@ -36,6 +36,7 @@ export async function loadOperationsCenterModelFromRepository({
     accountingEntries: bootstrap.accountingEntries,
     invoices: bootstrap.invoices,
     tasks: bootstrap.workflowTasks,
+    notificationQueue: bootstrap.notificationQueue,
     now,
     source
   }));

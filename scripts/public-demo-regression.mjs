@@ -192,7 +192,7 @@ assert.notEqual(clonedOrders[0].status, orders[0].status, "Reset fixture cloning
 const casAppSource = fs.readFileSync(path.join(root, "src", "components", "cas-app.tsx"), "utf8");
 assert(casAppSource.includes("PublicDemoLandingPage"), "CAS app should render the public demo landing page only through the demo shell.");
 assert(casAppSource.includes("Demo assignment invitation simulated"), "Public demo should surface simulated assignment notices.");
-assert(casAppSource.includes("Demo email not sent"), "Public demo should surface simulated email notices.");
+assert(casAppSource.includes("Demo email simulated"), "Public demo should surface simulated email notices.");
 assert(casAppSource.includes("No production storage bucket was used"), "Public demo should block production storage side-effect messaging.");
 const landingSource = fs.readFileSync(path.join(root, "src", "components", "cas", "demo", "public-demo.tsx"), "utf8");
 assert(landingSource.includes("Sample data only"), "Public landing should clearly mark sample data.");

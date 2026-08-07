@@ -1,4 +1,4 @@
-import type { AccountingEntry, AppraiserProfile, Invoice, Order, Organization, OrderStatus, PortalUser, VendorDocument, VendorProfile, WorkflowTask } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, Invoice, NotificationQueueItem, Order, Organization, OrderStatus, PortalUser, VendorDocument, VendorProfile, WorkflowTask } from "@/types/domain";
 import {
   canAssignOrders,
   canDeliverReports,
@@ -6,6 +6,7 @@ import {
   canManageAccounting,
   canReviewReports,
   canViewOwnPay,
+  canViewNotificationLogs,
   canViewPayrollSummary,
   canViewReceivablesSummary
 } from "@/lib/permissions";
@@ -13,7 +14,7 @@ import { getAuthorizedOrderFees, sanitizeOrderFeesForUser } from "@/lib/orders/f
 import { filterOrdersForWorkflow, queueMatchesOrder, type OrderQueueId } from "@/lib/orders/workflow";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
-export type CommandAction = "orders" | "new-order" | "review" | "accounting" | "clients" | "vendors" | "messages" | "documents" | "pay" | "calendar" | "tasks";
+export type CommandAction = "orders" | "new-order" | "review" | "accounting" | "clients" | "vendors" | "messages" | "documents" | "pay" | "calendar" | "tasks" | "notifications";
 export type MissionPriority = "Critical" | "High" | "Medium" | "Low";
 export type RiskLevel = "Low Risk" | "Medium Risk" | "High Risk" | "Critical";
 export type CapacityStatus = "Available" | "Moderate" | "Near Capacity" | "At Capacity" | "Unavailable" | "Unknown";
@@ -43,7 +44,7 @@ export type MissionItem = {
   actionLabel: string;
   action: CommandAction;
   queueId?: OrderQueueId;
-  source: "orders" | "tasks" | "accounting" | "invoices" | "vendors" | "messages";
+  source: "orders" | "tasks" | "accounting" | "invoices" | "vendors" | "messages" | "notifications";
   permission: string;
   scopedOrderIds: string[];
 };
@@ -194,6 +195,7 @@ export type BuildOperationsCenterInput = {
   accountingEntries: AccountingEntry[];
   invoices: Invoice[];
   tasks: WorkflowTask[];
+  notificationQueue?: NotificationQueueItem[];
   now?: Date;
   source?: OperationsCenterDataSource;
   limits?: Partial<OperationsCenterFreshness["limits"]>;
@@ -285,6 +287,7 @@ export function buildOperationsCenterModel(input: BuildOperationsCenterInput): O
     vendors: input.vendors,
     vendorDocuments: input.vendorDocuments,
     tasks: input.tasks,
+    notificationQueue: input.notificationQueue,
     user: input.user,
     organization: input.organization,
     now
@@ -495,6 +498,7 @@ export function buildMissionItems({
   vendors,
   vendorDocuments,
   tasks = [],
+  notificationQueue = [],
   user,
   organization,
   now = commandCenterToday
@@ -505,6 +509,7 @@ export function buildMissionItems({
   vendors: VendorProfile[];
   vendorDocuments: VendorDocument[];
   tasks?: WorkflowTask[];
+  notificationQueue?: NotificationQueueItem[];
   user: PortalUser;
   organization?: Organization;
   now?: Date;
@@ -513,6 +518,28 @@ export function buildMissionItems({
   const items: MissionItem[] = [];
   const openOrders = orderList.filter(isOpenOrder);
   const visibleOrderIds = new Set(orderList.map((order) => order.id));
+  const visibleNotifications = notificationQueue.filter((notification) =>
+    (!notification.relatedOrderId || visibleOrderIds.has(notification.relatedOrderId))
+    && (canViewNotificationOperations(user) || notification.recipientUserId === user.id || notification.recipient === user.name || notification.recipientRole === user.role)
+  );
+  const notificationFailures = visibleNotifications.filter((notification) => notification.status === "Failed" || notification.status === "Configuration required");
+  if (notificationFailures.length) {
+    items.push({
+      id: "notification-failures",
+      priority: notificationFailures.some((notification) => notification.priority === "critical") ? "Critical" : "High",
+      category: "Notifications",
+      title: "Communication needs attention",
+      count: notificationFailures.length,
+      target: `${notificationFailures.length} failed or unconfigured notice${notificationFailures.length === 1 ? "" : "s"}`,
+      detail: "One or more client, assignment, bid, or delivery notifications could not be sent.",
+      nextAction: "Open Notifications and resolve provider setup or retry safely.",
+      actionLabel: "Open notifications",
+      action: "notifications",
+      source: "notifications",
+      permission: "notification_scope",
+      scopedOrderIds: notificationFailures.map((notification) => notification.relatedOrderId).filter(Boolean) as string[]
+    });
+  }
 
   addMission(items, {
     id: "past-due",
@@ -1080,6 +1107,10 @@ function canSeeCapacityForAppraiser(appraiser: AppraiserProfile, user?: PortalUs
 
 function canViewVendorOperations(user: PortalUser) {
   return user.role === "amc_admin" || user.role === "amc_staff" || canInviteVendors(user);
+}
+
+function canViewNotificationOperations(user: PortalUser) {
+  return canViewNotificationLogs(user) || user.role === "company_admin" || user.role === "office_staff" || user.role === "amc_admin" || user.role === "amc_staff";
 }
 
 function canViewDashboardPayroll(user: PortalUser) {

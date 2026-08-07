@@ -7,14 +7,23 @@ import type {
   CalendarPreference,
   ClientContact,
   ClientProfile,
+  CommunicationEvent,
   CompanyUser,
+  EmailDeliveryRecord,
   Invoice,
+  NotificationPreference,
+  NotificationQueueItem,
+  NotificationReminderState,
+  NotificationTemplate,
   Order,
   OrderFormTemplate,
   OrderStatus,
   Organization,
+  OrganizationNotificationSettings,
   PermissionKey,
+  ScheduledJob,
   UserRole,
+  WebhookEvent,
   VendorDocument,
   VendorProfile
 } from "@/types/domain";
@@ -25,26 +34,36 @@ import type {
   ClientContactRow,
   ClientFeeDefaultRow,
   ClientRow,
+  CommunicationEventRow,
   DocumentAuditEventRow,
   DocumentRow,
   DocumentVersionRow,
+  EmailDeliveryRow,
   AppraisalReportVersionRow,
   InvoiceRow,
+  NotificationPreferenceRow,
+  NotificationQueueRow,
+  NotificationReminderStateRow,
+  NotificationTemplateRow,
   OrderFormTemplateRow,
   OrderRow,
   OrganizationMemberRow,
+  OrganizationNotificationSettingsRow,
   OrganizationRow,
   ReportDeliveryRow,
   ReportSubmissionRow,
   RequiredDocumentRuleRow,
   RolePermissionRow,
   RoleRow,
+  ScheduledJobRow,
   UserProfileRow,
+  WebhookEventRow,
   VendorProfileRow
 } from "@/types/database";
 import { buildDemoNormalizedReport, identifyReportFileKind } from "@/lib/report-review/ingestion";
 import { selectReportProfile } from "@/lib/report-review/profiles";
 import { mapDeliveryRecord, mapDocumentAuditEvent, mapManagedDocument, mapReportSubmission, mapRequiredDocumentRule } from "@/lib/storage/mappers";
+import { getNotificationDefinition, normalizeNotificationCategory } from "@/lib/notifications/catalog";
 import type { AppraisalReportVersion, IngestionSourceFile, ReviewOverlayId } from "@/types/report-review";
 import type { CasAuthContext, CasBootstrapData, CasRepository } from "./types";
 
@@ -336,6 +355,269 @@ function jsonRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+function jsonStringRecord(value: unknown): Record<string, string> {
+  const record = jsonRecord(value);
+  return Object.fromEntries(Object.entries(record).flatMap(([key, item]) => typeof item === "string" ? [[key, item]] : []));
+}
+
+function normalizeNotificationCadence(value: string): NotificationPreference["cadence"] {
+  if (value === "Off" || value.toLowerCase() === "off") return "Off";
+  if (value === "Daily digest" || value.toLowerCase() === "daily_digest" || value.toLowerCase() === "daily digest") return "Daily digest";
+  return "Immediate";
+}
+
+function normalizeQueueStatus(value: string): NotificationQueueItem["status"] {
+  const normalized = value.toLowerCase();
+  if (normalized === "queued") return "Queued";
+  if (normalized === "sent") return "Sent";
+  if (normalized === "delivered") return "Delivered";
+  if (normalized === "failed") return "Failed";
+  if (normalized === "read") return "Read";
+  if (normalized === "dismissed") return "Dismissed";
+  if (normalized === "configuration required" || normalized === "configuration_required") return "Configuration required";
+  return "Pending";
+}
+
+function normalizeQueueChannel(value: string): NotificationQueueItem["channel"] {
+  const normalized = value.toLowerCase();
+  if (normalized === "email") return "Email";
+  if (normalized === "digest") return "Digest";
+  return "In-app";
+}
+
+function normalizeEmailStatus(value: string): EmailDeliveryRecord["status"] {
+  const normalized = value.toLowerCase();
+  if (normalized === "queued") return "Queued";
+  if (normalized === "sent") return "Sent";
+  if (normalized === "delivered") return "Delivered";
+  if (normalized === "failed") return "Failed";
+  if (normalized === "configuration required" || normalized === "configuration_required") return "Configuration required";
+  return "Logged";
+}
+
+function normalizeEmailProvider(value: string): EmailDeliveryRecord["provider"] {
+  if (["resend", "postmark", "sendgrid", "custom"].includes(value)) return value as EmailDeliveryRecord["provider"];
+  return "development-log";
+}
+
+function normalizeVisibility(value: string | null | undefined) {
+  const allowed = ["internal", "shared", "client_safe", "appraiser_safe", "reviewer_only", "accounting_restricted", "security"] as const;
+  return allowed.includes(value as (typeof allowed)[number]) ? (value as (typeof allowed)[number]) : "internal";
+}
+
+function normalizeNotificationPriority(value: string | null | undefined) {
+  const allowed = ["low", "normal", "high", "critical"] as const;
+  return allowed.includes(value as (typeof allowed)[number]) ? (value as (typeof allowed)[number]) : "normal";
+}
+
+function mapNotificationPreference(row: NotificationPreferenceRow): NotificationPreference {
+  const definition = getNotificationDefinition(row.event_key);
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    userId: row.user_id ?? undefined,
+    eventKey: definition.eventKey,
+    emailEnabled: row.email_enabled,
+    inAppEnabled: row.in_app_enabled,
+    cadence: normalizeNotificationCadence(row.cadence),
+    mandatory: row.mandatory,
+    category: normalizeNotificationCategory(row.category),
+    dailyDigestEnabled: row.daily_digest_enabled
+  };
+}
+
+function mapNotificationTemplate(row: NotificationTemplateRow): NotificationTemplate {
+  const definition = getNotificationDefinition(row.event_key);
+  return {
+    eventKey: definition.eventKey,
+    label: definition.label,
+    subject: row.subject,
+    preview: row.preview ?? definition.label,
+    defaultAudience: definition.defaultAudience,
+    version: row.version,
+    category: normalizeNotificationCategory(row.category),
+    visibilityClassification: normalizeVisibility(row.visibility_classification)
+  };
+}
+
+function mapEmailDelivery(row: EmailDeliveryRow): EmailDeliveryRecord {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    eventKey: getNotificationDefinition(row.event_key).eventKey,
+    recipient: row.recipient,
+    recipientUserId: row.recipient_user_id ?? undefined,
+    recipientRole: row.recipient_role ? toUserRole(row.recipient_role) : undefined,
+    subject: row.subject,
+    status: normalizeEmailStatus(row.status),
+    provider: normalizeEmailProvider(row.provider),
+    providerMessageId: row.provider_message_id ?? undefined,
+    error: row.error ?? undefined,
+    createdAt: row.created_at,
+    sentAt: row.sent_at ?? undefined,
+    deliveredAt: row.delivered_at ?? undefined,
+    failedAt: row.failed_at ?? undefined,
+    actionUrl: row.action_url ?? undefined,
+    templateVersion: row.template_version,
+    visibilityClassification: normalizeVisibility(row.visibility_classification),
+    attemptCount: row.attempt_count,
+    failureClassification: row.failure_classification as EmailDeliveryRecord["failureClassification"],
+    plaintextPreview: row.plaintext_preview ?? undefined,
+    htmlPreview: row.html_preview ?? undefined
+  };
+}
+
+function mapNotificationQueue(row: NotificationQueueRow): NotificationQueueItem {
+  const definition = getNotificationDefinition(row.event_type);
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    recipient: row.recipient_email ?? row.recipient_role ?? "CAS recipient",
+    recipientUserId: row.recipient_user_id ?? undefined,
+    recipientOrganizationId: row.recipient_organization_id ?? undefined,
+    recipientRole: row.recipient_role ? toUserRole(row.recipient_role) : undefined,
+    eventType: row.event_type,
+    channel: normalizeQueueChannel(row.channel),
+    status: normalizeQueueStatus(row.status),
+    attemptCount: row.attempt_count,
+    failureReason: row.failure_reason ?? undefined,
+    relatedOrderId: row.related_order_id ?? undefined,
+    relatedTaskId: row.related_task_id ?? undefined,
+    relatedInvoiceId: row.related_invoice_id ?? undefined,
+    relatedVendorId: row.related_vendor_id ?? undefined,
+    relatedEntityType: row.related_entity_type ?? undefined,
+    relatedEntityId: row.related_entity_id ?? undefined,
+    digestGroup: row.digest_group ?? undefined,
+    queuedAt: row.queued_at,
+    scheduledAt: row.scheduled_at ?? undefined,
+    sentAt: row.sent_at ?? undefined,
+    deliveredAt: row.delivered_at ?? undefined,
+    failedAt: row.failed_at ?? undefined,
+    readAt: row.read_at ?? undefined,
+    dismissedAt: row.dismissed_at ?? undefined,
+    subject: row.subject,
+    preview: row.preview ?? row.subject,
+    priority: normalizeNotificationPriority(row.priority),
+    category: definition.category,
+    actionUrl: row.action_url ?? undefined,
+    requiresAction: row.requires_action,
+    templateVersion: row.template_version,
+    visibilityClassification: normalizeVisibility(row.visibility_classification),
+    dedupeKey: row.dedupe_key ?? undefined,
+    providerMessageId: row.provider_message_id ?? undefined,
+    emailDeliveryId: row.email_delivery_id ?? undefined
+  };
+}
+
+function mapOrganizationNotificationSettings(row: OrganizationNotificationSettingsRow): OrganizationNotificationSettings {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    emailEnabled: row.email_enabled,
+    defaultDueWarningHours: row.default_due_warning_hours,
+    bidReminderHours: row.bid_reminder_hours,
+    assignmentAcceptanceHours: row.assignment_acceptance_hours,
+    inspectionReminderHours: row.inspection_reminder_hours,
+    revisionReminderHours: row.revision_reminder_hours,
+    invoiceReminderDays: row.invoice_reminder_days,
+    complianceWarningDays: row.compliance_warning_days,
+    clientReceivesInspectionStatus: row.client_receives_inspection_status,
+    clientReceivesAssignmentIdentity: row.client_receives_assignment_identity,
+    clientReceivesReviewStatus: row.client_receives_review_status,
+    clientsReceiveDeliveryEmail: row.clients_receive_delivery_email,
+    copyOfficeStaffOnClientEvents: row.copy_office_staff_on_client_events,
+    escalationRecipientRole: row.escalation_recipient_role,
+    replyToEmail: row.reply_to_email ?? undefined,
+    branding: jsonStringRecord(row.branding)
+  };
+}
+
+function mapCommunicationEvent(row: CommunicationEventRow): CommunicationEvent {
+  const status = ["created", "queued", "sent", "delivered", "failed", "read", "dismissed", "simulated"].includes(row.delivery_status)
+    ? row.delivery_status as CommunicationEvent["deliveryStatus"]
+    : "created";
+  const channel = ["in_app", "email", "digest", "system", "message", "delivery"].includes(row.channel)
+    ? row.channel as CommunicationEvent["channel"]
+    : "system";
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    orderId: row.order_id ?? undefined,
+    actorUserId: row.actor_user_id ?? undefined,
+    eventType: row.event_type,
+    channel,
+    recipient: row.recipient_email ?? row.recipient_role ?? "CAS recipient",
+    recipientUserId: row.recipient_user_id ?? undefined,
+    recipientOrganizationId: row.recipient_organization_id ?? undefined,
+    recipientRole: row.recipient_role ?? undefined,
+    visibilityClassification: normalizeVisibility(row.visibility_classification),
+    subject: row.subject,
+    sanitizedMessage: row.sanitized_message,
+    actionUrl: row.action_url ?? undefined,
+    deliveryStatus: status,
+    notificationId: row.notification_id ?? undefined,
+    notificationQueueId: row.notification_queue_id ?? undefined,
+    emailDeliveryId: row.email_delivery_id ?? undefined,
+    providerMessageId: row.provider_message_id ?? undefined,
+    failureReason: row.failure_reason ?? undefined,
+    retryCount: row.retry_count,
+    occurredAt: row.occurred_at,
+    metadata: jsonStringRecord(row.metadata)
+  };
+}
+
+function mapReminderState(row: NotificationReminderStateRow): NotificationReminderState {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    reminderKey: row.reminder_key,
+    eventType: row.event_type,
+    relatedOrderId: row.related_order_id ?? undefined,
+    relatedVendorId: row.related_vendor_id ?? undefined,
+    relatedInvoiceId: row.related_invoice_id ?? undefined,
+    relatedEntityType: row.related_entity_type ?? undefined,
+    relatedEntityId: row.related_entity_id ?? undefined,
+    firstTriggeredAt: row.first_triggered_at,
+    lastTriggeredAt: row.last_triggered_at,
+    nextEligibleAt: row.next_eligible_at ?? undefined,
+    triggerCount: row.trigger_count
+  };
+}
+
+function mapScheduledJob(row: ScheduledJobRow): ScheduledJob {
+  const provider = row.provider === "Supabase scheduled function" || row.provider === "CAS demo scheduler" ? row.provider : "Vercel Cron";
+  const status = ["Idle", "Queued", "Running", "Failed"].includes(row.status) ? row.status as ScheduledJob["status"] : "Idle";
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    name: row.name,
+    description: row.description ?? "",
+    jobType: row.job_type as ScheduledJob["jobType"],
+    enabled: row.enabled,
+    schedule: row.schedule,
+    provider,
+    lastRunAt: row.last_run_at ?? undefined,
+    nextRunAt: row.next_run_at ?? undefined,
+    status,
+    runCount: row.run_count
+  };
+}
+
+function mapWebhookEvent(row: WebhookEventRow): WebhookEvent {
+  const status = ["Received", "Processed", "Failed", "Ignored"].includes(row.status) ? row.status as WebhookEvent["status"] : "Received";
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    provider: row.provider,
+    eventType: row.event_type,
+    status,
+    receivedAt: row.received_at,
+    processedAt: row.processed_at ?? undefined,
+    payloadSummary: row.payload_summary ?? "Webhook payload received.",
+    relatedOrderId: row.related_order_id ?? undefined
+  };
+}
+
 function sourceFilesFromReportRow(row: AppraisalReportVersionRow): IngestionSourceFile[] {
   const sourceFiles = Array.isArray(row.source_files) ? row.source_files : [];
   return sourceFiles.flatMap((item, index) => {
@@ -444,6 +726,9 @@ export class SupabaseCasRepository implements CasRepository {
         notificationPreferences: [],
         notificationTemplates: [],
         emailDeliveryRecords: [],
+        organizationNotificationSettings: [],
+        communicationEvents: [],
+        notificationReminderState: [],
         integrations: [],
         integrationLogs: [],
         managedDocuments: [],
@@ -549,7 +834,16 @@ export class SupabaseCasRepository implements CasRepository {
       reportSubmissionsResult,
       reportVersionsResult,
       reportDeliveriesResult,
-      documentAuditResult
+      documentAuditResult,
+      notificationPreferencesResult,
+      notificationTemplatesResult,
+      emailDeliveriesResult,
+      orgNotificationSettingsResult,
+      notificationQueueResult,
+      communicationEventsResult,
+      reminderStateResult,
+      scheduledJobsResult,
+      webhookEventsResult
     ] = await Promise.all([
       client.from("documents").select("*").eq("organization_id", orgId),
       client.from("document_versions").select("*").eq("organization_id", orgId),
@@ -557,7 +851,16 @@ export class SupabaseCasRepository implements CasRepository {
       client.from("report_submissions").select("*").eq("organization_id", orgId),
       client.from("appraisal_report_versions").select("*").eq("organization_id", orgId),
       client.from("report_deliveries").select("*").eq("organization_id", orgId),
-      client.from("document_audit_events").select("*").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(250)
+      client.from("document_audit_events").select("*").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(250),
+      client.from("notification_preferences").select("*").eq("organization_id", orgId),
+      client.from("notification_templates").select("*").order("created_at", { ascending: false }),
+      client.from("email_deliveries").select("*").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(250),
+      client.from("organization_notification_settings").select("*").eq("organization_id", orgId),
+      client.from("notification_queue").select("*").eq("organization_id", orgId).order("queued_at", { ascending: false }).limit(250),
+      client.from("communication_events").select("*").eq("organization_id", orgId).order("occurred_at", { ascending: false }).limit(300),
+      client.from("notification_reminder_state").select("*").eq("organization_id", orgId).order("last_triggered_at", { ascending: false }).limit(300),
+      client.from("scheduled_jobs").select("*").eq("organization_id", orgId).order("created_at", { ascending: false }),
+      client.from("webhook_events").select("*").eq("organization_id", orgId).order("received_at", { ascending: false }).limit(100)
     ]);
 
     const documentRows = readRows("documents", documentsResult) as DocumentRow[];
@@ -616,9 +919,14 @@ export class SupabaseCasRepository implements CasRepository {
       invitations: [],
       publicOrderSettings: [],
       publicOrderRequests: [],
-      notificationPreferences: [],
-      notificationTemplates: [],
-      emailDeliveryRecords: [],
+      notificationPreferences: (readRows("notification preferences", notificationPreferencesResult) as NotificationPreferenceRow[]).map(mapNotificationPreference),
+      notificationTemplates: (readRows("notification templates", notificationTemplatesResult) as NotificationTemplateRow[])
+        .filter((row) => !row.organization_id || row.organization_id === orgId)
+        .map(mapNotificationTemplate),
+      emailDeliveryRecords: (readRows("email deliveries", emailDeliveriesResult) as EmailDeliveryRow[]).map(mapEmailDelivery),
+      organizationNotificationSettings: (readRows("organization notification settings", orgNotificationSettingsResult) as OrganizationNotificationSettingsRow[]).map(mapOrganizationNotificationSettings),
+      communicationEvents: (readRows("communication events", communicationEventsResult) as CommunicationEventRow[]).map(mapCommunicationEvent),
+      notificationReminderState: (readRows("notification reminder state", reminderStateResult) as NotificationReminderStateRow[]).map(mapReminderState),
       integrations: [],
       integrationLogs: [],
       managedDocuments,
@@ -634,9 +942,9 @@ export class SupabaseCasRepository implements CasRepository {
       automationRules: [],
       automationRuns: [],
       workflowTasks: [],
-      notificationQueue: [],
-      scheduledJobs: [],
-      webhookEvents: []
+      notificationQueue: (readRows("notification queue", notificationQueueResult) as NotificationQueueRow[]).map(mapNotificationQueue),
+      scheduledJobs: (readRows("scheduled jobs", scheduledJobsResult) as ScheduledJobRow[]).map(mapScheduledJob),
+      webhookEvents: (readRows("webhook events", webhookEventsResult) as WebhookEventRow[]).map(mapWebhookEvent)
     };
   }
 

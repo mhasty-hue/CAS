@@ -6,6 +6,7 @@ import type {
   CalendarPreference,
   ClientProfile,
   CompanyUser,
+  CommunicationEvent,
   DeliveryRecord,
   DocumentAuditEvent,
   EmailDeliveryRecord,
@@ -15,11 +16,13 @@ import type {
   InvoiceSettings,
   ManagedDocument,
   NotificationPreference,
+  NotificationReminderState,
   NotificationTemplate,
   Order,
   OrderMessage,
   OrderFormTemplate,
   Organization,
+  OrganizationNotificationSettings,
   OrganizationInvitation,
   PermissionKey,
   PortalUser,
@@ -57,6 +60,9 @@ export type CasBootstrapData = {
   notificationPreferences: NotificationPreference[];
   notificationTemplates: NotificationTemplate[];
   emailDeliveryRecords: EmailDeliveryRecord[];
+  organizationNotificationSettings: OrganizationNotificationSettings[];
+  communicationEvents: CommunicationEvent[];
+  notificationReminderState: NotificationReminderState[];
   integrations: IntegrationSetting[];
   integrationLogs: IntegrationLog[];
   managedDocuments: ManagedDocument[];

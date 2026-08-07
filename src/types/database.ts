@@ -356,13 +356,69 @@ export type NotificationPreferenceRow = {
   email_enabled: boolean;
   in_app_enabled: boolean;
   cadence: string;
+  mandatory: boolean;
+  category: string;
+  daily_digest_enabled: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type NotificationTemplateRow = {
+  id: string;
+  organization_id: string | null;
+  event_key: string;
+  subject: string;
+  preview: string | null;
+  body_html: string | null;
+  body_text: string | null;
+  active: boolean;
+  version: number;
+  category: string;
+  visibility_classification: string;
+  editable_fields: Json;
+  locked_fields: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type NotificationRow = {
+  id: string;
+  organization_id: string;
+  user_id: string | null;
+  title: string;
+  body: string;
+  type: string;
+  read_at: string | null;
+  created_at: string;
+  action_url: string | null;
+  dismissed_at: string | null;
+  metadata: Json;
+  event_type: string | null;
+  order_id: string | null;
+  actor_user_id: string | null;
+  recipient_organization_id: string | null;
+  recipient_role: string | null;
+  channel: string;
+  subject: string | null;
+  sanitized_message: string | null;
+  priority: string;
+  scheduled_at: string | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  failed_at: string | null;
+  failure_reason: string | null;
+  retry_count: number;
+  template_version: number;
+  visibility_classification: string;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+  requires_action: boolean;
 };
 
 export type EmailDeliveryRow = {
   id: string;
   organization_id: string;
+  notification_id: string | null;
   event_key: string;
   recipient: string;
   subject: string;
@@ -370,7 +426,47 @@ export type EmailDeliveryRow = {
   provider: string;
   provider_message_id: string | null;
   error: string | null;
+  payload: Json;
+  notification_queue_id: string | null;
+  communication_event_id: string | null;
+  recipient_user_id: string | null;
+  recipient_role: string | null;
+  visibility_classification: string;
+  action_url: string | null;
+  template_version: number;
+  attempt_count: number;
+  sent_at: string | null;
+  delivered_at: string | null;
+  failed_at: string | null;
+  failure_classification: string | null;
+  retry_after: string | null;
+  plaintext_preview: string | null;
+  html_preview: string | null;
   created_at: string;
+};
+
+export type OrganizationNotificationSettingsRow = {
+  id: string;
+  organization_id: string;
+  email_enabled: boolean;
+  default_due_warning_hours: number[];
+  bid_reminder_hours: number[];
+  assignment_acceptance_hours: number;
+  inspection_reminder_hours: number[];
+  revision_reminder_hours: number[];
+  invoice_reminder_days: number[];
+  compliance_warning_days: number[];
+  client_receives_inspection_status: boolean;
+  client_receives_assignment_identity: boolean;
+  client_receives_review_status: boolean;
+  clients_receive_delivery_email: boolean;
+  copy_office_staff_on_client_events: boolean;
+  escalation_recipient_role: string;
+  reply_to_email: string | null;
+  branding: Json;
+  metadata: Json;
+  created_at: string;
+  updated_at: string;
 };
 
 export type InvoiceSettingsRow = {
@@ -811,6 +907,68 @@ export type NotificationQueueRow = {
   queued_at: string;
   sent_at: string | null;
   read_at: string | null;
+  event_id: string | null;
+  recipient_organization_id: string | null;
+  priority: string;
+  action_url: string | null;
+  scheduled_at: string | null;
+  delivered_at: string | null;
+  failed_at: string | null;
+  dismissed_at: string | null;
+  template_version: number;
+  visibility_classification: string;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+  provider_message_id: string | null;
+  email_delivery_id: string | null;
+  dedupe_key: string | null;
+  requires_action: boolean;
+};
+
+export type NotificationReminderStateRow = {
+  id: string;
+  organization_id: string;
+  reminder_key: string;
+  event_type: string;
+  related_order_id: string | null;
+  related_vendor_id: string | null;
+  related_invoice_id: string | null;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+  first_triggered_at: string;
+  last_triggered_at: string;
+  next_eligible_at: string | null;
+  trigger_count: number;
+  metadata: Json;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CommunicationEventRow = {
+  id: string;
+  organization_id: string;
+  order_id: string | null;
+  actor_user_id: string | null;
+  event_type: string;
+  channel: string;
+  recipient_user_id: string | null;
+  recipient_organization_id: string | null;
+  recipient_role: string | null;
+  recipient_email: string | null;
+  visibility_classification: string;
+  subject: string;
+  sanitized_message: string;
+  action_url: string | null;
+  delivery_status: string;
+  notification_id: string | null;
+  notification_queue_id: string | null;
+  email_delivery_id: string | null;
+  provider_message_id: string | null;
+  failure_reason: string | null;
+  retry_count: number;
+  occurred_at: string;
+  metadata: Json;
+  created_at: string;
 };
 
 export type ScheduledJobRow = {
@@ -862,6 +1020,7 @@ export type Database = {
       client_contacts: TableDefinition<ClientContactRow>;
       client_fee_defaults: TableDefinition<ClientFeeDefaultRow>;
       clients: TableDefinition<ClientRow>;
+      communication_events: TableDefinition<CommunicationEventRow>;
       coverage_areas: TableDefinition<Record<string, Json>>;
       document_audit_events: TableDefinition<DocumentAuditEventRow>;
       document_versions: TableDefinition<DocumentVersionRow>;
@@ -881,9 +1040,10 @@ export type Database = {
       invoices: TableDefinition<InvoiceRow>;
       message_read_receipts: TableDefinition<MessageReadReceiptRow>;
       notification_queue: TableDefinition<NotificationQueueRow>;
-      notifications: TableDefinition<Record<string, Json>>;
+      notification_reminder_state: TableDefinition<NotificationReminderStateRow>;
+      notifications: TableDefinition<NotificationRow>;
       notification_preferences: TableDefinition<NotificationPreferenceRow>;
-      notification_templates: TableDefinition<Record<string, Json>>;
+      notification_templates: TableDefinition<NotificationTemplateRow>;
       order_assignments: TableDefinition<Record<string, Json>>;
       order_documents: TableDefinition<OrderDocumentRow>;
       order_form_template_fields: TableDefinition<Record<string, Json>>;
@@ -896,6 +1056,7 @@ export type Database = {
       order_review_items: TableDefinition<Record<string, Json>>;
       order_reviews: TableDefinition<Record<string, Json>>;
       order_status_history: TableDefinition<Record<string, Json>>;
+      organization_notification_settings: TableDefinition<OrganizationNotificationSettingsRow>;
       organization_members: TableDefinition<OrganizationMemberRow>;
       organizations: TableDefinition<OrganizationRow>;
       payroll_run_items: TableDefinition<Record<string, Json>>;

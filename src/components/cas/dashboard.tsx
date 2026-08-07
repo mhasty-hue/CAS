@@ -19,7 +19,8 @@ export function DashboardView({
   onOpenVendors,
   onOpenMessages,
   onOpenDocuments,
-  onOpenCalendar
+  onOpenCalendar,
+  onOpenNotifications
 }: {
   model: OperationsCenterModel;
   onOpenOrders: () => void;
@@ -32,6 +33,7 @@ export function DashboardView({
   onOpenMessages: () => void;
   onOpenDocuments: () => void;
   onOpenCalendar: () => void;
+  onOpenNotifications: () => void;
 }) {
   const actionMap: Record<CommandAction, () => void> = {
     orders: onOpenOrders,
@@ -44,7 +46,8 @@ export function DashboardView({
     documents: onOpenDocuments,
     pay: onOpenAccounting,
     calendar: onOpenCalendar,
-    tasks: onOpenTasks
+    tasks: onOpenTasks,
+    notifications: onOpenNotifications
   };
 
   return (

@@ -2,6 +2,7 @@ import type {
   AccountingEntry,
   AutomationRule,
   AutomationRun,
+  CommunicationEvent,
   DeliveryRecord,
   DocumentAuditEvent,
   EmailDeliveryRecord,
@@ -13,9 +14,11 @@ import type {
   NotificationQueueItem,
   NotificationPreference,
   NotificationTemplate,
+  NotificationReminderState,
   OrderMessage,
   OrganizationInvitation,
   Organization,
+  OrganizationNotificationSettings,
   PortalUser,
   PublicOrderRequest,
   PublicOrderSettings,
@@ -978,7 +981,146 @@ export const emailDeliveryRecords: EmailDeliveryRecord[] = [
     subject: "New public appraisal request",
     status: "Logged",
     provider: "development-log",
-    createdAt: "2026-07-09T16:20:00Z"
+    createdAt: "2026-07-09T16:20:00Z",
+    visibilityClassification: "internal",
+    attemptCount: 1,
+    plaintextPreview: "Demo email simulated. New public appraisal request is ready for intake review."
+  },
+  {
+    id: "email-bid-1",
+    organizationId: "org-firm-1",
+    eventKey: "bid_request_sent",
+    recipient: "renee@northmetro.example",
+    recipientRole: "appraiser",
+    subject: "New appraisal bid opportunity in CAS",
+    status: "Logged",
+    provider: "development-log",
+    createdAt: "2026-07-09T14:16:00Z",
+    sentAt: "2026-07-09T14:16:04Z",
+    visibilityClassification: "appraiser_safe",
+    actionUrl: "/orders/ord-1011",
+    attemptCount: 1,
+    plaintextPreview: "Demo email simulated. You have a new appraisal bid opportunity from CAA Real Property Services."
+  },
+  {
+    id: "email-delivery-1",
+    organizationId: "org-firm-1",
+    eventKey: "final_report_delivered",
+    recipient: "claire@harborpoint.example",
+    recipientRole: "client_user",
+    subject: "Your appraisal report is ready",
+    status: "Logged",
+    provider: "development-log",
+    createdAt: "2026-07-09T18:12:00Z",
+    sentAt: "2026-07-09T18:12:03Z",
+    visibilityClassification: "client_safe",
+    actionUrl: "/orders/ord-1001",
+    attemptCount: 1,
+    plaintextPreview: "Demo email simulated. Your appraisal report is ready to view securely in CAS."
+  }
+];
+
+export const organizationNotificationSettings: OrganizationNotificationSettings[] = [
+  {
+    id: "notif-settings-firm-1",
+    organizationId: "org-firm-1",
+    emailEnabled: false,
+    defaultDueWarningHours: [72, 48, 24, 0],
+    bidReminderHours: [24, 4],
+    assignmentAcceptanceHours: 12,
+    inspectionReminderHours: [24, 8],
+    revisionReminderHours: [24, 0],
+    invoiceReminderDays: [7, 1, 0],
+    complianceWarningDays: [60, 30, 14, 7, 0],
+    clientReceivesInspectionStatus: true,
+    clientReceivesAssignmentIdentity: false,
+    clientReceivesReviewStatus: true,
+    clientsReceiveDeliveryEmail: true,
+    copyOfficeStaffOnClientEvents: true,
+    escalationRecipientRole: "company_admin",
+    replyToEmail: "support@caavaluation.example",
+    branding: { accent: "#2563eb", logoAlt: "CAA Real Property Services" }
+  }
+];
+
+export const communicationEvents: CommunicationEvent[] = [
+  {
+    id: "comm-bid-1",
+    organizationId: "org-firm-1",
+    orderId: "ord-1011",
+    actorUserId: "user-admin",
+    eventType: "bid_request_sent",
+    channel: "email",
+    recipient: "Renee Walker",
+    recipientUserId: "user-solo",
+    recipientOrganizationId: "org-vendor-1",
+    recipientRole: "appraiser",
+    visibilityClassification: "appraiser_safe",
+    subject: "New appraisal bid opportunity in CAS",
+    sanitizedMessage: "You have a new appraisal bid opportunity from CAA Real Property Services for CAA-26-1058.",
+    actionUrl: "/orders/ord-1011",
+    deliveryStatus: "simulated",
+    notificationQueueId: "notifq-bid-1",
+    emailDeliveryId: "email-bid-1",
+    retryCount: 0,
+    occurredAt: "2026-07-09T14:16:04Z",
+    metadata: { omittedFields: "other bidders, other bid amounts, internal ranking" }
+  },
+  {
+    id: "comm-assignment-1",
+    organizationId: "org-firm-1",
+    orderId: "ord-1003",
+    actorUserId: "user-admin",
+    eventType: "direct_assignment_sent",
+    channel: "in_app",
+    recipient: "Priya Shah",
+    recipientUserId: "user-appraiser",
+    recipientOrganizationId: "org-firm-1",
+    recipientRole: "appraiser",
+    visibilityClassification: "appraiser_safe",
+    subject: "New appraisal assignment in CAS",
+    sanitizedMessage: "You have a new appraisal assignment for CAA-26-1050 due July 10, 2026.",
+    actionUrl: "/orders/ord-1003",
+    deliveryStatus: "created",
+    notificationQueueId: "notifq-assignment-demo",
+    retryCount: 0,
+    occurredAt: "2026-07-09T13:45:00Z",
+    metadata: { omittedFields: "client fee, AMC margin, payroll" }
+  },
+  {
+    id: "comm-delivery-1",
+    organizationId: "org-firm-1",
+    orderId: "ord-1001",
+    actorUserId: "user-reviewer",
+    eventType: "final_report_delivered",
+    channel: "email",
+    recipient: "Claire Moon",
+    recipientUserId: "user-client",
+    recipientOrganizationId: "org-client-1",
+    recipientRole: "client_user",
+    visibilityClassification: "client_safe",
+    subject: "Your appraisal report is ready",
+    sanitizedMessage: "Your appraisal report is ready to view securely in CAS.",
+    actionUrl: "/orders/ord-1001",
+    deliveryStatus: "simulated",
+    notificationQueueId: "notifq-delivery-1",
+    emailDeliveryId: "email-delivery-1",
+    retryCount: 0,
+    occurredAt: "2026-07-09T18:12:03Z",
+    metadata: { omittedFields: "storage paths, signed URLs, internal notes" }
+  }
+];
+
+export const notificationReminderState: NotificationReminderState[] = [
+  {
+    id: "reminder-state-1",
+    organizationId: "org-firm-1",
+    reminderKey: "order:ord-1002:revision_due_soon",
+    eventType: "revision_due_soon",
+    relatedOrderId: "ord-1002",
+    firstTriggeredAt: "2026-07-09T17:44:00Z",
+    lastTriggeredAt: "2026-07-09T17:44:00Z",
+    triggerCount: 1
   }
 ];
 
