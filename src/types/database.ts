@@ -198,6 +198,42 @@ export type OrderDocumentRow = {
   created_at: string;
 };
 
+export type DocumentRow = {
+  id: string;
+  organization_id: string;
+  order_id: string | null;
+  client_id: string | null;
+  vendor_profile_id: string | null;
+  uploaded_by: string | null;
+  name: string;
+  document_type: string;
+  storage_bucket: string;
+  storage_path: string;
+  visibility: string;
+  status: string;
+  content_type: string | null;
+  file_size_bytes: number | null;
+  expires_at: string | null;
+  metadata: Json;
+  display_name: string | null;
+  category: string | null;
+  source: string;
+  version_number: number;
+  parent_document_id: string | null;
+  checksum: string | null;
+  description: string | null;
+  tags: string[];
+  audit_metadata: Json;
+  virus_scan_status: string;
+  duplicate_detection: string;
+  archived_at: string | null;
+  restored_at: string | null;
+  deleted_at: string | null;
+  signed_url_last_requested_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
 export type VendorProfileRow = {
   id: string;
   amc_organization_id: string;
@@ -628,6 +664,40 @@ export type DocumentAuditEventRow = {
   created_at: string;
 };
 
+export type AppraisalReportVersionRow = {
+  id: string;
+  organization_id: string;
+  order_id: string;
+  report_submission_id: string | null;
+  version_number: number;
+  profile_key: string;
+  overlay_keys: string[];
+  source_files: Json;
+  original_storage_preserved: boolean;
+  immutable: boolean;
+  uploaded_by: string | null;
+  uploaded_by_name: string | null;
+  uploaded_at: string;
+  status: string;
+  extraction_summary: string | null;
+  supersedes_report_version_id: string | null;
+  created_at: string;
+};
+
+export type NormalizedAppraisalReportRow = {
+  id: string;
+  organization_id: string;
+  order_id: string;
+  report_version_id: string;
+  profile_key: string;
+  extracted_report: Json;
+  extraction_provider: string;
+  extraction_status: string;
+  extraction_errors: string[];
+  parsed_at: string;
+  created_at: string;
+};
+
 export type AutomationRuleRow = {
   id: string;
   organization_id: string;
@@ -795,7 +865,9 @@ export type Database = {
       coverage_areas: TableDefinition<Record<string, Json>>;
       document_audit_events: TableDefinition<DocumentAuditEventRow>;
       document_versions: TableDefinition<DocumentVersionRow>;
-      documents: TableDefinition<Record<string, Json>>;
+      appraisal_report_versions: TableDefinition<AppraisalReportVersionRow>;
+      normalized_appraisal_reports: TableDefinition<NormalizedAppraisalReportRow>;
+      documents: TableDefinition<DocumentRow>;
       email_deliveries: TableDefinition<EmailDeliveryRow>;
       invitations: TableDefinition<Record<string, Json>>;
       integration_external_mappings: TableDefinition<Record<string, Json>>;

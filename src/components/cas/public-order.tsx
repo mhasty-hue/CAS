@@ -5,7 +5,8 @@ import Link from "next/link";
 import { CheckCircle2, FileUp, Home, Mail, Phone, Send } from "lucide-react";
 import { organizations, publicOrderSettings } from "@/data/platform";
 import { createPendingPublicOrderRequest } from "@/lib/public-intake/service";
-import type { PublicOrderPurpose, PublicOrderRequest } from "@/types/domain";
+import { shouldUseSupabaseDataSource } from "@/lib/supabase";
+import type { Organization, PublicOrderPurpose, PublicOrderRequest, PublicOrderSettings } from "@/types/domain";
 import { Field } from "./shared";
 
 const purposeOptions: PublicOrderPurpose[] = [
@@ -23,9 +24,40 @@ const purposeOptions: PublicOrderPurpose[] = [
 ];
 
 export function PublicOrderPage({ organizationSlug }: { organizationSlug: string }) {
-  const settings = publicOrderSettings.find((item) => item.publicSlug === organizationSlug);
-  const organization = organizations.find((item) => item.id === settings?.organizationId);
+  const productionIntake = shouldUseSupabaseDataSource();
+  const fixtureSettings = publicOrderSettings.find((item) => item.publicSlug === organizationSlug);
+  const settings = fixtureSettings ?? (productionIntake
+    ? ({
+        id: `production-${organizationSlug}`,
+        organizationId: "server-resolved",
+        enabled: true,
+        publicSlug: organizationSlug,
+        buttonLabel: "Order an appraisal",
+        brandName: "CAS appraisal intake",
+        brandColor: "#2276d2",
+        confirmationMessage: "Thank you. The appraisal team will review your request and follow up shortly.",
+        notificationRecipients: [],
+        requiredFields: ["requesterName", "email", "propertyAddress", "purpose", "consentAccepted"],
+        customQuestions: [],
+        updatedAt: new Date().toISOString()
+      } satisfies PublicOrderSettings)
+    : undefined);
+  const organization = organizations.find((item) => item.id === settings?.organizationId) ?? (productionIntake
+    ? ({
+        id: "server-resolved",
+        name: settings?.brandName ?? "CAS appraisal intake",
+        type: "appraisal_firm",
+        status: "Active",
+        primaryContact: "",
+        email: "",
+        phone: "",
+        address: ""
+      } satisfies Organization)
+    : undefined);
   const [submittedRequest, setSubmittedRequest] = useState<PublicOrderRequest | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     requesterName: "",
     email: "",
@@ -66,9 +98,49 @@ export function PublicOrderPage({ organizationSlug }: { organizationSlug: string
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  function addFiles(files: FileList | null) {
+    setSelectedFiles(files ? Array.from(files) : []);
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmittedRequest(createPendingPublicOrderRequest({ organizationId, ...form }));
+    setSubmitError("");
+    if (shouldUseSupabaseDataSource()) {
+      setSubmitting(true);
+      try {
+        const payload = new FormData();
+        payload.set("organizationSlug", organizationSlug);
+        payload.set("requesterName", form.requesterName);
+        payload.set("email", form.email);
+        payload.set("phone", form.phone);
+        payload.set("propertyAddress", form.propertyAddress);
+        payload.set("propertyType", form.propertyType);
+        payload.set("purpose", form.purpose);
+        payload.set("intendedUse", form.intendedUse);
+        payload.set("ownerBorrowerName", form.ownerBorrowerName);
+        payload.set("accessContact", form.accessContact);
+        payload.set("preferredContactMethod", form.preferredContactMethod);
+        payload.set("requestedTiming", form.requestedTiming);
+        payload.set("comments", form.comments);
+        payload.set("consentAccepted", String(form.consentAccepted));
+        selectedFiles.forEach((file) => payload.append("files", file));
+
+        const response = await fetch("/api/storage/public-intake-upload", { method: "POST", body: payload });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "CAS could not submit that request.");
+        setSubmittedRequest({
+          ...createPendingPublicOrderRequest({ organizationId, ...form, documentCount: selectedFiles.length }),
+          id: typeof result.requestId === "string" ? result.requestId : `public-req-${Date.now()}`
+        });
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : "CAS could not submit that request.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    setSubmittedRequest(createPendingPublicOrderRequest({ organizationId, ...form, documentCount: selectedFiles.length || form.documentCount }));
   }
 
   if (submittedRequest) {
@@ -154,17 +226,30 @@ export function PublicOrderPage({ organizationSlug }: { organizationSlug: string
             ))}
             <Field label="Additional comments" span><textarea className="control min-h-24 w-full py-3" value={form.comments} onChange={(event) => updateField("comments", event.target.value)} /></Field>
             <Field label="Documents" span>
-              <button type="button" className="secondary-button justify-center" onClick={() => updateField("documentCount", form.documentCount + 1)}>
+              <label className="secondary-button cursor-pointer justify-center">
                 <FileUp className="h-4 w-4" />
-                Add document placeholder ({form.documentCount})
-              </button>
+                Select documents ({selectedFiles.length || form.documentCount})
+                <input className="hidden" type="file" multiple accept=".pdf,.csv,.xlsx,.xls,.jpg,.jpeg,.png,application/pdf,text/csv" onChange={(event) => {
+                  addFiles(event.target.files);
+                  updateField("documentCount", event.target.files?.length ?? 0);
+                }} />
+              </label>
+              {selectedFiles.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-slate-600">
+                  {selectedFiles.map((file) => <span key={`${file.name}-${file.size}`} className="rounded-full bg-slate-100 px-2 py-1">{file.name}</span>)}
+                </div>
+              )}
             </Field>
           </div>
           <label className="mt-5 flex items-start gap-3 rounded-md border border-line p-3 text-sm text-slate-600">
             <input className="mt-1 h-4 w-4 rounded border-line text-brand-600" type="checkbox" required checked={form.consentAccepted} onChange={(event) => updateField("consentAccepted", event.target.checked)} />
             <span>I understand this is a request for appraisal services, not a confirmed assignment, and the appraisal organization will review scope, fee, and access before accepting work.</span>
           </label>
-          <button className="primary-button mt-5 justify-center" type="submit"><Send className="h-4 w-4" /> Submit request</button>
+          {submitError && <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{submitError}</div>}
+          <button className="primary-button mt-5 justify-center disabled:opacity-50" type="submit" disabled={submitting}>
+            <Send className="h-4 w-4" />
+            {submitting ? "Submitting..." : "Submit request"}
+          </button>
         </form>
       </section>
     </main>

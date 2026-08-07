@@ -40,8 +40,9 @@ type ReportReviewPanelProps = {
   organization: Organization;
   versions: AppraisalReportVersion[];
   results: ReportReviewResult[];
-  onRunReview: (orderId: string) => void;
-  onUploadCorrectedReport: (orderId: string) => void;
+  realUploadsEnabled?: boolean;
+  onRunReview: (orderId: string, files?: File[]) => void;
+  onUploadCorrectedReport: (orderId: string, files?: File[]) => void;
   onRespondToFinding: (findingId: string, response: string) => void;
   onUpdateFindingStatus: (findingId: string, status: ReviewFindingStatus, severity?: ReviewSeverity) => void;
   onReleaseFindingToClient: (findingId: string) => void;
@@ -182,6 +183,7 @@ export function ReportReviewPanel({
   organization,
   versions,
   results,
+  realUploadsEnabled,
   onRunReview,
   onUploadCorrectedReport,
   onRespondToFinding,
@@ -257,14 +259,38 @@ export function ReportReviewPanel({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="secondary-button" onClick={() => onRunReview(order.id)} type="button">
-              <FileSearch className="h-4 w-4" />
-              Upload report and run checks
-            </button>
-            <button className="secondary-button" onClick={() => onUploadCorrectedReport(order.id)} type="button">
-              <UploadCloud className="h-4 w-4" />
-              Upload corrected version
-            </button>
+            {realUploadsEnabled ? (
+              <label className="secondary-button cursor-pointer">
+                <FileSearch className="h-4 w-4" />
+                Upload report and run checks
+                <input className="hidden" type="file" multiple accept=".pdf,.xml,.zip,.env,application/pdf,application/xml" onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  if (files.length) onRunReview(order.id, files);
+                  event.currentTarget.value = "";
+                }} />
+              </label>
+            ) : (
+              <button className="secondary-button" onClick={() => onRunReview(order.id)} type="button">
+                <FileSearch className="h-4 w-4" />
+                Upload report and run checks
+              </button>
+            )}
+            {realUploadsEnabled ? (
+              <label className="secondary-button cursor-pointer">
+                <UploadCloud className="h-4 w-4" />
+                Upload corrected version
+                <input className="hidden" type="file" multiple accept=".pdf,.xml,.zip,.env,application/pdf,application/xml" onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  if (files.length) onUploadCorrectedReport(order.id, files);
+                  event.currentTarget.value = "";
+                }} />
+              </label>
+            ) : (
+              <button className="secondary-button" onClick={() => onUploadCorrectedReport(order.id)} type="button">
+                <UploadCloud className="h-4 w-4" />
+                Upload corrected version
+              </button>
+            )}
             <button className="primary-button disabled:opacity-50" disabled={!workspace.readiness.ready} onClick={() => onMarkReadyForDelivery(order.id)} type="button">
               <Send className="h-4 w-4" />
               Mark ready for delivery

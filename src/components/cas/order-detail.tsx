@@ -23,6 +23,7 @@ import {
 import type {
   DeliveryRecord,
   DocumentCategory,
+  DocumentVisibility,
   InspectionInfo,
   ManagedDocument,
   MessageChannel,
@@ -91,10 +92,12 @@ type OrderDetailPageProps = {
   reportVersions: AppraisalReportVersion[];
   reportReviewResults: ReportReviewResult[];
   deliveryRecords: DeliveryRecord[];
-  onUploadDocument: (orderId: string, category: DocumentCategory) => void;
+  realUploadsEnabled?: boolean;
+  onUploadDocument: (orderId: string, category: DocumentCategory, files?: File[], visibility?: DocumentVisibility) => void;
   onArchiveDocument: (documentId: string) => void;
   onRestoreDocument: (documentId: string) => void;
-  onReplaceDocumentVersion: (documentId: string) => void;
+  onReplaceDocumentVersion: (documentId: string, files?: File[]) => void;
+  onOpenSignedUrl?: (documentId: string, versionId?: string) => void;
   onSubmitReport: (orderId: string) => void;
   onDeliverReport: (orderId: string) => void;
   onSendMessage: (orderId: string, channel: MessageChannel, body: string) => void;
@@ -102,8 +105,8 @@ type OrderDetailPageProps = {
   onToggleMessageRead: (messageId: string) => void;
   onUpdateRevisionStatus: (revisionId: string, status: RevisionStatus) => void;
   onRespondToRevisionItem: (revisionId: string, itemId: string) => void;
-  onRunReportReview: (orderId: string) => void;
-  onUploadCorrectedReport: (orderId: string) => void;
+  onRunReportReview: (orderId: string, files?: File[]) => void;
+  onUploadCorrectedReport: (orderId: string, files?: File[]) => void;
   onRespondToReportFinding: (findingId: string, response: string) => void;
   onUpdateReportFindingStatus: (findingId: string, status: ReviewFindingStatus, severity?: ReviewSeverity) => void;
   onReleaseReportFindingToClient: (findingId: string) => void;
@@ -727,10 +730,12 @@ export function OrderDetailPage({
   reportVersions,
   reportReviewResults,
   deliveryRecords,
+  realUploadsEnabled,
   onUploadDocument,
   onArchiveDocument,
   onRestoreDocument,
   onReplaceDocumentVersion,
+  onOpenSignedUrl,
   onSubmitReport,
   onDeliverReport,
   onSendMessage,
@@ -926,10 +931,12 @@ export function OrderDetailPage({
             documents={managedDocuments}
             requiredRules={requiredDocumentRules}
             deliveryRecords={deliveryRecords}
+            realUploadsEnabled={realUploadsEnabled}
             onUploadDocument={onUploadDocument}
             onArchiveDocument={onArchiveDocument}
             onRestoreDocument={onRestoreDocument}
             onReplaceDocumentVersion={onReplaceDocumentVersion}
+            onOpenSignedUrl={onOpenSignedUrl}
             onSubmitReport={onSubmitReport}
             onDeliverReport={onDeliverReport}
           />
@@ -978,6 +985,7 @@ export function OrderDetailPage({
               organization={organization}
               versions={reportVersions}
               results={reportReviewResults}
+              realUploadsEnabled={realUploadsEnabled}
               onRunReview={onRunReportReview}
               onUploadCorrectedReport={onUploadCorrectedReport}
               onRespondToFinding={onRespondToReportFinding}

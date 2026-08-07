@@ -35,6 +35,7 @@ import type {
   WebhookEvent,
   WorkflowTask
 } from "@/types/domain";
+import type { AppraisalReportVersion } from "@/types/report-review";
 
 export type CasDataSourceMode = "demo" | "supabase";
 
@@ -63,6 +64,7 @@ export type CasBootstrapData = {
   orderMessages: OrderMessage[];
   revisionRequests: RevisionRequest[];
   reportSubmissions: ReportSubmission[];
+  reportVersions: AppraisalReportVersion[];
   deliveryRecords: DeliveryRecord[];
   documentAuditEvents: DocumentAuditEvent[];
   orderFormTemplate: OrderFormTemplate;
