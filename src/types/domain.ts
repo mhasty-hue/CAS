@@ -838,43 +838,147 @@ export type NotificationItem = {
   time: string;
 };
 
+export type NotificationCategory =
+  | "orders"
+  | "assignments"
+  | "bids"
+  | "inspections"
+  | "review"
+  | "revisions"
+  | "documents"
+  | "accounting"
+  | "compliance"
+  | "messages"
+  | "delivery"
+  | "system";
+
+export type NotificationPriority = "low" | "normal" | "high" | "critical";
+
+export type NotificationVisibilityClassification =
+  | "internal"
+  | "shared"
+  | "client_safe"
+  | "appraiser_safe"
+  | "reviewer_only"
+  | "accounting_restricted"
+  | "security";
+
+export type NotificationCadence = "Immediate" | "Daily digest" | "Off";
+
 export type NotificationEventKey =
   | "new_order_received"
+  | "new_public_order_received"
+  | "new_private_order_received"
+  | "new_connected_order_received"
+  | "order_needs_intake_review"
+  | "client_information_missing"
+  | "client_document_uploaded"
+  | "order_reopened"
   | "public_order_request_submitted"
+  | "order_needs_assignment"
+  | "direct_assignment_sent"
   | "order_assigned"
+  | "assignment_accepted"
+  | "assignment_declined"
+  | "assignment_withdrawn"
+  | "assignment_reassigned"
+  | "vendor_has_not_responded"
+  | "assignment_acceptance_deadline_approaching"
+  | "bid_request_sent"
+  | "bid_invitation_delivered"
+  | "bid_invitation_failed"
+  | "bid_viewed"
+  | "bid_submitted"
+  | "bid_revised"
+  | "bid_declined"
+  | "bid_deadline_approaching"
+  | "bid_expired"
+  | "new_bid_response_received"
+  | "bid_awarded"
+  | "bid_not_selected"
+  | "winning_bidder_accepted"
+  | "winning_bidder_declined"
+  | "bidding_reopened"
+  | "inspection_scheduling_requested"
   | "appraiser_accepted"
   | "appraiser_declined"
   | "inspection_scheduled"
   | "inspection_rescheduled"
+  | "inspection_cancelled"
+  | "inspection_occurring_today"
   | "inspection_completed"
+  | "inspection_date_passed_without_completion"
+  | "report_due_soon"
+  | "report_due_today"
+  | "report_overdue"
   | "report_submitted"
+  | "report_uploaded"
+  | "corrected_report_uploaded"
+  | "automated_checks_completed"
+  | "critical_review_finding_created"
   | "report_entered_review"
   | "revisions_requested"
   | "revision_response_received"
+  | "review_completed"
   | "report_approved"
+  | "report_ready_for_delivery"
   | "report_delivered"
+  | "final_report_downloaded"
   | "order_completed"
   | "order_placed_on_hold"
   | "order_cancelled"
+  | "revision_due_soon"
+  | "revision_overdue"
+  | "appraiser_responded"
+  | "corrected_report_received"
+  | "revision_resolved"
+  | "additional_revision_required"
   | "invoice_generated"
+  | "invoice_created"
+  | "invoice_sent"
+  | "invoice_due_soon"
+  | "invoice_overdue"
   | "invoice_paid"
+  | "vendor_payment_approved"
+  | "vendor_payment_issued"
+  | "payroll_ready_for_review"
   | "vendor_compliance_document_expiring"
   | "license_expiring"
+  | "license_expired"
   | "eo_expiring"
+  | "eo_expired"
   | "w9_missing"
+  | "compliance_document_requested"
+  | "compliance_document_uploaded"
+  | "vendor_assignment_ineligible"
+  | "vendor_compliant_again"
   | "due_date_warning"
   | "past_due_warning"
   | "new_internal_mention"
   | "new_client_message"
   | "new_appraiser_message"
   | "new_reviewer_comment"
+  | "message_received"
   | "revision_requested"
   | "revision_response_submitted"
   | "updated_report_uploaded"
   | "final_report_ready_for_delivery"
   | "final_report_delivered"
   | "document_requested"
-  | "requested_document_uploaded";
+  | "requested_document_uploaded"
+  | "new_client_visible_document"
+  | "new_appraiser_visible_document"
+  | "document_processing_failed"
+  | "required_document_missing"
+  | "user_invited"
+  | "invitation_accepted"
+  | "invitation_expiring"
+  | "password_security_notification"
+  | "organization_membership_changed"
+  | "permission_changed"
+  | "integration_failure"
+  | "file_upload_failed"
+  | "report_processing_failed";
 
 export type NotificationPreference = {
   id: string;
@@ -883,7 +987,10 @@ export type NotificationPreference = {
   eventKey: NotificationEventKey;
   emailEnabled: boolean;
   inAppEnabled: boolean;
-  cadence: "Immediate" | "Daily digest";
+  cadence: NotificationCadence;
+  mandatory?: boolean;
+  category?: NotificationCategory;
+  dailyDigestEnabled?: boolean;
 };
 
 export type NotificationTemplate = {
@@ -892,6 +999,9 @@ export type NotificationTemplate = {
   subject: string;
   preview: string;
   defaultAudience: string;
+  version?: number;
+  category?: NotificationCategory;
+  visibilityClassification?: NotificationVisibilityClassification;
 };
 
 export type EmailDeliveryRecord = {
@@ -899,10 +1009,23 @@ export type EmailDeliveryRecord = {
   organizationId: string;
   eventKey: NotificationEventKey;
   recipient: string;
+  recipientUserId?: string;
+  recipientRole?: UserRole;
   subject: string;
-  status: "Logged" | "Queued" | "Sent" | "Failed";
+  status: "Logged" | "Queued" | "Sent" | "Delivered" | "Failed" | "Configuration required";
   provider: "development-log" | "resend" | "postmark" | "sendgrid" | "custom";
   createdAt: string;
+  sentAt?: string;
+  deliveredAt?: string;
+  failedAt?: string;
+  providerMessageId?: string;
+  actionUrl?: string;
+  templateVersion?: number;
+  visibilityClassification?: NotificationVisibilityClassification;
+  attemptCount?: number;
+  failureClassification?: "configuration" | "transient" | "permanent" | "privacy_blocked";
+  plaintextPreview?: string;
+  htmlPreview?: string;
   error?: string;
 };
 
@@ -1107,13 +1230,15 @@ export type WorkflowTask = {
   auditHistory: AuditTrailItem[];
 };
 
-export type NotificationQueueStatus = "Pending" | "Sent" | "Failed" | "Read";
+export type NotificationQueueStatus = "Pending" | "Queued" | "Sent" | "Delivered" | "Failed" | "Read" | "Dismissed" | "Configuration required";
 export type NotificationQueueChannel = "In-app" | "Email" | "Digest";
 
 export type NotificationQueueItem = {
   id: string;
   organizationId: string;
   recipient: string;
+  recipientUserId?: string;
+  recipientOrganizationId?: string;
   recipientRole?: UserRole;
   eventType: NotificationEventKey | string;
   channel: NotificationQueueChannel;
@@ -1124,12 +1249,90 @@ export type NotificationQueueItem = {
   relatedTaskId?: string;
   relatedInvoiceId?: string;
   relatedVendorId?: string;
+  relatedEntityType?: string;
+  relatedEntityId?: string;
   digestGroup?: string;
   queuedAt: string;
+  scheduledAt?: string;
   sentAt?: string;
+  deliveredAt?: string;
+  failedAt?: string;
   readAt?: string;
+  dismissedAt?: string;
   subject: string;
   preview: string;
+  priority?: NotificationPriority;
+  category?: NotificationCategory;
+  actionUrl?: string;
+  requiresAction?: boolean;
+  templateVersion?: number;
+  visibilityClassification?: NotificationVisibilityClassification;
+  dedupeKey?: string;
+  providerMessageId?: string;
+  emailDeliveryId?: string;
+};
+
+export type OrganizationNotificationSettings = {
+  id: string;
+  organizationId: string;
+  emailEnabled: boolean;
+  defaultDueWarningHours: number[];
+  bidReminderHours: number[];
+  assignmentAcceptanceHours: number;
+  inspectionReminderHours: number[];
+  revisionReminderHours: number[];
+  invoiceReminderDays: number[];
+  complianceWarningDays: number[];
+  clientReceivesInspectionStatus: boolean;
+  clientReceivesAssignmentIdentity: boolean;
+  clientReceivesReviewStatus: boolean;
+  clientsReceiveDeliveryEmail: boolean;
+  copyOfficeStaffOnClientEvents: boolean;
+  escalationRecipientRole: UserRole | string;
+  replyToEmail?: string;
+  branding?: Record<string, string>;
+};
+
+export type CommunicationEvent = {
+  id: string;
+  organizationId: string;
+  orderId?: string;
+  actorUserId?: string;
+  eventType: NotificationEventKey | string;
+  channel: "in_app" | "email" | "digest" | "system" | "message" | "delivery";
+  recipient: string;
+  recipientUserId?: string;
+  recipientOrganizationId?: string;
+  recipientRole?: UserRole | string;
+  visibilityClassification: NotificationVisibilityClassification;
+  subject: string;
+  sanitizedMessage: string;
+  actionUrl?: string;
+  deliveryStatus: "created" | "queued" | "sent" | "delivered" | "failed" | "read" | "dismissed" | "simulated";
+  notificationId?: string;
+  notificationQueueId?: string;
+  emailDeliveryId?: string;
+  providerMessageId?: string;
+  failureReason?: string;
+  retryCount: number;
+  occurredAt: string;
+  metadata?: Record<string, string | number | boolean>;
+};
+
+export type NotificationReminderState = {
+  id: string;
+  organizationId: string;
+  reminderKey: string;
+  eventType: NotificationEventKey | string;
+  relatedOrderId?: string;
+  relatedVendorId?: string;
+  relatedInvoiceId?: string;
+  relatedEntityType?: string;
+  relatedEntityId?: string;
+  firstTriggeredAt: string;
+  lastTriggeredAt: string;
+  nextEligibleAt?: string;
+  triggerCount: number;
 };
 
 export type ScheduledJob = {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Archive, ArrowDown, ArrowUp, Bell, Building2, CheckCircle2, Globe2, Link2, Plus, ReceiptText, RotateCcw, Settings, ShieldCheck, UserCheck } from "lucide-react";
 import { permissionCatalog } from "@/data/demo";
-import type { ClientTrackingStage, CompanyUser, EmailDeliveryRecord, IntegrationLog, IntegrationSetting, InvoiceSettings, NotificationPreference, NotificationTemplate, Order, OrderStatus, Organization, OrganizationInvitation, OrganizationOrderStatus, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, UserRole } from "@/types/domain";
+import type { ClientTrackingStage, CompanyUser, EmailDeliveryRecord, IntegrationLog, IntegrationSetting, InvoiceSettings, NotificationPreference, NotificationTemplate, Order, OrderStatus, Organization, OrganizationInvitation, OrganizationNotificationSettings, OrganizationOrderStatus, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, UserRole } from "@/types/domain";
 import { canInviteUsers, canManageCompanyUsers, canManageIntegrations, canManageNotificationSettings, canManagePublicOrdering } from "@/lib/permissions";
 import { orderStatusOptions } from "@/lib/orders/workflow";
 import { canArchiveStatus, canDeleteStatus, clientTrackingStages, statusUsageCount } from "@/lib/orders/status-config";
@@ -21,6 +21,7 @@ export function SettingsView({
   notificationPreferences,
   notificationTemplates,
   emailDeliveryRecords,
+  notificationSettings,
   invoiceSettings,
   integrations,
   integrationLogs,
@@ -50,6 +51,7 @@ export function SettingsView({
   notificationPreferences: NotificationPreference[];
   notificationTemplates: NotificationTemplate[];
   emailDeliveryRecords: EmailDeliveryRecord[];
+  notificationSettings?: OrganizationNotificationSettings;
   invoiceSettings: InvoiceSettings[];
   integrations: IntegrationSetting[];
   integrationLogs: IntegrationLog[];
@@ -186,6 +188,7 @@ export function SettingsView({
           preferences={notificationPreferences}
           templates={notificationTemplates}
           deliveries={emailDeliveryRecords}
+          settings={notificationSettings}
           canManage={canManageNotificationSettings(user)}
           onToggleNotificationPreference={onToggleNotificationPreference}
         />
@@ -466,18 +469,35 @@ function NotificationSettingsPanel({
   preferences,
   templates,
   deliveries,
+  settings,
   canManage,
   onToggleNotificationPreference
 }: {
   preferences: NotificationPreference[];
   templates: NotificationTemplate[];
   deliveries: EmailDeliveryRecord[];
+  settings?: OrganizationNotificationSettings;
   canManage: boolean;
   onToggleNotificationPreference: (preferenceId: string, channel: "emailEnabled" | "inAppEnabled") => void;
 }) {
+  const failedDeliveries = deliveries.filter((delivery) => delivery.status === "Failed" || delivery.status === "Configuration required").length;
   return (
     <div className="panel p-5">
       <SectionHeader icon={Bell} title="Notification Foundation" />
+      <div className="mt-4 grid gap-2 text-sm">
+        <div className="rounded-md border border-line bg-slate-50 p-3">
+          <div className="font-semibold text-slate-900">{settings?.emailEnabled ? "Email delivery enabled" : "Email provider configuration required"}</div>
+          <div className="mt-1 text-xs text-slate-500">
+            {settings?.emailEnabled ? "CAS will queue provider-backed email after preferences and privacy rules pass." : "CAS creates in-app notifications and records email as unavailable until a provider is configured."}
+          </div>
+        </div>
+        <div className="grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+          <div className="rounded-md border border-line p-3">Due warnings: {(settings?.defaultDueWarningHours ?? [72, 48, 24, 0]).join(", ")} hours</div>
+          <div className="rounded-md border border-line p-3">Bid reminders: {(settings?.bidReminderHours ?? [24, 4]).join(", ")} hours</div>
+          <div className="rounded-md border border-line p-3">Assignment response target: {settings?.assignmentAcceptanceHours ?? 12} hours</div>
+          <div className="rounded-md border border-line p-3">Escalation role: {settings?.escalationRecipientRole ?? "company_admin"}</div>
+        </div>
+      </div>
       <div className="mt-4 space-y-3">
         {preferences.map((preference) => {
           const template = templates.find((item) => item.eventKey === preference.eventKey);
@@ -495,7 +515,7 @@ function NotificationSettingsPanel({
         })}
       </div>
       <div className="mt-4 rounded-md border border-dashed border-line p-3 text-xs text-slate-500">
-        {deliveries.length} development-safe email deliveries logged while no provider credentials are configured.
+        {deliveries.length} email delivery records. {failedDeliveries} need provider or retry attention. Demo mode records simulated email only.
       </div>
     </div>
   );

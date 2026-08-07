@@ -8,6 +8,7 @@ import {
   accountingEntries,
   automationRules,
   automationRuns,
+  communicationEvents,
   deliveryRecords,
   documentAuditEvents,
   emailDeliveryRecords,
@@ -17,8 +18,10 @@ import {
   invoices,
   managedDocuments,
   notificationPreferences,
+  notificationReminderState,
   notificationQueue,
   notificationTemplates,
+  organizationNotificationSettings,
   orderMessages,
   organizationInvitations,
   organizations,
@@ -33,7 +36,7 @@ import {
   webhookEvents,
   workflowTasks
 } from "@/data/platform";
-import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, DocumentVisibility, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationTemplate, Order, OrderFormTemplate, OrderIntakePrefill, OrderStatus, Organization, OrganizationInvitation, OrganizationOrderStatus, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
+import type { AccountingEntry, AppraiserProfile, AutomationRule, AutomationRun, CalendarPreference, ClientProfile, CommunicationEvent, CompanyUser, DeliveryRecord, DocumentAuditEvent, DocumentCategory, DocumentVisibility, EmailDeliveryRecord, InspectionInfo, IntegrationLog, IntegrationSetting, Invoice, InvoiceSettings, ManagedDocument, MessageChannel, Note, NotificationPreference, NotificationQueueItem, NotificationReminderState, NotificationTemplate, Order, OrderFormTemplate, OrderIntakePrefill, OrderStatus, Organization, OrganizationInvitation, OrganizationNotificationSettings, OrganizationOrderStatus, OrderMessage, PermissionKey, PortalUser, PublicOrderRequest, PublicOrderSettings, ReportSubmission, RequiredDocumentRule, RevisionRequest, RevisionStatus, ScheduledJob, UserRole, VendorDocument, VendorProfile, WebhookEvent, WorkflowTask, WorkflowTaskStatus } from "@/types/domain";
 import type { AppraisalReportVersion, IngestionSourceFile, ReportReviewResult, ReviewFindingStatus, ReviewSeverity } from "@/types/report-review";
 import { loadCasAuthContext } from "@/lib/auth/context";
 import { createDeliveryRecord, markDeliveredFilesClientVisible } from "@/lib/delivery/service";
@@ -52,6 +55,8 @@ import { applyPayrollSnapshot, calculatePayrollSnapshot } from "@/lib/accounting
 import { ingestReportUpload } from "@/lib/report-review/ingestion";
 import { demoAiReviewSettings } from "@/lib/report-review/ai-settings";
 import { releaseFindingToClient, respondToReviewFinding, updateReviewFindingStatus } from "@/lib/report-review/rules";
+import { buildDeliveryNotificationArtifacts } from "@/lib/notifications/service";
+import type { NotificationRecipient } from "@/lib/notifications/privacy";
 import { getCasRepository } from "@/lib/repositories";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 import { AccountingView, AnalyticsView } from "./cas/accounting";
@@ -96,6 +101,9 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
   const [notificationPreferenceList, setNotificationPreferenceList] = useState<NotificationPreference[]>(notificationPreferences);
   const [notificationTemplateList, setNotificationTemplateList] = useState<NotificationTemplate[]>(notificationTemplates);
   const [emailDeliveryList, setEmailDeliveryList] = useState<EmailDeliveryRecord[]>(emailDeliveryRecords);
+  const [organizationNotificationSettingList, setOrganizationNotificationSettingList] = useState<OrganizationNotificationSettings[]>(organizationNotificationSettings);
+  const [communicationEventList, setCommunicationEventList] = useState<CommunicationEvent[]>(communicationEvents);
+  const [notificationReminderStateList, setNotificationReminderStateList] = useState<NotificationReminderState[]>(notificationReminderState);
   const [integrationList, setIntegrationList] = useState<IntegrationSetting[]>(integrationSettings);
   const [integrationLogList, setIntegrationLogList] = useState<IntegrationLog[]>(integrationLogs);
   const [managedDocumentList, setManagedDocumentList] = useState<ManagedDocument[]>(managedDocuments);
@@ -134,6 +142,8 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
   const activeNavItems = roleNavigation[activeUser.role].map((id) => ({ id, ...navCatalog[id] }));
   const visibleOrders = filterOrdersForWorkflow(orderList, activeUser, activeOrganization);
   const selectedOrder = visibleOrders.find((order) => order.id === selectedOrderId) ?? visibleOrders[0] ?? orderList[0];
+  const activeNotificationSettings = organizationNotificationSettingList.find((settings) => settings.organizationId === activeOrganization.id);
+  const activeReminderStateCount = notificationReminderStateList.filter((state) => state.organizationId === activeOrganization.id).length;
   const activeOrderQueue = resolveLegacyOrderQueue(activeView, activeUser, activeOrganization);
   const operationsCenterModel = demoMode
     ? buildOperationsCenterModel({
@@ -146,6 +156,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
         accountingEntries: accountingList,
         invoices: invoiceList,
         tasks: taskList,
+        notificationQueue: notificationQueueList,
         now: operationsNow ?? commandCenterToday,
         source: "demo"
       })
@@ -184,6 +195,9 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     setNotificationPreferenceList(clonePublicDemoFixture(notificationPreferences));
     setNotificationTemplateList(clonePublicDemoFixture(notificationTemplates));
     setEmailDeliveryList(clonePublicDemoFixture(emailDeliveryRecords));
+    setOrganizationNotificationSettingList(clonePublicDemoFixture(organizationNotificationSettings));
+    setCommunicationEventList(clonePublicDemoFixture(communicationEvents));
+    setNotificationReminderStateList(clonePublicDemoFixture(notificationReminderState));
     setIntegrationList(clonePublicDemoFixture(integrationSettings));
     setIntegrationLogList(clonePublicDemoFixture(integrationLogs));
     setManagedDocumentList(clonePublicDemoFixture(managedDocuments));
@@ -300,6 +314,9 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
         setNotificationPreferenceList(bootstrap.notificationPreferences);
         setNotificationTemplateList(bootstrap.notificationTemplates);
         setEmailDeliveryList(bootstrap.emailDeliveryRecords);
+        setOrganizationNotificationSettingList(bootstrap.organizationNotificationSettings);
+        setCommunicationEventList(bootstrap.communicationEvents);
+        setNotificationReminderStateList(bootstrap.notificationReminderState);
         setIntegrationList(bootstrap.integrations);
         setIntegrationLogList(bootstrap.integrationLogs);
         setManagedDocumentList(bootstrap.managedDocuments);
@@ -520,20 +537,63 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
   }
 
   function handleRetryNotification(notificationId: string) {
+    const notification = notificationQueueList.find((item) => item.id === notificationId);
     setNotificationQueueList((current) =>
       current.map((notification) =>
         notification.id === notificationId
           ? {
               ...notification,
-              status: "Sent",
+              status: demoMode ? "Sent" : notification.status === "Configuration required" ? "Configuration required" : "Queued",
               attemptCount: notification.attemptCount + 1,
-              failureReason: undefined,
-              sentAt: "Just now"
+              failureReason: notification.status === "Configuration required" ? "Email provider configuration is still required before retry can send." : undefined,
+              sentAt: demoMode ? "Just now" : notification.sentAt
             }
           : notification
       )
     );
-    recordDemoSimulation("Demo email not sent. The notification retry was simulated in local demo state.");
+    setCommunicationEventList((current) => [
+      {
+        id: `comm-retry-${Date.now()}`,
+        organizationId: activeOrganization.id,
+        orderId: notification?.relatedOrderId,
+        actorUserId: activeUser.id,
+        eventType: notification?.eventType ?? "notification_retry",
+        channel: notification?.channel === "Email" ? "email" : notification?.channel === "Digest" ? "digest" : "in_app",
+        recipient: notification?.recipient ?? "CAS recipient",
+        recipientUserId: notification?.recipientUserId,
+        recipientOrganizationId: notification?.recipientOrganizationId,
+        recipientRole: notification?.recipientRole,
+        visibilityClassification: notification?.visibilityClassification ?? "internal",
+        subject: notification?.subject ?? "Notification retry",
+        sanitizedMessage: notification?.status === "Configuration required" ? "Email provider configuration is required before CAS can retry this notification." : "Notification retry queued.",
+        actionUrl: notification?.actionUrl,
+        deliveryStatus: demoMode ? "simulated" : notification?.status === "Configuration required" ? "failed" : "queued",
+        notificationQueueId: notificationId,
+        failureReason: notification?.status === "Configuration required" ? "Email provider configuration required." : undefined,
+        retryCount: (notification?.attemptCount ?? 0) + 1,
+        occurredAt: new Date().toISOString()
+      },
+      ...current
+    ]);
+    recordDemoSimulation("Demo email simulated. The notification retry was recorded in local demo state.");
+  }
+
+  function handleMarkNotificationRead(notificationId: string) {
+    setNotificationQueueList((current) => current.map((notification) => notification.id === notificationId ? { ...notification, status: "Read", readAt: "Just now" } : notification));
+  }
+
+  function handleDismissNotification(notificationId: string) {
+    setNotificationQueueList((current) => current.map((notification) => notification.id === notificationId ? { ...notification, status: "Dismissed", dismissedAt: "Just now" } : notification));
+  }
+
+  function handleMarkAllNotificationsRead() {
+    setNotificationQueueList((current) =>
+      current.map((notification) =>
+        notification.recipientUserId === activeUser.id || notification.recipient === activeUser.name || notification.recipientRole === activeUser.role
+          ? { ...notification, status: "Read", readAt: notification.readAt ?? "Just now" }
+          : notification
+      )
+    );
   }
 
   function handleAssignOrder(orderId: string, appraiserName: string, note: string, vendorFee?: number) {
@@ -2019,6 +2079,59 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     recordDemoSimulation("Demo finding marked client-visible locally. Nothing was delivered until the reviewer releases the report.");
   }
 
+  function deliveryNotificationRecipients(order: Order): NotificationRecipient[] {
+    const clientUser = portalUsers.find((user) => user.role === "client_user" && (user.organizationId === "org-client-1" || user.organizationId === activeOrganization.id));
+    return [{
+      id: clientUser?.id ?? `client-${order.id}`,
+      name: clientUser?.name ?? order.lenderContact ?? order.client,
+      email: clientUser?.email,
+      role: "client_user",
+      organizationId: clientUser?.organizationId ?? activeOrganization.id,
+      organizationType: "lender_client",
+      relationship: "lender_client"
+    }];
+  }
+
+  function appendDeliveryNotifications(order: Order) {
+    const settings = activeNotificationSettings
+      ? { ...activeNotificationSettings, emailEnabled: demoMode ? true : activeNotificationSettings.emailEnabled }
+      : undefined;
+    const artifacts = buildDeliveryNotificationArtifacts({
+      organization: activeOrganization,
+      order,
+      actor: activeUser,
+      recipients: deliveryNotificationRecipients(order),
+      settings,
+      actionUrl: `/orders/${order.id}`,
+      now: new Date()
+    });
+
+    setNotificationQueueList((current) => [...artifacts.queueItems, ...current]);
+    setCommunicationEventList((current) => [...artifacts.communicationEvents, ...current]);
+    if (demoMode) {
+      setEmailDeliveryList((current) => [
+        ...artifacts.emailMessages.map((message) => ({
+          id: `email-demo-${Date.now()}-${message.to}`,
+          organizationId: activeOrganization.id,
+          eventKey: "final_report_delivered" as const,
+          recipient: message.to,
+          recipientRole: "client_user" as const,
+          subject: message.subject,
+          status: "Logged" as const,
+          provider: "development-log" as const,
+          createdAt: new Date().toISOString(),
+          sentAt: new Date().toISOString(),
+          actionUrl: message.actionUrl,
+          templateVersion: message.templateVersion,
+          visibilityClassification: "client_safe" as const,
+          attemptCount: 1,
+          plaintextPreview: "Demo email simulated. Your appraisal report is ready to view securely in CAS."
+        })),
+        ...current
+      ]);
+    }
+  }
+
   async function handleDeliverReport(orderId: string) {
     const order = orderList.find((item) => item.id === orderId);
     if (!order) return;
@@ -2029,6 +2142,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
         setDeliveryRecordList((current) => [result.delivery, ...current.filter((delivery) => delivery.id !== result.delivery.id)]);
         upsertManagedDocuments(result.documents);
         handleStatusChange(orderId, "Delivered");
+        appendDeliveryNotifications(order);
         setActionNotice(result.message);
       } catch (error) {
         setActionNotice(error instanceof Error ? error.message : "CAS could not release that report.");
@@ -2040,7 +2154,8 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
     setManagedDocumentList((current) => markDeliveredFilesClientVisible(current, delivery));
     handleStatusChange(orderId, "Delivered");
     addDocumentAuditEvent({ id: `audit-${Date.now()}`, organizationId: activeOrganization.id, orderId, event: "Delivered", actor: activeUser.name, at: "Just now", detail: `Secure delivery created for ${delivery.recipientName}.` });
-    recordDemoSimulation("Demo report delivery simulated. No client email, portal invite, webhook, or file transfer was sent.");
+    appendDeliveryNotifications(order);
+    recordDemoSimulation("Demo report delivery simulated. Demo email simulated; no real provider, portal invite, webhook, or file transfer was sent.");
   }
 
   function handleSendOrderMessage(orderId: string, channel: MessageChannel, body: string) {
@@ -2157,6 +2272,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
               onOpenMessages={() => openView("messages", "notifications")}
               onOpenDocuments={() => openView("documents", "orders")}
               onOpenCalendar={() => openView("calendar", "orders")}
+              onOpenNotifications={() => openView("notifications", "dashboard")}
             />
           )}
           {activeView === "dashboard" && !operationsCenterModel && (
@@ -2190,6 +2306,10 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
               reportVersions={reportVersionList}
               reportReviewResults={reportReviewResultList}
               deliveryRecords={deliveryRecordList}
+              notificationQueue={notificationQueueList}
+              emailDeliveryRecords={emailDeliveryList}
+              communicationEvents={communicationEventList}
+              documentAuditEvents={documentAuditEventList}
               realUploadsEnabled={!demoMode}
               onUploadDocument={handleUploadDocument}
               onArchiveDocument={handleArchiveDocument}
@@ -2370,7 +2490,12 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
               queue={notificationQueueList}
               orderList={visibleOrders.length ? visibleOrders : orderList}
               user={activeUser}
+              settings={activeNotificationSettings}
+              reminderStateCount={activeReminderStateCount}
               onRetry={handleRetryNotification}
+              onMarkRead={handleMarkNotificationRead}
+              onDismiss={handleDismissNotification}
+              onMarkAllRead={handleMarkAllNotificationsRead}
             />
           )}
           {activeView === "settings" && (
@@ -2386,6 +2511,7 @@ export function CasApp({ publicDemoEnabled = false }: { publicDemoEnabled?: bool
               notificationPreferences={notificationPreferenceList}
               notificationTemplates={notificationTemplateList}
               emailDeliveryRecords={emailDeliveryList}
+              notificationSettings={activeNotificationSettings}
               invoiceSettings={invoiceSettingsList}
               integrations={integrationList}
               integrationLogs={integrationLogList}
